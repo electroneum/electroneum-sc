@@ -370,3 +370,8 @@ func IsTTDReached(chain consensus.ChainHeaderReader, parentHash common.Hash, num
 	}
 	return td.Cmp(chain.Config().TerminalTotalDifficulty) >= 0, nil
 }
+
+// Protocol implements consensus.Engine.Protocol
+func (c *Beacon) Protocol() consensus.Protocol {
+	return consensus.CliqueProtocol
+}

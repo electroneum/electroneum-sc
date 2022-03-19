@@ -40,7 +40,7 @@ var customGenesisTests = []struct {
 			"mixhash"    : "0x0000000000000000000000000000000000000000000000000000000000000000",
 			"parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
 			"timestamp"  : "0x00",
-			"config"     : {}
+			"config"     : {"isQuorum":false }
 		}`,
 		query:  "eth.getBlock(0).nonce",
 		result: "0x0000000000001338",
@@ -60,7 +60,8 @@ var customGenesisTests = []struct {
 			"config"     : {
 				"homesteadBlock" : 42,
 				"daoForkBlock"   : 141,
-				"daoForkSupport" : true
+				"daoForkSupport" : true,
+				"isQuorum" : false
 			}
 		}`,
 		query:  "eth.getBlock(0).nonce",

@@ -30,6 +30,8 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
@@ -93,6 +95,9 @@ var Defaults = Config{
 	RPCEVMTimeout: 5 * time.Second,
 	GPO:           FullNodeGPO,
 	RPCTxFeeCap:   1, // 1 ether
+
+	// Quorum
+	Istanbul: *istanbul.DefaultConfig, // Quorum
 }
 
 func init() {
@@ -186,6 +191,9 @@ type Config struct {
 	// Enables tracking of SHA3 preimages in the VM
 	EnablePreimageRecording bool
 
+	// Istanbul options
+	Istanbul istanbul.Config
+
 	// Miscellaneous options
 	DocRoot string `toml:"-"`
 
@@ -213,13 +221,39 @@ type Config struct {
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain configuration.
-func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *ethash.Config, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
+func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
 	// If proof-of-authority is requested, set it up
 	var engine consensus.Engine
 	if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)
 	} else {
-		switch config.PowMode {
+
+		//Quorum
+		// If Istanbul is requested, set it up
+		if chainConfig.Istanbul != nil {
+			log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.ibft on genesis file")
+			if chainConfig.Istanbul.Epoch != 0 {
+				config.Istanbul.Epoch = chainConfig.Istanbul.Epoch
+			}
+			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
+			config.Istanbul.Ceil2Nby3Block = chainConfig.Istanbul.Ceil2Nby3Block
+			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
+			config.Istanbul.TestQBFTBlock = chainConfig.Istanbul.TestQBFTBlock
+
+			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
+		}
+		if chainConfig.IBFT != nil {
+			setBFTConfig(&config.Istanbul, chainConfig.IBFT.BFTConfig)
+			config.Istanbul.TestQBFTBlock = nil
+			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
+		}
+		if chainConfig.QBFT != nil {
+			setBFTConfig(&config.Istanbul, chainConfig.QBFT.BFTConfig)
+			config.Istanbul.TestQBFTBlock = big.NewInt(0)
+			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
+		}
+
+		switch config.Ethash.PowMode {
 		case ethash.ModeFake:
 			log.Warn("Ethash used in fake mode")
 		case ethash.ModeTest:
@@ -228,18 +262,36 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			log.Warn("Ethash used in shared mode")
 		}
 		engine = ethash.New(ethash.Config{
-			PowMode:          config.PowMode,
-			CacheDir:         stack.ResolvePath(config.CacheDir),
-			CachesInMem:      config.CachesInMem,
-			CachesOnDisk:     config.CachesOnDisk,
-			CachesLockMmap:   config.CachesLockMmap,
-			DatasetDir:       config.DatasetDir,
-			DatasetsInMem:    config.DatasetsInMem,
-			DatasetsOnDisk:   config.DatasetsOnDisk,
-			DatasetsLockMmap: config.DatasetsLockMmap,
-			NotifyFull:       config.NotifyFull,
+			PowMode:          config.Ethash.PowMode,
+			CacheDir:         stack.ResolvePath(config.Ethash.CacheDir),
+			CachesInMem:      config.Ethash.CachesInMem,
+			CachesOnDisk:     config.Ethash.CachesOnDisk,
+			CachesLockMmap:   config.Ethash.CachesLockMmap,
+			DatasetDir:       config.Ethash.DatasetDir,
+			DatasetsInMem:    config.Ethash.DatasetsInMem,
+			DatasetsOnDisk:   config.Ethash.DatasetsOnDisk,
+			DatasetsLockMmap: config.Ethash.DatasetsLockMmap,
+			NotifyFull:       config.Ethash.NotifyFull,
 		}, notify, noverify)
 		engine.(*ethash.Ethash).SetThreads(-1) // Disable CPU mining
 	}
 	return beacon.New(engine)
+}
+
+func setBFTConfig(istanbulConfig *istanbul.Config, bftConfig *params.BFTConfig) {
+	if bftConfig.BlockPeriodSeconds != 0 {
+		istanbulConfig.BlockPeriod = bftConfig.BlockPeriodSeconds
+	}
+	if bftConfig.RequestTimeoutSeconds != 0 {
+		istanbulConfig.RequestTimeout = bftConfig.RequestTimeoutSeconds
+	}
+	if bftConfig.EpochLength != 0 {
+		istanbulConfig.Epoch = bftConfig.EpochLength
+	}
+	if bftConfig.ProposerPolicy != 0 {
+		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(bftConfig.ProposerPolicy))
+	}
+	if bftConfig.Ceil2Nby3Block != nil {
+		istanbulConfig.Ceil2Nby3Block = bftConfig.Ceil2Nby3Block
+	}
 }

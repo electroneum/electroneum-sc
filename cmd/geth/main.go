@@ -159,6 +159,10 @@ var (
 		utils.GpoIgnoreGasPriceFlag,
 		utils.MinerNotifyFullFlag,
 		configFileFlag,
+		// Quorum
+		utils.IstanbulRequestTimeoutFlag,
+		utils.IstanbulBlockPeriodFlag,
+		// End-Quorum
 	}
 
 	rpcFlags = []cli.Flag{
@@ -435,6 +439,10 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 			utils.Fatalf("Failed to start mining: %v", err)
 		}
 	}
+
+	// Quorum
+	// checks quorum features that depend on the ethereum service
+	quorumValidateEthService(stack)
 }
 
 // unlockAccounts unlocks any account specifically requested.
