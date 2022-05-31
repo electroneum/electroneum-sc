@@ -347,17 +347,8 @@ func (n *Node) closeDataDir() {
 // or from the default location. If neither of those are present, it generates
 // a new secret and stores to the default location.
 func (n *Node) obtainJWTSecret(cliParam string) ([]byte, error) {
-	var fileName string
-	if len(cliParam) > 0 {
-		// If a plaintext secret was provided via cli flags, use that
-		jwtSecret := common.FromHex(cliParam)
-		if len(jwtSecret) == 32 && strings.HasPrefix(cliParam, "0x") {
-			log.Warn("Plaintext JWT secret provided, please consider passing via file")
-			return jwtSecret, nil
-		}
-		// path provided
-		fileName = cliParam
-	} else {
+	fileName := cliParam
+	if len(fileName) == 0 {
 		// no path provided, use default
 		fileName = n.ResolvePath(datadirJWTKey)
 	}
@@ -440,12 +431,12 @@ func (n *Node) startRPC() error {
 	initAuth := func(apis []rpc.API, port int, secret []byte) error {
 		// Enable auth via HTTP
 		server := n.httpAuth
-		if err := server.setListenAddr(n.config.AuthHost, port); err != nil {
+		if err := server.setListenAddr(n.config.AuthAddr, port); err != nil {
 			return err
 		}
 		if err := server.enableRPC(apis, httpConfig{
 			CorsAllowedOrigins: DefaultAuthCors,
-			Vhosts:             DefaultAuthVhosts,
+			Vhosts:             n.config.AuthVirtualHosts,
 			Modules:            DefaultAuthModules,
 			prefix:             DefaultAuthPrefix,
 			jwtSecret:          secret,
@@ -455,7 +446,7 @@ func (n *Node) startRPC() error {
 		servers = append(servers, server)
 		// Enable auth via WS
 		server = n.wsServerForPort(port, true)
-		if err := server.setListenAddr(n.config.AuthHost, port); err != nil {
+		if err := server.setListenAddr(n.config.AuthAddr, port); err != nil {
 			return err
 		}
 		if err := server.enableWS(apis, wsConfig{
