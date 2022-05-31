@@ -129,7 +129,7 @@ type Config struct {
 
 var DefaultConfig = &Config{
 	RequestTimeout:         10000,
-	BlockPeriod:            1,
+	BlockPeriod:            5,
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	Ceil2Nby3Block:         big.NewInt(0),
