@@ -455,7 +455,10 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 
 	// Quorum
 	// checks quorum features that depend on the ethereum service
-	quorumValidateEthService(stack)
+	if backend.ChainConfig().IsQuorum {
+		quorumValidateEthService(stack)
+	}
+
 }
 
 // unlockAccounts unlocks any account specifically requested.
