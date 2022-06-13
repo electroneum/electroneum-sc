@@ -37,10 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/fdlimit"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -2045,43 +2042,10 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	}
 
 	var engine consensus.Engine
-	if config.Clique != nil {
-		engine = clique.New(config.Clique, chainDb)
-	} else if config.Istanbul != nil {
-		log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.ibft on genesis file")
-		// for IBFT
-		istanbulConfig := istanbul.DefaultConfig
-		if config.Istanbul.Epoch != 0 {
-			istanbulConfig.Epoch = config.Istanbul.Epoch
-		}
-		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(config.Istanbul.ProposerPolicy))
-		istanbulConfig.Ceil2Nby3Block = config.Istanbul.Ceil2Nby3Block
-		istanbulConfig.TestQBFTBlock = config.Istanbul.TestQBFTBlock
-		engine = istanbulBackend.New(istanbulConfig, stack.GetNodeKey(), chainDb)
-	} else if config.IBFT != nil {
-		ibftConfig := setBFTConfig(config.IBFT.BFTConfig)
-		ibftConfig.TestQBFTBlock = nil
-		engine = istanbulBackend.New(ibftConfig, stack.GetNodeKey(), chainDb)
-	} else if config.QBFT != nil {
-		qbftConfig := setBFTConfig(config.QBFT.BFTConfig)
-		qbftConfig.TestQBFTBlock = big.NewInt(0)
-		engine = istanbulBackend.New(qbftConfig, stack.GetNodeKey(), chainDb)
-	} else {
-		engine = ethash.NewFaker()
-		if !ctx.GlobalBool(FakePoWFlag.Name) {
-			engine = ethash.New(ethash.Config{
-				CacheDir:         stack.ResolvePath(ethconfig.Defaults.Ethash.CacheDir),
-				CachesInMem:      ethconfig.Defaults.Ethash.CachesInMem,
-				CachesOnDisk:     ethconfig.Defaults.Ethash.CachesOnDisk,
-				CachesLockMmap:   ethconfig.Defaults.Ethash.CachesLockMmap,
-				DatasetDir:       stack.ResolvePath(ethconfig.Defaults.Ethash.DatasetDir),
-				DatasetsInMem:    ethconfig.Defaults.Ethash.DatasetsInMem,
-				DatasetsOnDisk:   ethconfig.Defaults.Ethash.DatasetsOnDisk,
-				DatasetsLockMmap: ethconfig.Defaults.Ethash.DatasetsLockMmap,
-			}, nil, false)
-		}
+	ethashConf := ethconfig.Defaults.Ethash
+	if ctx.GlobalBool(FakePoWFlag.Name) {
+		ethashConf.PowMode = ethash.ModeFake
 	}
-
 	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, chainDb)
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
@@ -2157,24 +2121,4 @@ func MigrateFlags(action func(ctx *cli.Context) error) func(*cli.Context) error 
 		}
 		return action(ctx)
 	}
-}
-
-func setBFTConfig(bftConfig *params.BFTConfig) *istanbul.Config {
-	istanbulConfig := istanbul.DefaultConfig
-	if bftConfig.BlockPeriodSeconds != 0 {
-		istanbulConfig.BlockPeriod = bftConfig.BlockPeriodSeconds
-	}
-	if bftConfig.RequestTimeoutSeconds != 0 {
-		istanbulConfig.RequestTimeout = bftConfig.RequestTimeoutSeconds
-	}
-	if bftConfig.EpochLength != 0 {
-		istanbulConfig.Epoch = bftConfig.EpochLength
-	}
-	if bftConfig.ProposerPolicy != 0 {
-		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(bftConfig.ProposerPolicy))
-	}
-	if bftConfig.Ceil2Nby3Block != nil {
-		istanbulConfig.Ceil2Nby3Block = bftConfig.Ceil2Nby3Block
-	}
-	return istanbulConfig
 }
