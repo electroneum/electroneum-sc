@@ -106,7 +106,7 @@ func makeHeader(parent *types.Block, config *istanbul.Config) *types.Header {
 }
 
 func makeBlock(chain *core.BlockChain, engine *Backend, parent *types.Block) *types.Block {
-	block := makeBlockWithoutSeal(chain, engine, parent)
+	block := makeBlockWithoutSeal(chain, engine, parent, true)
 	stopCh := make(chan struct{})
 	resultCh := make(chan *types.Block, 10)
 	go engine.Seal(chain, block, resultCh, stopCh)
@@ -114,8 +114,14 @@ func makeBlock(chain *core.BlockChain, engine *Backend, parent *types.Block) *ty
 	return blk
 }
 
-func makeBlockWithoutSeal(chain *core.BlockChain, engine *Backend, parent *types.Block) *types.Block {
+func makeBlockWithoutSeal(chain *core.BlockChain, engine *Backend, parent *types.Block, includeCoinbase bool) *types.Block {
 	header := makeHeader(parent, engine.config)
+	if includeCoinbase {
+		header.Coinbase = engine.Address()
+	} else {
+		header.Coinbase = common.Address{}
+	}
+
 	engine.Prepare(chain, header)
 	state, _ := chain.StateAt(parent.Root())
 	block, _ := engine.FinalizeAndAssemble(chain, header, state, nil, nil, nil)
@@ -157,7 +163,7 @@ func TestQBFTPrepare(t *testing.T) {
 func TestSealStopChannel(t *testing.T) {
 	chain, engine := newBlockChain(1, big.NewInt(0))
 	defer engine.Stop()
-	block := makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	stop := make(chan struct{}, 1)
 	eventSub := engine.EventMux().Subscribe(istanbul.RequestEvent{})
 	eventLoop := func() {
@@ -187,8 +193,8 @@ func TestSealStopChannel(t *testing.T) {
 func TestSealCommittedOtherHash(t *testing.T) {
 	chain, engine := newBlockChain(1, big.NewInt(0))
 	defer engine.Stop()
-	block := makeBlockWithoutSeal(chain, engine, chain.Genesis())
-	otherBlock := makeBlockWithoutSeal(chain, engine, block)
+	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), false)
+	otherBlock := makeBlockWithoutSeal(chain, engine, block, false)
 	expectedCommittedSeal := append([]byte{1, 2, 3}, bytes.Repeat([]byte{0x00}, types.IstanbulExtraSeal-3)...)
 
 	eventSub := engine.EventMux().Subscribe(istanbul.RequestEvent{})
@@ -235,7 +241,7 @@ func updateQBFTBlock(block *types.Block, addr common.Address) *types.Block {
 func TestSealCommitted(t *testing.T) {
 	chain, engine := newBlockChain(1, big.NewInt(0))
 	defer engine.Stop()
-	block := makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	expectedBlock := updateQBFTBlock(block, engine.Address())
 
 	resultCh := make(chan *types.Block, 10)
@@ -258,7 +264,7 @@ func TestVerifyHeader(t *testing.T) {
 	defer engine.Stop()
 
 	// istanbulcommon.ErrEmptyCommittedSeals case
-	block := makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header := engine.chain.GetHeader(block.ParentHash(), block.NumberU64()-1)
 	block = updateQBFTBlock(block, engine.Address())
 	err := engine.VerifyHeader(chain, block.Header(), false)
@@ -281,7 +287,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// non zero MixDigest
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.MixDigest = common.StringToHash("123456789")
 	err = engine.VerifyHeader(chain, header, false)
@@ -290,7 +296,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// invalid uncles hash
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.UncleHash = common.StringToHash("123456789")
 	err = engine.VerifyHeader(chain, header, false)
@@ -299,7 +305,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// invalid difficulty
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Difficulty = big.NewInt(2)
 	err = engine.VerifyHeader(chain, header, false)
@@ -308,7 +314,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// invalid timestamp
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Time = chain.Genesis().Time() + (engine.config.BlockPeriod - 1)
 	err = engine.VerifyHeader(chain, header, false)
@@ -317,7 +323,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// future block
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Time = uint64(time.Now().Unix() + 10)
 	err = engine.VerifyHeader(chain, header, false)
@@ -326,7 +332,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// future block which is within AllowedFutureBlockTime
-	block = makeBlockWithoutSeal(chain, engine, chain.Genesis())
+	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Time = new(big.Int).Add(big.NewInt(time.Now().Unix()), new(big.Int).SetUint64(10)).Uint64()
 	priorValue := engine.config.AllowedFutureBlockTime
@@ -362,10 +368,10 @@ func TestVerifyHeaders(t *testing.T) {
 	for i := 0; i < size; i++ {
 		var b *types.Block
 		if i == 0 {
-			b = makeBlockWithoutSeal(chain, engine, genesis)
+			b = makeBlockWithoutSeal(chain, engine, genesis, false)
 			b = updateQBFTBlock(b, engine.Address())
 		} else {
-			b = makeBlockWithoutSeal(chain, engine, blocks[i-1])
+			b = makeBlockWithoutSeal(chain, engine, blocks[i-1], false)
 			b = updateQBFTBlock(b, engine.Address())
 		}
 		blocks = append(blocks, b)

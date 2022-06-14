@@ -341,8 +341,12 @@ func WriteValidators(validators []common.Address) ApplyQBFTExtra {
 // consensus rules that happen at finalization (e.g. block rewards).
 func (e *Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
 
-	blockReward := big.NewInt(2e+18)
-	state.AddBalance(header.Coinbase, blockReward)
+	// Block Reward if Coinbase address is provided
+	var emptyAddr = common.Address{}
+	if header.Coinbase != emptyAddr {
+		blockReward := big.NewInt(2e+18)
+		state.AddBalance(header.Coinbase, blockReward)
+	}
 
 	// No block rewards in Istanbul, so the state remains as is and uncles are dropped
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
