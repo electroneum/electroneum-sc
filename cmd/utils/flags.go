@@ -148,6 +148,10 @@ var (
 		Name:  "mainnet",
 		Usage: "Ethereum mainnet",
 	}
+	ElectroneumFlag = cli.BoolFlag{
+		Name:  "electroneum",
+		Usage: "Electroneum mainnet",
+	}
 	RopstenFlag = cli.BoolFlag{
 		Name:  "ropsten",
 		Usage: "Ropsten network: pre-configured proof-of-work test network",
@@ -167,6 +171,10 @@ var (
 	KilnFlag = cli.BoolFlag{
 		Name:  "kiln",
 		Usage: "Kiln network: pre-configured proof-of-work to proof-of-stake test network",
+	}
+	ElectroneumTestnetFlag = cli.BoolFlag{
+		Name:  "electroneum-testnet",
+		Usage: "Electroneum Test network: pre-configured IBFT test network",
 	}
 	DeveloperFlag = cli.BoolFlag{
 		Name:  "dev",
@@ -848,10 +856,12 @@ var (
 		GoerliFlag,
 		SepoliaFlag,
 		KilnFlag,
+		ElectroneumTestnetFlag,
 	}
 	// NetworkFlags is the flag group of all built-in supported networks.
 	NetworkFlags = append([]cli.Flag{
 		MainnetFlag,
+		ElectroneumFlag,
 	}, TestnetFlags...)
 
 	// DatabasePathFlags is the flag group of all database path flags.
@@ -892,6 +902,9 @@ func MakeDataDir(ctx *cli.Context) string {
 		}
 		if ctx.GlobalBool(KilnFlag.Name) {
 			return filepath.Join(path, "kiln")
+		}
+		if ctx.GlobalBool(ElectroneumTestnetFlag.Name) {
+			return filepath.Join(path, "electroneum-testnet")
 		}
 		return path
 	}
@@ -949,6 +962,10 @@ func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
 		urls = params.GoerliBootnodes
 	case ctx.GlobalBool(KilnFlag.Name):
 		urls = params.KilnBootnodes
+	case ctx.GlobalBool(ElectroneumFlag.Name):
+		urls = params.ElectroneumBootnodes
+	case ctx.GlobalBool(ElectroneumTestnetFlag.Name):
+		urls = params.ElectroneumTestnetBootnodes
 	case cfg.BootstrapNodes != nil:
 		return // already set, don't apply defaults.
 	}
@@ -1401,6 +1418,8 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "sepolia")
 	case ctx.GlobalBool(KilnFlag.Name) && cfg.DataDir == node.DefaultDataDir():
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "kiln")
+	case ctx.GlobalBool(ElectroneumTestnetFlag.Name) && cfg.DataDir == node.DefaultDataDir():
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "etn-testnet")
 	}
 }
 
@@ -1603,7 +1622,7 @@ func CheckExclusive(ctx *cli.Context, args ...interface{}) {
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Avoid conflicting network flags
-	CheckExclusive(ctx, MainnetFlag, DeveloperFlag, RopstenFlag, RinkebyFlag, GoerliFlag, SepoliaFlag, KilnFlag)
+	CheckExclusive(ctx, MainnetFlag, DeveloperFlag, RopstenFlag, RinkebyFlag, GoerliFlag, SepoliaFlag, KilnFlag, ElectroneumFlag, ElectroneumTestnetFlag)
 	CheckExclusive(ctx, LightServeFlag, SyncModeFlag, "light")
 	CheckExclusive(ctx, DeveloperFlag, ExternalSignerFlag) // Can't use both ephemeral unlocked and external signer
 	if ctx.GlobalString(GCModeFlag.Name) == "archive" && ctx.GlobalUint64(TxLookupLimitFlag.Name) != 0 {
@@ -1744,6 +1763,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = core.DefaultGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
+	case ctx.GlobalBool(ElectroneumFlag.Name):
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 52014
+		}
+		cfg.Genesis = core.DefaultElectroneumGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.ElectroneumGenesisHash)
 	case ctx.GlobalBool(RopstenFlag.Name):
 		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 3
@@ -1778,6 +1803,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = core.DefaultGoerliGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.GoerliGenesisHash)
+	case ctx.GlobalBool(ElectroneumTestnetFlag.Name):
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 5201420
+		}
+		cfg.Genesis = core.DefaultElectroneumTestnetGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.ElectroneumTestnetGenesisHash)
 	case ctx.GlobalBool(KilnFlag.Name):
 		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 1337802
@@ -2016,6 +2047,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 	switch {
 	case ctx.GlobalBool(MainnetFlag.Name):
 		genesis = core.DefaultGenesisBlock()
+	case ctx.GlobalBool(ElectroneumFlag.Name):
+		genesis = core.DefaultElectroneumGenesisBlock()
 	case ctx.GlobalBool(RopstenFlag.Name):
 		genesis = core.DefaultRopstenGenesisBlock()
 	case ctx.GlobalBool(SepoliaFlag.Name):
@@ -2024,6 +2057,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 		genesis = core.DefaultRinkebyGenesisBlock()
 	case ctx.GlobalBool(GoerliFlag.Name):
 		genesis = core.DefaultGoerliGenesisBlock()
+	case ctx.GlobalBool(ElectroneumTestnetFlag.Name):
+		genesis = core.DefaultElectroneumTestnetGenesisBlock()
 	case ctx.GlobalBool(KilnFlag.Name):
 		genesis = core.DefaultKilnGenesisBlock()
 	case ctx.GlobalBool(DeveloperFlag.Name):

@@ -32,6 +32,10 @@ var MainnetBootnodes = []string{
 	"enode://4aeb4ab6c14b23e2c4cfdce879c04b0748a20d8e9b59e25ded2a08143e265c6c25936e74cbc8e641e3312ca288673d91f2f93f8e277de3cfa444ecdaaf982052@157.90.35.166:30303",   // bootnode-hetzner-fsn
 }
 
+// ElectroneumBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the main Electroneum network.
+var ElectroneumBootnodes = []string{}
+
 // RopstenBootnodes are the enode URLs of the P2P bootstrap nodes running on the
 // Ropsten test network.
 var RopstenBootnodes = []string{
@@ -74,6 +78,10 @@ var GoerliBootnodes = []string{
 	"enode://d4f764a48ec2a8ecf883735776fdefe0a3949eb0ca476bd7bc8d0954a9defe8fea15ae5da7d40b5d2d59ce9524a99daedadf6da6283fca492cc80b53689fb3b3@46.4.99.122:32109",
 	"enode://d2b720352e8216c9efc470091aa91ddafc53e222b32780f505c817ceef69e01d5b0b0797b69db254c586f493872352f5a022b4d8479a00fc92ec55f9ad46a27e@88.99.70.182:30303",
 }
+
+// ElectroneumTestnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the main Electroneum Testnet network.
+var ElectroneumTestnetBootnodes = []string{}
 
 var KilnBootnodes = []string{
 	"enode://c354db99124f0faf677ff0e75c3cbbd568b2febc186af664e0c51ac435609badedc67a18a63adb64dacc1780a28dcefebfc29b83fd1a3f4aa3c0eb161364cf94@164.92.130.5:30303",

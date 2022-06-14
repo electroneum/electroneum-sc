@@ -282,6 +282,9 @@ func prepare(ctx *cli.Context) {
 	case ctx.GlobalIsSet(utils.GoerliFlag.Name):
 		log.Info("Starting Geth on Görli testnet...")
 
+	case ctx.GlobalIsSet(utils.ElectroneumTestnetFlag.Name):
+		log.Info("Starting Geth on Electroneum testnet...")
+
 	case ctx.GlobalIsSet(utils.SepoliaFlag.Name):
 		log.Info("Starting Geth on Sepolia testnet...")
 
@@ -306,6 +309,9 @@ func prepare(ctx *cli.Context) {
      to 0, and discovery is disabled.
 `)
 
+	case ctx.GlobalIsSet(utils.ElectroneumFlag.Name):
+		log.Info("Starting Geth on Electroneum mainnet...")
+
 	case !ctx.GlobalIsSet(utils.NetworkIdFlag.Name):
 		log.Info("Starting Geth on Ethereum mainnet...")
 	}
@@ -317,6 +323,7 @@ func prepare(ctx *cli.Context) {
 			!ctx.GlobalIsSet(utils.RinkebyFlag.Name) &&
 			!ctx.GlobalIsSet(utils.GoerliFlag.Name) &&
 			!ctx.GlobalIsSet(utils.KilnFlag.Name) &&
+			!ctx.GlobalIsSet(utils.ElectroneumTestnetFlag.Name) &&
 			!ctx.GlobalIsSet(utils.DeveloperFlag.Name) {
 			// Nope, we're really on mainnet. Bump that cache up!
 			log.Info("Bumping default cache on mainnet", "provided", ctx.GlobalInt(utils.CacheFlag.Name), "updated", 4096)

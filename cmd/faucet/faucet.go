@@ -86,6 +86,8 @@ var (
 
 	goerliFlag  = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
 	rinkebyFlag = flag.Bool("rinkeby", false, "Initializes the faucet with Rinkeby network config")
+
+	electroneumTestnetFlag = flag.Bool("electroneum-testnet", false, "Initializes the faucet with Electroneum test network config")
 )
 
 var (
@@ -143,7 +145,7 @@ func main() {
 		log.Crit("Failed to render the faucet template", "err", err)
 	}
 	// Load and parse the genesis block requested by the user
-	genesis, err := getGenesis(*genesisFlag, *goerliFlag, *rinkebyFlag)
+	genesis, err := getGenesis(*genesisFlag, *goerliFlag, *rinkebyFlag, *electroneumTestnetFlag)
 	if err != nil {
 		log.Crit("Failed to parse genesis config", "err", err)
 	}
@@ -882,7 +884,7 @@ func authNoAuth(url string) (string, string, common.Address, error) {
 }
 
 // getGenesis returns a genesis based on input args
-func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool) (*core.Genesis, error) {
+func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool, electroneumTestnetFlag bool) (*core.Genesis, error) {
 	switch {
 	case genesisFlag != "":
 		var genesis core.Genesis
@@ -892,6 +894,8 @@ func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool) (*core.Ge
 		return core.DefaultGoerliGenesisBlock(), nil
 	case rinkebyFlag:
 		return core.DefaultRinkebyGenesisBlock(), nil
+	case electroneumTestnetFlag:
+		return core.DefaultElectroneumTestnetGenesisBlock(), nil
 	default:
 		return nil, fmt.Errorf("no genesis flag provided")
 	}

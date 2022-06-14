@@ -445,6 +445,23 @@ func DefaultGenesisBlock() *Genesis {
 	}
 }
 
+// DefaultGenesisBlock returns the Ethereum main net genesis block.
+func DefaultElectroneumGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ElectroneumChainConfig,
+		Nonce:      0,
+		Timestamp:  1492009146,
+		ExtraData:  hexutil.MustDecode("0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854944c7968f79c1a414c34cd4d3c1ac7a3a8413da50c946c3d358156962440424c8c2bd5a8c79664b9956d94f27ed0217ec98beec0478a221e07471885d639a2944dd607ce3b4ec9e22fd3ce59c672fafee09cf332c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Number:     0,
+		GasUsed:    0,
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc:      GenesisAlloc{},
+	}
+}
+
 // DefaultRopstenGenesisBlock returns the Ropsten network genesis block.
 func DefaultRopstenGenesisBlock() *Genesis {
 	return &Genesis{
@@ -478,6 +495,23 @@ func DefaultGoerliGenesisBlock() *Genesis {
 		GasLimit:   10485760,
 		Difficulty: big.NewInt(1),
 		Alloc:      decodePrealloc(goerliAllocData),
+	}
+}
+
+// DefaultGoerliGenesisBlock returns the Görli network genesis block.
+func DefaultElectroneumTestnetGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ElectroneumTestnetChainConfig,
+		Nonce:      0,
+		Timestamp:  1492009146,
+		ExtraData:  hexutil.MustDecode("0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854944c7968f79c1a414c34cd4d3c1ac7a3a8413da50c946c3d358156962440424c8c2bd5a8c79664b9956d94f27ed0217ec98beec0478a221e07471885d639a2944dd607ce3b4ec9e22fd3ce59c672fafee09cf332c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Number:     0,
+		GasUsed:    0,
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc:      GenesisAlloc{},
 	}
 }
 
