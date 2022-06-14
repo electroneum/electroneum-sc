@@ -11,9 +11,6 @@ import (
 // this is for backward compatibility which allows a mixed old/new istanbul node network
 // istanbul/64 will continue using old status data as eth/63
 const (
-	eth63      = 63
-	eth64      = 64
-	eth65      = 65
 	eth66      = 66
 	Istanbul64 = 64
 	Istanbul99 = 99
@@ -32,15 +29,15 @@ var (
 
 	CliqueProtocol = Protocol{
 		Name:     "eth",
-		Versions: []uint{eth66, eth65, eth64, eth63},
-		Lengths:  map[uint]uint64{eth65: 17, eth64: 17, eth63: 17},
+		Versions: []uint{eth66},
+		Lengths:  map[uint]uint64{eth66: 17},
 	}
 
 	// Default: Keep up-to-date with eth/protocol.go
 	EthProtocol = Protocol{
 		Name:     "eth",
-		Versions: []uint{eth66, eth65, eth64, eth63},
-		Lengths:  map[uint]uint64{eth65: 17, eth64: 17, eth63: 17},
+		Versions: []uint{eth66},
+		Lengths:  map[uint]uint64{eth66: 17},
 	}
 
 	NorewardsProtocol = Protocol{
