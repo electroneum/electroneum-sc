@@ -20,6 +20,7 @@ func Genesis(validators []common.Address, isQBFT bool) *core.Genesis {
 	// force enable Istanbul engine
 	genesis.Config.Istanbul = &params.IstanbulConfig{}
 	genesis.Config.Ethash = nil
+	genesis.ExtraData = nil
 	genesis.Difficulty = istanbulcommon.DefaultDifficulty
 	genesis.Nonce = istanbulcommon.EmptyBlockNonce.Uint64()
 	genesis.Mixhash = types.IstanbulDigest

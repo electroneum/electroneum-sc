@@ -357,13 +357,19 @@ func TestZeroValueToNotExitCall(t *testing.T) {
 			Balance: big.NewInt(500000000000000),
 		},
 	}
+
+	var testchainConfig = params.MainnetChainConfig
+	testchainConfig.IstanbulBlock = big.NewInt(9_069_000)
+	testchainConfig.BerlinBlock = big.NewInt(12_244_000)
+	testchainConfig.LondonBlock = big.NewInt(12_965_000)
+
 	_, statedb := tests.MakePreState(rawdb.NewMemoryDatabase(), alloc, false)
 	// Create the tracer, the EVM environment and run it
 	tracer, err := tracers.New("callTracer", nil)
 	if err != nil {
 		t.Fatalf("failed to create call tracer: %v", err)
 	}
-	evm := vm.NewEVM(context, txContext, statedb, params.MainnetChainConfig, vm.Config{Debug: true, Tracer: tracer})
+	evm := vm.NewEVM(context, txContext, statedb, testchainConfig, vm.Config{Debug: true, Tracer: tracer})
 	msg, err := tx.AsMessage(signer, nil)
 	if err != nil {
 		t.Fatalf("failed to prepare transaction for tracing: %v", err)

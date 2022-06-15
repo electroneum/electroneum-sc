@@ -273,24 +273,6 @@ func main() {
 func prepare(ctx *cli.Context) {
 	// If we're running a known preset, log it for convenience.
 	switch {
-	case ctx.GlobalIsSet(utils.RopstenFlag.Name):
-		log.Info("Starting Geth on Ropsten testnet...")
-
-	case ctx.GlobalIsSet(utils.RinkebyFlag.Name):
-		log.Info("Starting Geth on Rinkeby testnet...")
-
-	case ctx.GlobalIsSet(utils.GoerliFlag.Name):
-		log.Info("Starting Geth on Görli testnet...")
-
-	case ctx.GlobalIsSet(utils.ElectroneumTestnetFlag.Name):
-		log.Info("Starting Geth on Electroneum testnet...")
-
-	case ctx.GlobalIsSet(utils.SepoliaFlag.Name):
-		log.Info("Starting Geth on Sepolia testnet...")
-
-	case ctx.GlobalIsSet(utils.KilnFlag.Name):
-		log.Info("Starting Geth on Kiln testnet...")
-
 	case ctx.GlobalIsSet(utils.DeveloperFlag.Name):
 		log.Info("Starting Geth in ephemeral dev mode...")
 		log.Warn(`You are running Geth in --dev mode. Please note the following:
@@ -309,21 +291,16 @@ func prepare(ctx *cli.Context) {
      to 0, and discovery is disabled.
 `)
 
-	case ctx.GlobalIsSet(utils.ElectroneumFlag.Name):
-		log.Info("Starting Geth on Electroneum mainnet...")
+	case ctx.GlobalIsSet(utils.TestnetFlag.Name):
+		log.Info("Starting Geth on Electroneum testnet...")
 
 	case !ctx.GlobalIsSet(utils.NetworkIdFlag.Name):
-		log.Info("Starting Geth on Ethereum mainnet...")
+		log.Info("Starting Geth on Electroneum mainnet...")
 	}
 	// If we're a full node on mainnet without --cache specified, bump default cache allowance
 	if ctx.GlobalString(utils.SyncModeFlag.Name) != "light" && !ctx.GlobalIsSet(utils.CacheFlag.Name) && !ctx.GlobalIsSet(utils.NetworkIdFlag.Name) {
 		// Make sure we're not on any supported preconfigured testnet either
-		if !ctx.GlobalIsSet(utils.RopstenFlag.Name) &&
-			!ctx.GlobalIsSet(utils.SepoliaFlag.Name) &&
-			!ctx.GlobalIsSet(utils.RinkebyFlag.Name) &&
-			!ctx.GlobalIsSet(utils.GoerliFlag.Name) &&
-			!ctx.GlobalIsSet(utils.KilnFlag.Name) &&
-			!ctx.GlobalIsSet(utils.ElectroneumTestnetFlag.Name) &&
+		if !ctx.GlobalIsSet(utils.TestnetFlag.Name) &&
 			!ctx.GlobalIsSet(utils.DeveloperFlag.Name) {
 			// Nope, we're really on mainnet. Bump that cache up!
 			log.Info("Bumping default cache on mainnet", "provided", ctx.GlobalInt(utils.CacheFlag.Name), "updated", 4096)
