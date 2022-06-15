@@ -225,6 +225,11 @@ func (e *Engine) verifySigner(chain consensus.ChainHeaderReader, header *types.H
 		return istanbulcommon.ErrUnauthorized
 	}
 
+	// Ensure that Coinbase address is the same as signer's address
+	if header.Number.Uint64() > 0 && header.Coinbase != signer {
+		return istanbulcommon.ErrInvalidCoinbase
+	}
+
 	return nil
 }
 

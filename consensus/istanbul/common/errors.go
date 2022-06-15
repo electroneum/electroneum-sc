@@ -92,4 +92,7 @@ var (
 	// ErrFailedDecodeMessageSet = errors.New("failed to decode message set")
 	// ErrInvalidSigner is returned when the message is signed by a validator different than message sender
 	ErrInvalidSigner = errors.New("message not signed by the sender")
+
+	// ErrInvalidCoinbase is returned when the Coinbase address is different from current Proposer's Address
+	ErrInvalidCoinbase = errors.New("coinbase does not match with current proposer")
 )
