@@ -329,8 +329,13 @@ func TestVoting(t *testing.T) {
 		}
 
 		genesis := testutils.Genesis(validators)
-		config := new(istanbul.Config)
-		*config = *istanbul.DefaultConfig
+		config := istanbul.Config{
+			RequestTimeout:         istanbul.DefaultConfig.RequestTimeout,
+			BlockPeriod:            istanbul.DefaultConfig.BlockPeriod,
+			ProposerPolicy:         istanbul.DefaultConfig.ProposerPolicy,
+			Epoch:                  istanbul.DefaultConfig.Epoch,
+			AllowedFutureBlockTime: istanbul.DefaultConfig.AllowedFutureBlockTime,
+		}
 		if tt.epoch != 0 {
 			config.Epoch = tt.epoch
 		}

@@ -18,7 +18,7 @@ func Genesis(validators []common.Address) *core.Genesis {
 	genesis := core.DefaultGenesisBlock()
 	genesis.Config = params.TestChainConfig
 	// force enable Istanbul engine
-	genesis.Config.Istanbul = &params.IstanbulConfig{}
+	genesis.Config.IBFT = &params.IBFTConfig{}
 	genesis.Config.Ethash = nil
 	genesis.ExtraData = nil
 	genesis.Difficulty = istanbulcommon.DefaultDifficulty

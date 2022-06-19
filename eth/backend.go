@@ -147,8 +147,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Error("Failed to recover state", "error", err)
 	}
 
-	if chainConfig.Istanbul != nil && chainConfig.QBFT != nil {
-		return nil, errors.New("the attributes config.Istanbul and config.QBFT are mutually exclusive on the genesis file")
+	if chainConfig.Ethash != nil && chainConfig.Clique != nil && chainConfig.IBFT != nil {
+		return nil, errors.New("the attributes config.Etash, config.Clique and config.IBFT are mutually exclusive on the genesis file")
 	}
 
 	merger := consensus.NewMerger(chainDb)
@@ -177,12 +177,12 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// communicate over the "eth" subprotocol, e.g. "eth" or "istanbul/99" but not eth" and "istanbul/99".
 	// With this change, support is added so that the "eth" subprotocol remains and optionally a consensus subprotocol
 	// can be added allowing the node to communicate over "eth" and an optional consensus subprotocol, e.g. "eth" and "istanbul/100"
-	if chainConfig.Istanbul != nil {
-		quorumProtocol := eth.engine.Protocol()
-		// set the quorum specific consensus devp2p subprotocol, eth subprotocol remains set to protocolName as in upstream geth.
-		quorumConsensusProtocolName = quorumProtocol.Name
-		quorumConsensusProtocolVersions = quorumProtocol.Versions
-		quorumConsensusProtocolLengths = quorumProtocol.Lengths
+	if chainConfig.IBFT != nil {
+		ibftProtocol := eth.engine.Protocol()
+		// set the ibft specific consensus devp2p subprotocol, eth subprotocol remains set to protocolName as in upstream geth.
+		ibftConsensusProtocolName = ibftProtocol.Name
+		ibftConsensusProtocolVersions = ibftProtocol.Versions
+		ibftConsensusProtocolLengths = ibftProtocol.Lengths
 
 		// force to set the istanbul etherbase to node key address
 		eth.etherbase = crypto.PubkeyToAddress(stack.GetNodeKey().PublicKey)
@@ -194,7 +194,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		dbVer = fmt.Sprintf("%d", *bcVersion)
 	}
 
-	log.Info("Initialising protocol", "name", quorumConsensusProtocolName, "versions", quorumConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
+	log.Info("Initialising protocol", "name", ibftConsensusProtocolName, "versions", ibftConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
 
 	if !config.SkipBcVersionCheck {
 		if bcVersion != nil && *bcVersion > core.BlockChainVersion {
@@ -262,7 +262,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 
 	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
-	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().Istanbul != nil))
+	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().IBFT != nil))
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
 	if eth.APIBackend.allowUnprotectedTxs {
@@ -566,8 +566,8 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 
 	// /Quorum
 	// add additional quorum consensus protocol if set and if not set to "eth", e.g. istanbul
-	if quorumConsensusProtocolName != "" && quorumConsensusProtocolName != eth.ProtocolName {
-		quorumProtos := s.quorumConsensusProtocols()
+	if ibftConsensusProtocolName != "" && ibftConsensusProtocolName != eth.ProtocolName {
+		quorumProtos := s.ibftConsensusProtocols()
 		protos = append(protos, quorumProtos...)
 	}
 	// /end Quorum

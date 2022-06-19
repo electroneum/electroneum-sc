@@ -29,7 +29,7 @@ import (
 
 // Start implements core.Engine.Start
 func (c *core) Start() error {
-	c.logger.Info("QBFT: start")
+	c.logger.Info("IBFT: start")
 	// Tests will handle events itself, so we have to make subscribeEvents()
 	// be able to call in test.
 	c.subscribeEvents()
@@ -44,13 +44,13 @@ func (c *core) Start() error {
 
 // Stop implements core.Engine.Stop
 func (c *core) Stop() error {
-	c.logger.Info("QBFT: stopping...")
+	c.logger.Info("IBFT: stopping...")
 	c.stopTimer()
 	c.unsubscribeEvents()
 
 	// Make sure the handler goroutine exits
 	c.handlerWg.Wait()
-	c.logger.Info("QBFT: stopped")
+	c.logger.Info("IBFT: stopped")
 	return nil
 }
 
@@ -134,7 +134,7 @@ func (c *core) handleEvents() {
 
 				data, err := rlp.EncodeToBytes(ev.msg)
 				if err != nil {
-					c.logger.Error("QBFT: can not encode backlog message", "err", err)
+					c.logger.Error("IBFT: can not encode backlog message", "err", err)
 					continue
 				}
 
@@ -169,14 +169,14 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 	logger := c.logger.New("code", code, "data", data)
 
 	if _, ok := qbfttypes.MessageCodes()[code]; !ok {
-		logger.Error("QBFT: invalid message event code")
+		logger.Error("IBFT: invalid message event code")
 		return fmt.Errorf("invalid message event code %v", code)
 	}
 
 	// Decode data into a QBFTMessage
 	m, err := qbfttypes.Decode(code, data)
 	if err != nil {
-		logger.Error("QBFT: invalid message", "err", err)
+		logger.Error("IBFT: invalid message", "err", err)
 		return err
 	}
 
@@ -216,7 +216,7 @@ func (c *core) deliverMessage(m qbfttypes.QBFTMessage) error {
 	case qbfttypes.RoundChangeCode:
 		err = c.handleRoundChange(m.(*qbfttypes.RoundChange))
 	default:
-		c.logger.Error("QBFT: invalid message code", "code", m.Code())
+		c.logger.Error("IBFT: invalid message code", "code", m.Code())
 		return errInvalidMessage
 	}
 
@@ -229,9 +229,9 @@ func (c *core) handleTimeoutMsg() {
 	round := c.current.Round()
 	nextRound := new(big.Int).Add(round, common.Big1)
 
-	logger.Warn("QBFT: TIMER CHANGING ROUND", "pr", c.current.preparedRound)
+	logger.Warn("IBFT: TIMER CHANGING ROUND", "pr", c.current.preparedRound)
 	c.startNewRound(nextRound)
-	logger.Warn("QBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
+	logger.Warn("IBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
 
 	// Send Round Change
 	c.broadcastRoundChange(nextRound)
@@ -247,12 +247,12 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 	verify := func(m qbfttypes.QBFTMessage) error {
 		payload, err := m.EncodePayloadForSigning()
 		if err != nil {
-			logger.Error("QBFT: invalid message payload", "err", err)
+			logger.Error("IBFT: invalid message payload", "err", err)
 			return err
 		}
 		source, err := c.validateFn(payload, m.Signature())
 		if err != nil {
-			logger.Error("QBFT: invalid message signature", "err", err)
+			logger.Error("IBFT: invalid message signature", "err", err)
 			return errInvalidSigner
 		}
 		m.SetSource(source)

@@ -42,7 +42,7 @@ func (c *core) broadcastCommit() {
 	// Create Commit Seal
 	commitSeal, err := c.backend.SignWithoutHashing(PrepareCommittedSeal(header, uint32(c.currentView().Round.Uint64())))
 	if err != nil {
-		logger.Error("QBFT: failed to create COMMIT seal", "sub", sub, "err", err)
+		logger.Error("IBFT: failed to create COMMIT seal", "sub", sub, "err", err)
 		return
 	}
 
@@ -52,13 +52,13 @@ func (c *core) broadcastCommit() {
 	// Sign Message
 	encodedPayload, err := commit.EncodePayloadForSigning()
 	if err != nil {
-		withMsg(logger, commit).Error("QBFT: failed to encode payload of COMMIT message", "err", err)
+		withMsg(logger, commit).Error("IBFT: failed to encode payload of COMMIT message", "err", err)
 		return
 	}
 
 	signature, err := c.backend.Sign(encodedPayload)
 	if err != nil {
-		withMsg(logger, commit).Error("QBFT: failed to sign COMMIT message", "err", err)
+		withMsg(logger, commit).Error("IBFT: failed to sign COMMIT message", "err", err)
 		return
 	}
 	commit.SetSignature(signature)
@@ -66,15 +66,15 @@ func (c *core) broadcastCommit() {
 	// RLP-encode message
 	payload, err := rlp.EncodeToBytes(&commit)
 	if err != nil {
-		withMsg(logger, commit).Error("QBFT: failed to encode COMMIT message", "err", err)
+		withMsg(logger, commit).Error("IBFT: failed to encode COMMIT message", "err", err)
 		return
 	}
 
-	withMsg(logger, commit).Info("QBFT: broadcast COMMIT message", "payload", hexutil.Encode(payload))
+	withMsg(logger, commit).Info("IBFT: broadcast COMMIT message", "payload", hexutil.Encode(payload))
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, commit.Code(), payload); err != nil {
-		withMsg(logger, commit).Error("QBFT: failed to broadcast COMMIT message", "err", err)
+		withMsg(logger, commit).Error("IBFT: failed to broadcast COMMIT message", "err", err)
 		return
 	}
 }
@@ -88,17 +88,17 @@ func (c *core) broadcastCommit() {
 func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 	logger := c.currentLogger(true, commit)
 
-	logger.Info("QBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
+	logger.Info("IBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
 
 	// Check digest
 	if commit.Digest != c.current.Proposal().Hash() {
-		logger.Error("QBFT: invalid COMMIT message digest", "digest", commit.Digest, "proposal", c.current.Proposal().Hash().String())
+		logger.Error("IBFT: invalid COMMIT message digest", "digest", commit.Digest, "proposal", c.current.Proposal().Hash().String())
 		return errInvalidMessage
 	}
 
 	// Add to received msgs
 	if err := c.current.QBFTCommits.Add(commit); err != nil {
-		c.logger.Error("QBFT: failed to save COMMIT message", "err", err)
+		c.logger.Error("IBFT: failed to save COMMIT message", "err", err)
 		return err
 	}
 
@@ -106,10 +106,10 @@ func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 
 	// If we reached thresho
 	if c.current.QBFTCommits.Size() >= c.QuorumSize() {
-		logger.Info("QBFT: received quorum of COMMIT messages")
+		logger.Info("IBFT: received quorum of COMMIT messages")
 		c.commitQBFT()
 	} else {
-		logger.Debug("QBFT: accepted new COMMIT messages")
+		logger.Debug("IBFT: accepted new COMMIT messages")
 	}
 
 	return nil
@@ -134,7 +134,7 @@ func (c *core) commitQBFT() {
 
 		// Commit proposal to database
 		if err := c.backend.Commit(proposal, committedSeals, c.currentView().Round); err != nil {
-			c.currentLogger(true, nil).Error("QBFT: error committing proposal", "err", err)
+			c.currentLogger(true, nil).Error("IBFT: error committing proposal", "err", err)
 			c.broadcastNextRoundChange()
 			return
 		}

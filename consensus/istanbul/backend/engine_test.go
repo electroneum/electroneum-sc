@@ -36,7 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey, cfg *istanbul.Config) (*core.BlockChain, *Backend) {
+func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey, cfg istanbul.Config) (*core.BlockChain, *Backend) {
 	memDB := rawdb.NewMemoryDatabase()
 
 	// Use the first key as private key
@@ -83,9 +83,9 @@ func newBlockChain(n int) (*core.BlockChain, *Backend) {
 }
 
 // copyConfig create a copy of istanbul.Config, so that changing it does not update the original
-func copyConfig(config *istanbul.Config) *istanbul.Config {
+func copyConfig(config *istanbul.Config) istanbul.Config {
 	cpy := *config
-	return &cpy
+	return cpy
 }
 
 func makeHeader(parent *types.Block, config *istanbul.Config) *types.Header {

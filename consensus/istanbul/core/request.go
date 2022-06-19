@@ -29,14 +29,14 @@ import (
 func (c *core) handleRequest(request *Request) error {
 	logger := c.currentLogger(true, nil)
 
-	logger.Info("QBFT: handle block proposal request")
+	logger.Info("IBFT: handle block proposal request")
 
 	if err := c.checkRequestMsg(request); err != nil {
 		if err == errInvalidMessage {
-			logger.Error("QBFT: invalid request")
+			logger.Error("IBFT: invalid request")
 			return err
 		}
-		logger.Error("QBFT: unexpected request", "err", err, "number", request.Proposal.Number(), "hash", request.Proposal.Hash())
+		logger.Error("IBFT: unexpected request", "err", err, "number", request.Proposal.Number(), "hash", request.Proposal.Hash())
 		return err
 	}
 
@@ -73,7 +73,7 @@ func (c *core) checkRequestMsg(request *Request) error {
 func (c *core) storeRequestMsg(request *Request) {
 	logger := c.currentLogger(true, nil).New("proposal.number", request.Proposal.Number(), "proposal.hash", request.Proposal.Hash())
 
-	logger.Trace("QBFT: store block proposal request for future treatment")
+	logger.Trace("IBFT: store block proposal request for future treatment")
 
 	c.pendingRequestsMu.Lock()
 	defer c.pendingRequestsMu.Unlock()
@@ -88,27 +88,27 @@ func (c *core) processPendingRequests() {
 	defer c.pendingRequestsMu.Unlock()
 
 	logger := c.currentLogger(true, nil)
-	logger.Debug("QBFT: lookup for pending block proposal requests")
+	logger.Debug("IBFT: lookup for pending block proposal requests")
 
 	for !(c.pendingRequests.Empty()) {
 		m, prio := c.pendingRequests.Pop()
 		r, ok := m.(*Request)
 		if !ok {
-			logger.Error("QBFT: malformed pending block proposal request, skip", "msg", m)
+			logger.Error("IBFT: malformed pending block proposal request, skip", "msg", m)
 			continue
 		}
 		// Push back if it's a future message
 		err := c.checkRequestMsg(r)
 		if err != nil {
 			if err == errFutureMessage {
-				logger.Trace("QBFT: stop looking up for pending block proposal request")
+				logger.Trace("IBFT: stop looking up for pending block proposal request")
 				c.pendingRequests.Push(m, prio)
 				break
 			}
-			logger.Trace("QBFT: skip pending invalid block proposal request", "number", r.Proposal.Number(), "hash", r.Proposal.Hash(), "err", err)
+			logger.Trace("IBFT: skip pending invalid block proposal request", "number", r.Proposal.Number(), "hash", r.Proposal.Hash(), "err", err)
 			continue
 		}
-		logger.Debug("QBFT: found pending block proposal request", "proposal.number", r.Proposal.Number(), "proposal.hash", r.Proposal.Hash())
+		logger.Debug("IBFT: found pending block proposal request", "proposal.number", r.Proposal.Number(), "proposal.hash", r.Proposal.Hash())
 
 		go c.sendEvent(istanbul.RequestEvent{
 			Proposal: r.Proposal,

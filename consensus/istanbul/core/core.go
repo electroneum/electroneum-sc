@@ -129,10 +129,10 @@ func (c *core) startNewRound(round *big.Int) {
 		logger = logger.New("lastProposal.number", lastProposal.Number().Uint64(), "lastProposal.hash", lastProposal.Hash())
 	}
 
-	logger.Info("QBFT: initialize new round")
+	logger.Info("IBFT: initialize new round")
 
 	if c.current == nil {
-		logger.Debug("QBFT: start at the initial round")
+		logger.Debug("IBFT: start at the initial round")
 	} else if lastProposal.Number().Cmp(c.current.Sequence()) >= 0 {
 		diff := new(big.Int).Sub(lastProposal.Number(), c.current.Sequence())
 		sequenceMeter.Mark(new(big.Int).Add(diff, common.Big1).Int64())
@@ -141,19 +141,19 @@ func (c *core) startNewRound(round *big.Int) {
 			consensusTimer.UpdateSince(c.consensusTimestamp)
 			c.consensusTimestamp = time.Time{}
 		}
-		logger.Debug("QBFT: catch up last block proposal")
+		logger.Debug("IBFT: catch up last block proposal")
 	} else if lastProposal.Number().Cmp(big.NewInt(c.current.Sequence().Int64()-1)) == 0 {
 		if round.Cmp(common.Big0) == 0 {
 			// same seq and round, don't need to start new round
-			logger.Debug("QBFT: same round, no need to start new round")
+			logger.Debug("IBFT: same round, no need to start new round")
 			return
 		} else if round.Cmp(c.current.Round()) < 0 {
-			logger.Warn("QBFT: next round is inferior to current round")
+			logger.Warn("IBFT: next round is inferior to current round")
 			return
 		}
 		roundChange = true
 	} else {
-		logger.Warn("QBFT: next sequence is before last block proposal")
+		logger.Warn("IBFT: next sequence is before last block proposal")
 		return
 	}
 
@@ -204,7 +204,7 @@ func (c *core) startNewRound(round *big.Int) {
 		c.newRoundChangeTimer()
 	}
 
-	oldLogger.Info("QBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
+	oldLogger.Info("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
 }
 
 // updateRoundState updates round state by checking if locking block is necessary
@@ -220,7 +220,7 @@ func (c *core) setState(state State) {
 	if c.state != state {
 		oldState := c.state
 		c.state = state
-		c.currentLogger(false, nil).Info("QBFT: changed state", "old.state", oldState.String(), "new.state", state.String())
+		c.currentLogger(false, nil).Info("IBFT: changed state", "old.state", oldState.String(), "new.state", state.String())
 	}
 	if state == StateAcceptRequest {
 		c.processPendingRequests()
@@ -257,7 +257,7 @@ func (c *core) newRoundChangeTimer() {
 
 	timeout := baseTimeout * time.Duration(math.Pow(2, float64(round)))
 
-	c.currentLogger(true, nil).Trace("QBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
+	c.currentLogger(true, nil).Trace("IBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.roundChangeTimer = time.AfterFunc(timeout, func() {
 		c.sendEvent(timeoutEvent{})
 	})

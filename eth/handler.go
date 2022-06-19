@@ -96,7 +96,6 @@ type handlerConfig struct {
 
 	RequiredBlocks map[uint64]common.Hash // Hard coded map of required block hashes for sync challenges
 
-	// Quorum
 	Engine consensus.Engine
 }
 
@@ -135,7 +134,6 @@ type handler struct {
 	wg        sync.WaitGroup
 	peerWG    sync.WaitGroup
 
-	// Quorum
 	engine consensus.Engine
 }
 
@@ -159,11 +157,9 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		engine:         config.Engine,
 	}
 
-	// Quorum
 	if handler, ok := h.engine.(consensus.Handler); ok {
 		handler.SetBroadcaster(h)
 	}
-	// /Quorum
 
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap
@@ -346,10 +342,8 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	if err := peer.Handshake(h.networkID, td, hash, genesis.Hash(), forkID, h.forkFilter); err != nil {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
 
-		// Quorum
 		// When the Handshake() returns an error, the Run method corresponding to `eth` protocol returns with the error, causing the peer to drop, signal subprotocol as well to exit the `Run` method
 		peer.EthPeerDisconnected <- struct{}{}
-		// End Quorum
 		return err
 	}
 	reject := false // reserved peer slots
@@ -375,10 +369,8 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	if err := h.peers.registerPeer(peer, snap); err != nil {
 		peer.Log().Error("Ethereum peer registration failed", "err", err)
 
-		// Quorum
 		// When the Register() returns an error, the Run method corresponding to `eth` protocol returns with the error, causing the peer to drop, signal subprotocol as well to exit the `Run` method
 		peer.EthPeerDisconnected <- struct{}{}
-		// End Quorum
 		return err
 	}
 	defer h.unregisterPeer(peer.ID())
@@ -493,9 +485,7 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		}(number, hash)
 	}
 
-	// Quorum notify other subprotocols that the eth peer is ready, and has been added to the peerset.
 	p.EthPeerRegistered <- struct{}{}
-	// Quorum
 
 	// Handle incoming messages until the connection is torn down
 	return handler(peer)
@@ -593,7 +583,6 @@ func (h *handler) Stop() {
 	log.Info("Ethereum protocol stopped")
 }
 
-// Quorum
 func (h *handler) Enqueue(id string, block *types.Block) {
 	h.blockFetcher.Enqueue(id, block)
 }
@@ -661,7 +650,7 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 	for _, tx := range txs {
 		peers := h.peers.peersWithoutTransaction(tx.Hash())
 		// Send the tx unconditionally to a subset of our peers
-		// Quorum changes for broadcasting to all peers not only Sqrt
+		// Ibft protocol changes for broadcasting to all peers not only Sqrt
 		//numDirect := int(math.Sqrt(float64(len(peers))))
 		for _, peer := range peers {
 			txset[peer] = append(txset[peer], tx.Hash())
@@ -712,7 +701,6 @@ func (h *handler) txBroadcastLoop() {
 	}
 }
 
-// Quorum
 // NodeInfo represents a short summary of the Ethereum sub-protocol metadata
 // known about the host peer.
 type NodeInfo struct {
@@ -727,11 +715,6 @@ type NodeInfo struct {
 // NodeInfo retrieves some protocol metadata about the running host node.
 func (h *handler) NodeInfo() *NodeInfo {
 	currentBlock := h.chain.CurrentBlock()
-	// //Quorum
-	//
-	// changes done to fetch maxCodeSize dynamically based on the
-	// maxCodeSizeConfig changes
-	// /Quorum
 	chainConfig := h.chain.Config()
 
 	return &NodeInfo{
@@ -744,12 +727,11 @@ func (h *handler) NodeInfo() *NodeInfo {
 	}
 }
 
-// Quorum
 func (h *handler) getConsensusAlgorithm() string {
 	var consensusAlgo string
 	switch h.engine.(type) {
 	case consensus.Istanbul:
-		consensusAlgo = "istanbul"
+		consensusAlgo = "IBFT"
 	case *clique.Clique:
 		consensusAlgo = "clique"
 	case *ethash.Ethash:
@@ -772,12 +754,12 @@ func (h *handler) FindPeers(targets map[common.Address]bool) map[common.Address]
 	return m
 }
 
-// makeQuorumConsensusProtocol is similar to eth/handler.go -> makeProtocol. Called from eth/handler.go -> Protocols.
+// makeIbftConsensusProtocol is similar to eth/handler.go -> makeProtocol. Called from eth/handler.go -> Protocols.
 // returns the supported subprotocol to the p2p server.
-// The Run method starts the protocol and is called by the p2p server. The quorum consensus subprotocol,
+// The Run method starts the protocol and is called by the p2p server. The ibft consensus subprotocol,
 // leverages the peer created and managed by the "eth" subprotocol.
-// The quorum consensus protocol requires that the "eth" protocol is running as well.
-func (h *handler) makeQuorumConsensusProtocol(ProtoName string, version uint, length uint64) p2p.Protocol {
+// The ibft consensus protocol requires that the "eth" protocol is running as well.
+func (h *handler) makeIbftConsensusProtocol(ProtoName string, version uint, length uint64) p2p.Protocol {
 
 	return p2p.Protocol{
 		Name:    ProtoName,
@@ -788,9 +770,9 @@ func (h *handler) makeQuorumConsensusProtocol(ProtoName string, version uint, le
 			/*
 			* 1. wait for the eth protocol to create and register an eth peer.
 			* 2. get the associate eth peer that was registered by he "eth" protocol.
-			* 3. add the rw protocol for the quorum subprotocol to the eth peer.
+			* 3. add the rw protocol for the ibft subprotocol to the eth peer.
 			* 4. start listening for incoming messages.
-			* 5. the incoming message will be sent on the quorum specific subprotocol, e.g. "istanbul/100".
+			* 5. the incoming message will be sent on the ibft specific subprotocol, e.g. "istanbul/100".
 			* 6. send messages to the consensus engine handler.
 			* 7. messages to other to other peers listening to the subprotocol can be sent using the
 			*    (eth)peer.ConsensusSend() which will write to the protoRW.
@@ -808,7 +790,7 @@ func (h *handler) makeQuorumConsensusProtocol(ProtoName string, version uint, le
 				}
 				if ethPeer != nil {
 					p.Log().Debug("consensus subprotocol retrieved eth peer from peerset", "ethPeer.id", p2pPeerId, "ProtoName", ProtoName)
-					// add the rw protocol for the quorum subprotocol to the eth peer.
+					// add the rw protocol for the ibft subprotocol to the eth peer.
 					ethPeer.AddConsensusProtoRW(rw)
 					return h.handleConsensusLoop(p, rw)
 				}
@@ -837,7 +819,7 @@ func (h *handler) handleConsensusLoop(p *p2p.Peer, protoRW p2p.MsgReadWriter) er
 	// Handle incoming messages until the connection is torn down
 	for {
 		if err := h.handleConsensus(p, protoRW); err != nil {
-			p.Log().Debug("Ethereum quorum message handling failed", "err", err)
+			p.Log().Debug("Ethereum ibft message handling failed", "err", err)
 			return err
 		}
 	}
@@ -860,7 +842,7 @@ func (h *handler) handleConsensus(p *p2p.Peer, protoRW p2p.MsgReadWriter) error 
 	handled, err := h.handleConsensusMsg(p, msg)
 	if handled {
 		p.Log().Debug("consensus message was handled by consensus engine", "handled", handled,
-			"quorumConsensusProtocolName", quorumConsensusProtocolName, "err", err)
+			"ibftConsensusProtocolName", ibftConsensusProtocolName, "err", err)
 		return err
 	}
 
@@ -879,7 +861,7 @@ func (h *handler) handleConsensusMsg(p *p2p.Peer, msg p2p.Msg) (bool, error) {
 
 // makeLegacyProtocol is basically a copy of the eth makeProtocol, but for legacy subprotocols, e.g. "istanbul/99" "istabnul/64"
 // If support legacy subprotocols is removed, remove this and associated code as well.
-// If quorum is using a legacy protocol then the "eth" subprotocol should not be available.
+// If ibft protocol is using a legacy protocol then the "eth" subprotocol should not be available.
 func (h *handler) makeLegacyProtocol(protoName string, version uint, length uint64) p2p.Protocol {
 	log.Debug("registering a legacy protocol ", "protoName", protoName)
 	return p2p.Protocol{
@@ -907,5 +889,3 @@ func (h *handler) makeLegacyProtocol(protoName string, version uint, length uint
 		},
 	}
 }
-
-// End Quorum

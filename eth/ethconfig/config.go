@@ -224,27 +224,18 @@ type Config struct {
 func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
 	// If proof-of-authority is requested, set it up
 	var engine consensus.Engine
-	if chainConfig.Clique != nil {
+
+	if chainConfig.IBFT != nil {
+		return istanbulBackend.New(istanbul.Config{
+			BlockPeriod:            chainConfig.IBFT.BlockPeriodSeconds,
+			Epoch:                  chainConfig.IBFT.EpochLength,
+			ProposerPolicy:         istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
+			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
+			AllowedFutureBlockTime: 0,
+		}, stack.GetNodeKey(), db)
+	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)
 	} else {
-
-		//Quorum
-		// If Istanbul is requested, set it up
-		if chainConfig.Istanbul != nil {
-			log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.qbft on genesis file")
-			if chainConfig.Istanbul.Epoch != 0 {
-				config.Istanbul.Epoch = chainConfig.Istanbul.Epoch
-			}
-			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
-			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
-
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-		if chainConfig.QBFT != nil {
-			setBFTConfig(&config.Istanbul, chainConfig.QBFT.BFTConfig)
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-
 		switch config.Ethash.PowMode {
 		case ethash.ModeFake:
 			log.Warn("Ethash used in fake mode")
@@ -268,19 +259,4 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 		engine.(*ethash.Ethash).SetThreads(-1) // Disable CPU mining
 	}
 	return beacon.New(engine)
-}
-
-func setBFTConfig(istanbulConfig *istanbul.Config, bftConfig *params.BFTConfig) {
-	if bftConfig.BlockPeriodSeconds != 0 {
-		istanbulConfig.BlockPeriod = bftConfig.BlockPeriodSeconds
-	}
-	if bftConfig.RequestTimeoutSeconds != 0 {
-		istanbulConfig.RequestTimeout = bftConfig.RequestTimeoutSeconds
-	}
-	if bftConfig.EpochLength != 0 {
-		istanbulConfig.Epoch = bftConfig.EpochLength
-	}
-	if bftConfig.ProposerPolicy != 0 {
-		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(bftConfig.ProposerPolicy))
-	}
 }

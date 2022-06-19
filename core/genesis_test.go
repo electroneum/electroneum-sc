@@ -32,7 +32,7 @@ import (
 
 func TestInvalidCliqueConfig(t *testing.T) {
 	block := DefaultTestnetGenesisBlock()
-	block.Config.Istanbul = &params.IstanbulConfig{}
+	block.Config.IBFT = &params.IBFTConfig{}
 	block.Config.Clique = &params.CliqueConfig{
 		Period: 15,
 		Epoch:  30000,

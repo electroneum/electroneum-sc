@@ -266,9 +266,8 @@ func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {
 	}
 }
 
-// Quorum
-// quorumValidateEthService checks quorum features that depend on the ethereum service
-func quorumValidateEthService(stack *node.Node) {
+// ibftValidateEthService checks ibft features that depend on the ethereum service
+func ibftValidateEthService(stack *node.Node) {
 	var ethereum *eth.Ethereum
 
 	err := stack.Lifecycle(&ethereum)
@@ -276,12 +275,12 @@ func quorumValidateEthService(stack *node.Node) {
 		utils.Fatalf("Error retrieving Ethereum service: %v", err)
 	}
 
-	quorumValidateConsensus(ethereum)
+	ibftValidateConsensus(ethereum)
 }
 
-// quorumValidateConsensus checks if a consensus was used. The node is killed if consensus was not used
-func quorumValidateConsensus(ethereum *eth.Ethereum) {
-	if ethereum.BlockChain().Config().Istanbul == nil && ethereum.BlockChain().Config().QBFT == nil && ethereum.BlockChain().Config().Clique == nil {
+// ibftValidateConsensus checks if a consensus was used. The node is killed if consensus was not used
+func ibftValidateConsensus(ethereum *eth.Ethereum) {
+	if ethereum.BlockChain().Config().IBFT == nil && ethereum.BlockChain().Config().Clique == nil {
 		utils.Fatalf("Consensus not specified. Exiting!!")
 	}
 }

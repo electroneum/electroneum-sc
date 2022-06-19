@@ -109,11 +109,11 @@ func (c *core) addToBacklog(msg qbfttypes.QBFTMessage) {
 
 	src := msg.Source()
 	if src == c.Address() {
-		logger.Warn("QBFT: backlog from self")
+		logger.Warn("IBFT: backlog from self")
 		return
 	}
 
-	logger.Trace("QBFT: new backlog message", "backlogs_size", len(c.backlogs))
+	logger.Trace("IBFT: new backlog message", "backlogs_size", len(c.backlogs))
 
 	c.backlogsMu.Lock()
 	defer c.backlogsMu.Unlock()
@@ -148,7 +148,7 @@ func (c *core) processBacklog() {
 		logger := c.logger.New("from", src, "state", c.state)
 		isFuture := false
 
-		logger.Trace("QBFT: process backlog")
+		logger.Trace("IBFT: process backlog")
 
 		// We stop processing if
 		//   1. backlog is empty
@@ -170,15 +170,15 @@ func (c *core) processBacklog() {
 			if err != nil {
 				if err == errFutureMessage {
 					// this is still a future message
-					logger.Trace("QBFT: stop processing backlog", "msg", m)
+					logger.Trace("IBFT: stop processing backlog", "msg", m)
 					backlog.Push(m, prio)
 					isFuture = true
 					break
 				}
-				logger.Trace("QBFT: skip backlog message", "msg", m, "err", err)
+				logger.Trace("IBFT: skip backlog message", "msg", m, "err", err)
 				continue
 			}
-			logger.Trace("QBFT: post backlog event", "msg", m)
+			logger.Trace("IBFT: post backlog event", "msg", m)
 
 			event.src = src
 			go c.sendEvent(event)

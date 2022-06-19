@@ -230,15 +230,6 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 			cli.HelpFlag,
 		},
 	},
-	// QUORUM
-	{
-		Name: "ISTANBUL",
-		Flags: []cli.Flag{
-			utils.IstanbulRequestTimeoutFlag,
-			utils.IstanbulBlockPeriodFlag,
-		},
-	},
-	// END QUORUM
 }
 
 func init() {

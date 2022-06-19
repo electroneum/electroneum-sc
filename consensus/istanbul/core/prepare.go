@@ -38,12 +38,12 @@ func (c *core) broadcastPrepare() {
 	// Sign Message
 	encodedPayload, err := prepare.EncodePayloadForSigning()
 	if err != nil {
-		withMsg(logger, prepare).Error("QBFT: failed to encode payload of PREPARE message", "err", err)
+		withMsg(logger, prepare).Error("IBFT: failed to encode payload of PREPARE message", "err", err)
 		return
 	}
 	signature, err := c.backend.Sign(encodedPayload)
 	if err != nil {
-		withMsg(logger, prepare).Error("QBFT: failed to sign PREPARE message", "err", err)
+		withMsg(logger, prepare).Error("IBFT: failed to sign PREPARE message", "err", err)
 		return
 	}
 	prepare.SetSignature(signature)
@@ -51,15 +51,15 @@ func (c *core) broadcastPrepare() {
 	// RLP-encode message
 	payload, err := rlp.EncodeToBytes(&prepare)
 	if err != nil {
-		withMsg(logger, prepare).Error("QBFT: failed to encode PREPARE message", "err", err)
+		withMsg(logger, prepare).Error("IBFT: failed to encode PREPARE message", "err", err)
 		return
 	}
 
-	withMsg(logger, prepare).Info("QBFT: broadcast PREPARE message", "payload", hexutil.Encode(payload))
+	withMsg(logger, prepare).Info("IBFT: broadcast PREPARE message", "payload", hexutil.Encode(payload))
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, prepare.Code(), payload); err != nil {
-		withMsg(logger, prepare).Error("QBFT: failed to broadcast PREPARE message", "err", err)
+		withMsg(logger, prepare).Error("IBFT: failed to broadcast PREPARE message", "err", err)
 		return
 	}
 }
@@ -73,17 +73,17 @@ func (c *core) broadcastPrepare() {
 func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
 	logger := c.currentLogger(true, prepare).New()
 
-	logger.Info("QBFT: handle PREPARE message", "prepares.count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
+	logger.Info("IBFT: handle PREPARE message", "prepares.count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
 
 	// Check digest
 	if prepare.Digest != c.current.Proposal().Hash() {
-		logger.Error("QBFT: invalid PREPARE message digest")
+		logger.Error("IBFT: invalid PREPARE message digest")
 		return errInvalidMessage
 	}
 
 	// Save PREPARE messages
 	if err := c.current.QBFTPrepares.Add(prepare); err != nil {
-		logger.Error("QBFT: failed to save PREPARE message", "err", err)
+		logger.Error("IBFT: failed to save PREPARE message", "err", err)
 		return err
 	}
 
@@ -92,7 +92,7 @@ func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
 	// Change to "Prepared" state if we've received quorum of PREPARE messages
 	// and we are in earlier state than "Prepared"
 	if (c.current.QBFTPrepares.Size() >= c.QuorumSize()) && c.state.Cmp(StatePrepared) < 0 {
-		logger.Info("QBFT: received quorum of PREPARE messages")
+		logger.Info("IBFT: received quorum of PREPARE messages")
 
 		// Accumulates PREPARE messages
 		c.current.preparedRound = c.currentView().Round
@@ -105,14 +105,14 @@ func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
 		}
 
 		if c.current.Proposal() != nil && c.current.Proposal().Hash() == prepare.Digest {
-			logger.Debug("QBFT: PREPARE message matches proposal", "proposal", c.current.Proposal().Hash(), "prepare", prepare.Digest)
+			logger.Debug("IBFT: PREPARE message matches proposal", "proposal", c.current.Proposal().Hash(), "prepare", prepare.Digest)
 			c.current.preparedBlock = c.current.Proposal()
 		}
 
 		c.setState(StatePrepared)
 		c.broadcastCommit()
 	} else {
-		logger.Debug("QBFT: accepted PREPARE messages")
+		logger.Debug("IBFT: accepted PREPARE messages")
 	}
 
 	return nil

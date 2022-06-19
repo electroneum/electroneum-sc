@@ -152,10 +152,6 @@ var (
 		utils.GpoIgnoreGasPriceFlag,
 		utils.MinerNotifyFullFlag,
 		configFileFlag,
-		// Quorum
-		utils.IstanbulRequestTimeoutFlag,
-		utils.IstanbulBlockPeriodFlag,
-		// End-Quorum
 	}, utils.NetworkFlags, utils.DatabasePathFlags)
 
 	rpcFlags = []cli.Flag{
@@ -437,10 +433,9 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 		}
 	}
 
-	// Quorum
-	// checks quorum features that depend on the ethereum service
-	if backend.ChainConfig().Istanbul != nil {
-		quorumValidateEthService(stack)
+	// checks ibft features that depend on the ethereum service
+	if backend.ChainConfig().IBFT != nil {
+		ibftValidateEthService(stack)
 	}
 
 }

@@ -45,14 +45,14 @@ const (
 )
 
 // New creates an Ethereum backend for Istanbul core engine.
-func New(config *istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database) *Backend {
+func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database) *Backend {
 	// Allocate the snapshot caches and create the engine
 	recents, _ := lru.NewARC(inmemorySnapshots)
 	recentMessages, _ := lru.NewARC(inmemoryPeers)
 	knownMessages, _ := lru.NewARC(inmemoryMessages)
 
 	sb := &Backend{
-		config:           config,
+		config:           &config,
 		istanbulEventMux: new(event.TypeMux),
 		privateKey:       privateKey,
 		address:          crypto.PubkeyToAddress(privateKey.PublicKey),
@@ -194,7 +194,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// Check if the proposal is a valid block
 	block, ok := proposal.(*types.Block)
 	if !ok {
-		sb.logger.Error("BFT: invalid block proposal", "proposal", proposal)
+		sb.logger.Error("IBFT: invalid block proposal", "proposal", proposal)
 		return istanbulcommon.ErrInvalidProposal
 	}
 
@@ -211,7 +211,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// update block's header
 	block = block.WithSeal(h)
 
-	sb.logger.Info("BFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
+	sb.logger.Info("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
 
 	// - if the proposed and committed blocks are the same, send the proposed hash
 	//   to commit channel, which is being watched inside the engine.Seal() function.
@@ -242,13 +242,13 @@ func (sb *Backend) Verify(proposal istanbul.Proposal) (time.Duration, error) {
 	// Check if the proposal is a valid block
 	block, ok := proposal.(*types.Block)
 	if !ok {
-		sb.logger.Error("BFT: invalid block proposal", "proposal", proposal)
+		sb.logger.Error("IBFT: invalid block proposal", "proposal", proposal)
 		return 0, istanbulcommon.ErrInvalidProposal
 	}
 
 	// check bad block
 	if sb.HasBadProposal(block.Hash()) {
-		sb.logger.Warn("BFT: bad block proposal", "proposal", proposal)
+		sb.logger.Warn("IBFT: bad block proposal", "proposal", proposal)
 		return 0, core.ErrBannedHash
 	}
 
@@ -324,7 +324,7 @@ func (sb *Backend) LastProposal() (istanbul.Proposal, common.Address) {
 		var err error
 		proposer, err = sb.Author(block.Header())
 		if err != nil {
-			sb.logger.Error("BFT: last block proposal invalid", "err", err)
+			sb.logger.Error("IBFT: last block proposal invalid", "err", err)
 			return nil, common.Address{}
 		}
 	}
@@ -345,13 +345,13 @@ func (sb *Backend) Close() error {
 }
 
 func (sb *Backend) startQBFT() error {
-	sb.logger.Info("BFT: activate QBFT")
-	sb.logger.Trace("BFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
+	sb.logger.Info("IBFT: activate QBFT")
+	sb.logger.Trace("IBFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
 	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
 
 	sb.core = qbftcore.New(sb, sb.config)
 	if err := sb.core.Start(); err != nil {
-		sb.logger.Error("BFT: failed to activate QBFT", "err", err)
+		sb.logger.Error("IBFT: failed to activate QBFT", "err", err)
 		return err
 	}
 
@@ -363,9 +363,9 @@ func (sb *Backend) stop() error {
 	sb.core = nil
 
 	if core != nil {
-		sb.logger.Info("BFT: deactivate")
+		sb.logger.Info("IBFT: deactivate")
 		if err := core.Stop(); err != nil {
-			sb.logger.Error("BFT: failed to deactivate", "err", err)
+			sb.logger.Error("IBFT: failed to deactivate", "err", err)
 			return err
 		}
 	}
@@ -375,7 +375,7 @@ func (sb *Backend) stop() error {
 
 // StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
 func (sb *Backend) StartQBFTConsensus() error {
-	sb.logger.Info("BFT: switch from IBFT to QBFT")
+	sb.logger.Info("IBFT: switch from IBFT to QBFT")
 	if err := sb.stop(); err != nil {
 		return err
 	}
