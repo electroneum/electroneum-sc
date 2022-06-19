@@ -146,20 +146,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err := pruner.RecoverPruning(stack.ResolvePath(""), chainDb, stack.ResolvePath(config.TrieCleanCacheJournal)); err != nil {
 		log.Error("Failed to recover state", "error", err)
 	}
-	// Quorum
-	if chainConfig.IsQuorum {
-		// changes to manipulate the chain id for migration from 2.0.2 and below version to 2.0.3
-		// version of Quorum  - this is applicable for v2.0.3 onwards
-		if (chainConfig.ChainID != nil && chainConfig.ChainID.Int64() == 1) || config.NetworkId == 1 {
-			return nil, errors.New("cannot have chain id or network id as 1")
-		}
-		if chainConfig.Istanbul != nil && (chainConfig.IBFT != nil || chainConfig.QBFT != nil) {
-			return nil, errors.New("the attributes config.Istanbul and config.[IBFT|QBFT] are mutually exclusive on the genesis file")
-		}
-		if chainConfig.IBFT != nil && chainConfig.QBFT != nil {
-			return nil, errors.New("the attributes config.IBFT and config.QBFT are mutually exclusive on the genesis file")
-		}
+
+	if chainConfig.Istanbul != nil && (chainConfig.IBFT != nil || chainConfig.QBFT != nil) {
+		return nil, errors.New("the attributes config.Istanbul and config.[IBFT|QBFT] are mutually exclusive on the genesis file")
 	}
+	if chainConfig.IBFT != nil && chainConfig.QBFT != nil {
+		return nil, errors.New("the attributes config.IBFT and config.QBFT are mutually exclusive on the genesis file")
+	}
+
 	merger := consensus.NewMerger(chainDb)
 	eth := &Ethereum{
 		config:            config,
@@ -178,7 +172,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		shutdownTracker:   shutdowncheck.NewShutdownTracker(chainDb),
 	}
 
-	// Quorum: Set protocol Name/Version
+	// Set protocol Name/Version
 	// keep `var protocolName = "eth"` as is, and only update the quorum consensus specific protocol
 	// This is used to enable the eth service to return multiple devp2p subprotocols.
 	// Previously, for istanbul/64 istnbul/99 and clique (v2.6) `protocolName` would be overridden and
@@ -186,17 +180,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// communicate over the "eth" subprotocol, e.g. "eth" or "istanbul/99" but not eth" and "istanbul/99".
 	// With this change, support is added so that the "eth" subprotocol remains and optionally a consensus subprotocol
 	// can be added allowing the node to communicate over "eth" and an optional consensus subprotocol, e.g. "eth" and "istanbul/100"
-	if chainConfig.IsQuorum {
+	if chainConfig.Istanbul != nil {
 		quorumProtocol := eth.engine.Protocol()
 		// set the quorum specific consensus devp2p subprotocol, eth subprotocol remains set to protocolName as in upstream geth.
 		quorumConsensusProtocolName = quorumProtocol.Name
 		quorumConsensusProtocolVersions = quorumProtocol.Versions
 		quorumConsensusProtocolLengths = quorumProtocol.Lengths
-	}
 
-	// Quorum
-	// force to set the istanbul etherbase to node key address
-	if chainConfig.Istanbul != nil {
+		// force to set the istanbul etherbase to node key address
 		eth.etherbase = crypto.PubkeyToAddress(stack.GetNodeKey().PublicKey)
 	}
 
@@ -274,7 +265,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 
 	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
-	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().IsQuorum))
+	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().Istanbul != nil))
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
 	if eth.APIBackend.allowUnprotectedTxs {
@@ -311,7 +302,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	return eth, nil
 }
 
-func makeExtraData(extra []byte, isQuorum bool) []byte {
+func makeExtraData(extra []byte, isIstanbulConsensus bool) []byte {
 	if len(extra) == 0 {
 		// create default extradata
 		extra, _ = rlp.EncodeToBytes([]interface{}{
@@ -321,8 +312,8 @@ func makeExtraData(extra []byte, isQuorum bool) []byte {
 			runtime.GOOS,
 		})
 	}
-	if uint64(len(extra)) > params.GetMaximumExtraDataSize(isQuorum) {
-		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(isQuorum))
+	if uint64(len(extra)) > params.GetMaximumExtraDataSize(isIstanbulConsensus) {
+		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(isIstanbulConsensus))
 		extra = nil
 	}
 	return extra

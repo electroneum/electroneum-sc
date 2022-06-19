@@ -439,7 +439,7 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 
 	// Quorum
 	// checks quorum features that depend on the ethereum service
-	if backend.ChainConfig().IsQuorum {
+	if backend.ChainConfig().Istanbul != nil {
 		quorumValidateEthService(stack)
 	}
 

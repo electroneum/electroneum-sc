@@ -11,8 +11,7 @@
     "clique": {
       "period": 5,
       "epoch": 30000
-    },
-    "isQuorum": false
+    }
   },
   "difficulty": "1",
   "gasLimit": "8000000",
