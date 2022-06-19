@@ -253,6 +253,12 @@ type worker struct {
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
+	var sealingDepth uint
+	if _, ok := engine.(consensus.Istanbul); ok && chainConfig.IBFT != nil {
+		sealingDepth = 0
+	} else {
+		sealingDepth = sealingLogAtDepth
+	}
 	worker := &worker{
 		config:             config,
 		chainConfig:        chainConfig,
@@ -263,7 +269,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		isLocalBlock:       isLocalBlock,
 		localUncles:        make(map[common.Hash]*types.Block),
 		remoteUncles:       make(map[common.Hash]*types.Block),
-		unconfirmed:        newUnconfirmedBlocks(eth.BlockChain(), sealingLogAtDepth),
+		unconfirmed:        newUnconfirmedBlocks(eth.BlockChain(), sealingDepth),
 		pendingTasks:       make(map[common.Hash]*task),
 		txsCh:              make(chan core.NewTxsEvent, txChanSize),
 		chainHeadCh:        make(chan core.ChainHeadEvent, chainHeadChanSize),
