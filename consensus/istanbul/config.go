@@ -17,7 +17,6 @@
 package istanbul
 
 import (
-	"math/big"
 	"sync"
 
 	"github.com/naoina/toml"
@@ -123,7 +122,6 @@ type Config struct {
 	ProposerPolicy         *ProposerPolicy `toml:",omitempty"` // The policy for proposer selection
 	Epoch                  uint64          `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
 	AllowedFutureBlockTime uint64          `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
-	TestQBFTBlock          *big.Int        `toml:",omitempty"` // Fork block at which block confirmations are done using qbft consensus instead of ibft
 }
 
 var DefaultConfig = &Config{
@@ -132,30 +130,4 @@ var DefaultConfig = &Config{
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	AllowedFutureBlockTime: 0,
-	TestQBFTBlock:          big.NewInt(0),
-}
-
-// QBFTBlockNumber returns the qbftBlock fork block number, returns -1 if qbftBlock is not defined
-func (c Config) QBFTBlockNumber() int64 {
-	if c.TestQBFTBlock == nil {
-		return -1
-	}
-	return c.TestQBFTBlock.Int64()
-}
-
-// IsQBFTConsensusAt checks if qbft consensus is enabled for the block height identified by the given header
-func (c *Config) IsQBFTConsensusAt(blockNumber *big.Int) bool {
-	// If qbftBlock is not defined in genesis qbft consensus is not used
-	if c.TestQBFTBlock == nil {
-		return false
-	}
-
-	if c.TestQBFTBlock.Uint64() == 0 {
-		return true
-	}
-
-	if blockNumber.Cmp(c.TestQBFTBlock) >= 0 {
-		return true
-	}
-	return false
 }

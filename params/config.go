@@ -60,7 +60,6 @@ var (
 		Istanbul: &IstanbulConfig{
 			ProposerPolicy: 2,
 			Epoch:          30000,
-			TestQBFTBlock:  big.NewInt(0),
 		},
 	}
 
@@ -84,7 +83,6 @@ var (
 		Istanbul: &IstanbulConfig{
 			ProposerPolicy: 2,
 			Epoch:          30000,
-			TestQBFTBlock:  big.NewInt(0),
 		},
 	}
 
@@ -217,9 +215,8 @@ func (c *CliqueConfig) String() string {
 
 // IstanbulConfig is the consensus engine configs for Istanbul based sealing.
 type IstanbulConfig struct {
-	Epoch          uint64   `json:"epoch"`                   // Epoch length to reset votes and checkpoint
-	ProposerPolicy uint64   `json:"policy"`                  // The policy for proposer selection
-	TestQBFTBlock  *big.Int `json:"testQBFTBlock,omitempty"` // Fork block at which block confirmations are done using qbft consensus instead of ibft
+	Epoch          uint64 `json:"epoch"`  // Epoch length to reset votes and checkpoint
+	ProposerPolicy uint64 `json:"policy"` // The policy for proposer selection
 }
 
 // String implements the stringer interface, returning the consensus engine details.

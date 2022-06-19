@@ -51,16 +51,9 @@ func (sb *Backend) Protocol() consensus.Protocol {
 }
 
 func (sb *Backend) decode(msg p2p.Msg) ([]byte, common.Hash, error) {
-	var data []byte
-	if sb.IsQBFTConsensus() {
-		data = make([]byte, msg.Size)
-		if _, err := msg.Payload.Read(data); err != nil {
-			return nil, common.Hash{}, errPayloadReadFailed
-		}
-	} else {
-		if err := msg.Decode(&data); err != nil {
-			return nil, common.Hash{}, errDecodeFailed
-		}
+	var data []byte = make([]byte, msg.Size)
+	if _, err := msg.Payload.Read(data); err != nil {
+		return nil, common.Hash{}, errPayloadReadFailed
 	}
 	return data, istanbul.RLPHash(data), nil
 }

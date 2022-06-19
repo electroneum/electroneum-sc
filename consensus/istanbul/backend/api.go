@@ -219,7 +219,6 @@ func (api *API) Status(startBlockNum *rpc.BlockNumber, endBlockNum *rpc.BlockNum
 		}
 
 		numBlocks = end - start
-		header = api.chain.GetHeaderByNumber(end)
 		blockNumber = rpc.BlockNumber(end)
 	}
 

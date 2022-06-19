@@ -328,10 +328,9 @@ func TestVoting(t *testing.T) {
 			}
 		}
 
-		genesis := testutils.Genesis(validators, true)
+		genesis := testutils.Genesis(validators)
 		config := new(istanbul.Config)
 		*config = *istanbul.DefaultConfig
-		config.TestQBFTBlock = big.NewInt(0)
 		if tt.epoch != 0 {
 			config.Epoch = tt.epoch
 		}

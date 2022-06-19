@@ -237,18 +237,15 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			}
 			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
 			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
-			config.Istanbul.TestQBFTBlock = chainConfig.Istanbul.TestQBFTBlock
 
 			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
 		}
 		if chainConfig.IBFT != nil {
 			setBFTConfig(&config.Istanbul, chainConfig.IBFT.BFTConfig)
-			config.Istanbul.TestQBFTBlock = nil
 			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
 		}
 		if chainConfig.QBFT != nil {
 			setBFTConfig(&config.Istanbul, chainConfig.QBFT.BFTConfig)
-			config.Istanbul.TestQBFTBlock = big.NewInt(0)
 			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
 		}
 
