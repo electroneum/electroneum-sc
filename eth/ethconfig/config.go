@@ -231,17 +231,13 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 		//Quorum
 		// If Istanbul is requested, set it up
 		if chainConfig.Istanbul != nil {
-			log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.ibft on genesis file")
+			log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.qbft on genesis file")
 			if chainConfig.Istanbul.Epoch != 0 {
 				config.Istanbul.Epoch = chainConfig.Istanbul.Epoch
 			}
 			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
 			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
 
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-		if chainConfig.IBFT != nil {
-			setBFTConfig(&config.Istanbul, chainConfig.IBFT.BFTConfig)
 			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
 		}
 		if chainConfig.QBFT != nil {

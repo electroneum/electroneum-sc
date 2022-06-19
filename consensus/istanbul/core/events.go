@@ -17,13 +17,13 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
 )
 
-func (c *core) handleFinalCommitted() error {
-	logger := c.logger.New("state", c.state)
-	logger.Trace("Received a final committed proposal")
-
-	go c.startNewRound(common.Big0)
-	return nil
+type backlogEvent struct {
+	src istanbul.Validator
+	msg qbfttypes.QBFTMessage
 }
+
+type timeoutEvent struct{}

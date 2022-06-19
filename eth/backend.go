@@ -147,11 +147,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Error("Failed to recover state", "error", err)
 	}
 
-	if chainConfig.Istanbul != nil && (chainConfig.IBFT != nil || chainConfig.QBFT != nil) {
-		return nil, errors.New("the attributes config.Istanbul and config.[IBFT|QBFT] are mutually exclusive on the genesis file")
-	}
-	if chainConfig.IBFT != nil && chainConfig.QBFT != nil {
-		return nil, errors.New("the attributes config.IBFT and config.QBFT are mutually exclusive on the genesis file")
+	if chainConfig.Istanbul != nil && chainConfig.QBFT != nil {
+		return nil, errors.New("the attributes config.Istanbul and config.QBFT are mutually exclusive on the genesis file")
 	}
 
 	merger := consensus.NewMerger(chainDb)

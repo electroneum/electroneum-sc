@@ -26,10 +26,9 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/istanbul"
 	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	ibftengine "github.com/ethereum/go-ethereum/consensus/istanbul/ibft/engine"
-	qbftcore "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/core"
-	qbftengine "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/engine"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/types"
+	qbftcore "github.com/ethereum/go-ethereum/consensus/istanbul/core"
+	qbftengine "github.com/ethereum/go-ethereum/consensus/istanbul/engine"
+	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
 	"github.com/ethereum/go-ethereum/consensus/istanbul/validator"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -68,7 +67,6 @@ func New(config *istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Databas
 	}
 
 	sb.qbftEngine = qbftengine.NewEngine(sb.config, sb.address, sb.Sign)
-	sb.ibftEngine = ibftengine.NewEngine(sb.config, sb.address, sb.Sign)
 
 	return sb
 }
@@ -83,7 +81,6 @@ type Backend struct {
 
 	core istanbul.Core
 
-	ibftEngine *ibftengine.Engine
 	qbftEngine *qbftengine.Engine
 
 	istanbulEventMux *event.TypeMux
