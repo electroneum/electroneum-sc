@@ -236,7 +236,6 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 				config.Istanbul.Epoch = chainConfig.Istanbul.Epoch
 			}
 			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
-			config.Istanbul.Ceil2Nby3Block = chainConfig.Istanbul.Ceil2Nby3Block
 			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
 			config.Istanbul.TestQBFTBlock = chainConfig.Istanbul.TestQBFTBlock
 
@@ -290,8 +289,5 @@ func setBFTConfig(istanbulConfig *istanbul.Config, bftConfig *params.BFTConfig) 
 	}
 	if bftConfig.ProposerPolicy != 0 {
 		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(bftConfig.ProposerPolicy))
-	}
-	if bftConfig.Ceil2Nby3Block != nil {
-		istanbulConfig.Ceil2Nby3Block = bftConfig.Ceil2Nby3Block
 	}
 }

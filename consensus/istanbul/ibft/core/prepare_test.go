@@ -226,7 +226,7 @@ OUTER:
 			continue
 		}
 
-		// core should have 2F+1 before Ceil2Nby3Block and Ceil(2N/3) after Ceil2Nby3Block PREPARE messages
+		// core should have Ceil(2N/3) PREPARE messages
 		if r0.current.Prepares.Size() < r0.QuorumSize() {
 			t.Errorf("the size of PREPARE messages should be larger than 2F+1 or ceil(2N/3): size %v", r0.current.Commits.Size())
 		}

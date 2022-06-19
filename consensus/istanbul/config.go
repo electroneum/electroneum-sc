@@ -122,7 +122,6 @@ type Config struct {
 	BlockPeriod            uint64          `toml:",omitempty"` // Default minimum difference between two consecutive block's timestamps in second
 	ProposerPolicy         *ProposerPolicy `toml:",omitempty"` // The policy for proposer selection
 	Epoch                  uint64          `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
-	Ceil2Nby3Block         *big.Int        `toml:",omitempty"` // Number of confirmations required to move from one state to next [2F + 1 to Ceil(2N/3)]
 	AllowedFutureBlockTime uint64          `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
 	TestQBFTBlock          *big.Int        `toml:",omitempty"` // Fork block at which block confirmations are done using qbft consensus instead of ibft
 }
@@ -132,7 +131,6 @@ var DefaultConfig = &Config{
 	BlockPeriod:            5,
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
-	Ceil2Nby3Block:         big.NewInt(0),
 	AllowedFutureBlockTime: 0,
 	TestQBFTBlock:          big.NewInt(0),
 }

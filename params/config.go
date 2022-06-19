@@ -60,7 +60,6 @@ var (
 		Istanbul: &IstanbulConfig{
 			ProposerPolicy: 2,
 			Epoch:          30000,
-			Ceil2Nby3Block: big.NewInt(0),
 			TestQBFTBlock:  big.NewInt(0),
 		},
 		IsQuorum: true,
@@ -86,7 +85,6 @@ var (
 		Istanbul: &IstanbulConfig{
 			ProposerPolicy: 2,
 			Epoch:          30000,
-			Ceil2Nby3Block: big.NewInt(0),
 			TestQBFTBlock:  big.NewInt(0),
 		},
 		IsQuorum: true,
@@ -223,10 +221,9 @@ func (c *CliqueConfig) String() string {
 
 // IstanbulConfig is the consensus engine configs for Istanbul based sealing.
 type IstanbulConfig struct {
-	Epoch          uint64   `json:"epoch"`                    // Epoch length to reset votes and checkpoint
-	ProposerPolicy uint64   `json:"policy"`                   // The policy for proposer selection
-	Ceil2Nby3Block *big.Int `json:"ceil2Nby3Block,omitempty"` // Number of confirmations required to move from one state to next [2F + 1 to Ceil(2N/3)]
-	TestQBFTBlock  *big.Int `json:"testQBFTBlock,omitempty"`  // Fork block at which block confirmations are done using qbft consensus instead of ibft
+	Epoch          uint64   `json:"epoch"`                   // Epoch length to reset votes and checkpoint
+	ProposerPolicy uint64   `json:"policy"`                  // The policy for proposer selection
+	TestQBFTBlock  *big.Int `json:"testQBFTBlock,omitempty"` // Fork block at which block confirmations are done using qbft consensus instead of ibft
 }
 
 // String implements the stringer interface, returning the consensus engine details.
@@ -235,11 +232,10 @@ func (c *IstanbulConfig) String() string {
 }
 
 type BFTConfig struct {
-	EpochLength           uint64   `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds    uint64   `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds uint64   `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy        uint64   `json:"policy"`                   // The policy for proposer selection
-	Ceil2Nby3Block        *big.Int `json:"ceil2Nby3Block,omitempty"` // Number of confirmations required to move from one state to next [2F + 1 to Ceil(2N/3)]
+	EpochLength           uint64 `json:"epochlength"`           // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds    uint64 `json:"blockperiodseconds"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds uint64 `json:"requesttimeoutseconds"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	ProposerPolicy        uint64 `json:"policy"`                // The policy for proposer selection
 }
 
 type IBFTConfig struct {

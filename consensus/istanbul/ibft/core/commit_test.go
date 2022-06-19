@@ -202,9 +202,9 @@ OUTER:
 			continue
 		}
 
-		// core should have 2F+1 before Ceil2Nby3Block or Ceil(2N/3) prepare messages
+		// core should have Ceil(2N/3) prepare messages
 		if r0.current.Commits.Size() < r0.QuorumSize() {
-			t.Errorf("the size of commit messages should be larger than 2F+1 or Ceil(2N/3): size %v", r0.QuorumSize())
+			t.Errorf("the size of commit messages should be larger than Ceil(2N/3): size %v", r0.QuorumSize())
 		}
 
 		// check signatures large than F
