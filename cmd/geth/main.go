@@ -290,6 +290,9 @@ func prepare(ctx *cli.Context) {
 	case ctx.GlobalIsSet(utils.TestnetFlag.Name):
 		log.Info("Starting Geth on Electroneum testnet...")
 
+	case ctx.GlobalIsSet(utils.StagenetFlag.Name):
+		log.Info("Starting Geth on Electroneum stagenet...")
+
 	case !ctx.GlobalIsSet(utils.NetworkIdFlag.Name):
 		log.Info("Starting Geth on Electroneum mainnet...")
 	}
@@ -297,6 +300,7 @@ func prepare(ctx *cli.Context) {
 	if ctx.GlobalString(utils.SyncModeFlag.Name) != "light" && !ctx.GlobalIsSet(utils.CacheFlag.Name) && !ctx.GlobalIsSet(utils.NetworkIdFlag.Name) {
 		// Make sure we're not on any supported preconfigured testnet either
 		if !ctx.GlobalIsSet(utils.TestnetFlag.Name) &&
+			!ctx.GlobalIsSet(utils.StagenetFlag.Name) &&
 			!ctx.GlobalIsSet(utils.DeveloperFlag.Name) {
 			// Nope, we're really on mainnet. Bump that cache up!
 			log.Info("Bumping default cache on mainnet", "provided", ctx.GlobalInt(utils.CacheFlag.Name), "updated", 4096)

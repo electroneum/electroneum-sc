@@ -229,6 +229,8 @@ func ethFilter(args []string) (nodeFilter, error) {
 	switch args[0] {
 	case "mainnet":
 		filter = forkid.NewStaticFilter(params.MainnetChainConfig, params.MainnetGenesisHash)
+	case "stagenet":
+		filter = forkid.NewStaticFilter(params.StagenetChainConfig, params.StagenetGenesisHash)
 	case "testnet":
 		filter = forkid.NewStaticFilter(params.TestnetChainConfig, params.TestnetGenesisHash)
 	default:

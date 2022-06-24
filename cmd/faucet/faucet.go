@@ -84,6 +84,8 @@ var (
 	twitterTokenFlag   = flag.String("twitter.token", "", "Bearer token to authenticate with the v2 Twitter API")
 	twitterTokenV1Flag = flag.String("twitter.token.v1", "", "Bearer token to authenticate with the v1.1 Twitter API")
 
+	stagenetFlag = flag.Bool("stagenet", false, "Initializes the faucet with Electroneum test network config")
+
 	testnetFlag = flag.Bool("testnet", false, "Initializes the faucet with Electroneum test network config")
 )
 
@@ -142,7 +144,7 @@ func main() {
 		log.Crit("Failed to render the faucet template", "err", err)
 	}
 	// Load and parse the genesis block requested by the user
-	genesis, err := getGenesis(*genesisFlag, *testnetFlag)
+	genesis, err := getGenesis(*genesisFlag, *testnetFlag, *stagenetFlag)
 	if err != nil {
 		log.Crit("Failed to parse genesis config", "err", err)
 	}
@@ -881,12 +883,14 @@ func authNoAuth(url string) (string, string, common.Address, error) {
 }
 
 // getGenesis returns a genesis based on input args
-func getGenesis(genesisFlag string, TestnetFlag bool) (*core.Genesis, error) {
+func getGenesis(genesisFlag string, TestnetFlag bool, StagenetFlag bool) (*core.Genesis, error) {
 	switch {
 	case genesisFlag != "":
 		var genesis core.Genesis
 		err := common.LoadJSON(genesisFlag, &genesis)
 		return &genesis, err
+	case StagenetFlag:
+		return core.DefaultStagenetGenesisBlock(), nil
 	case TestnetFlag:
 		return core.DefaultTestnetGenesisBlock(), nil
 	default:

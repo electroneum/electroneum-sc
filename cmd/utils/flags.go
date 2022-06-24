@@ -148,6 +148,10 @@ var (
 		Name:  "mainnet",
 		Usage: "Electroneum mainnet",
 	}
+	StagenetFlag = cli.BoolFlag{
+		Name:  "stagenet",
+		Usage: "Electroneum Test network: pre-configured IBFT test network",
+	}
 	TestnetFlag = cli.BoolFlag{
 		Name:  "testnet",
 		Usage: "Electroneum Test network: pre-configured IBFT test network",
@@ -814,6 +818,7 @@ var (
 var (
 	// TestnetFlags is the flag group of all built-in supported testnets.
 	TestnetFlags = []cli.Flag{
+		StagenetFlag,
 		TestnetFlag,
 	}
 	// NetworkFlags is the flag group of all built-in supported networks.
@@ -843,6 +848,9 @@ func GroupFlags(groups ...[]cli.Flag) []cli.Flag {
 // then a subdirectory of the specified datadir will be used.
 func MakeDataDir(ctx *cli.Context) string {
 	if path := ctx.GlobalString(DataDirFlag.Name); path != "" {
+		if ctx.GlobalBool(StagenetFlag.Name) {
+			return filepath.Join(path, "stagenet")
+		}
 		if ctx.GlobalBool(TestnetFlag.Name) {
 			return filepath.Join(path, "testnet")
 		}
@@ -892,6 +900,8 @@ func setBootstrapNodes(ctx *cli.Context, cfg *p2p.Config) {
 	switch {
 	case ctx.GlobalIsSet(BootnodesFlag.Name):
 		urls = SplitAndTrim(ctx.GlobalString(BootnodesFlag.Name))
+	case ctx.GlobalBool(StagenetFlag.Name):
+		urls = params.StagenetBootnodes
 	case ctx.GlobalBool(TestnetFlag.Name):
 		urls = params.TestnetBootnodes
 	case cfg.BootstrapNodes != nil:
@@ -1326,6 +1336,8 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 		cfg.DataDir = ctx.GlobalString(DataDirFlag.Name)
 	case ctx.GlobalBool(DeveloperFlag.Name):
 		cfg.DataDir = "" // unless explicitly requested, use memory databases
+	case ctx.GlobalBool(StagenetFlag.Name) && cfg.DataDir == node.DefaultDataDir():
+		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "stagenet")
 	case ctx.GlobalBool(TestnetFlag.Name) && cfg.DataDir == node.DefaultDataDir():
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "testnet")
 	}
@@ -1518,7 +1530,7 @@ func CheckExclusive(ctx *cli.Context, args ...interface{}) {
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Avoid conflicting network flags
-	CheckExclusive(ctx, MainnetFlag, TestnetFlag, DeveloperFlag)
+	CheckExclusive(ctx, MainnetFlag, StagenetFlag, TestnetFlag, DeveloperFlag)
 	CheckExclusive(ctx, LightServeFlag, SyncModeFlag, "light")
 	CheckExclusive(ctx, DeveloperFlag, ExternalSignerFlag) // Can't use both ephemeral unlocked and external signer
 	if ctx.GlobalString(GCModeFlag.Name) == "archive" && ctx.GlobalUint64(TxLookupLimitFlag.Name) != 0 {
@@ -1656,6 +1668,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = core.DefaultGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
+	case ctx.GlobalBool(StagenetFlag.Name):
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 5201419
+		}
+		cfg.Genesis = core.DefaultStagenetGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.StagenetGenesisHash)
 	case ctx.GlobalBool(TestnetFlag.Name):
 		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 5201420
@@ -1894,6 +1912,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 	switch {
 	case ctx.GlobalBool(MainnetFlag.Name):
 		genesis = core.DefaultGenesisBlock()
+	case ctx.GlobalBool(StagenetFlag.Name):
+		genesis = core.DefaultStagenetGenesisBlock()
 	case ctx.GlobalBool(TestnetFlag.Name):
 		genesis = core.DefaultTestnetGenesisBlock()
 	case ctx.GlobalBool(DeveloperFlag.Name):

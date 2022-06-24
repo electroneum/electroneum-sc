@@ -22,6 +22,10 @@ import "github.com/ethereum/go-ethereum/common"
 // the main Electroneum network.
 var MainnetBootnodes = []string{}
 
+// StagenetBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the stage Electroneum Testnet network.
+var StagenetBootnodes = []string{}
+
 // TestnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the main Electroneum Testnet network.
 var TestnetBootnodes = []string{}
@@ -38,6 +42,8 @@ func KnownDNSNetwork(genesis common.Hash, protocol string) string {
 	switch genesis {
 	case MainnetGenesisHash:
 		net = "mainnet"
+	case TestnetGenesisHash:
+		net = "stagenet"
 	case TestnetGenesisHash:
 		net = "testnet"
 	default:

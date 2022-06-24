@@ -125,7 +125,9 @@ func remoteConsole(ctx *cli.Context) error {
 			path = ctx.GlobalString(utils.DataDirFlag.Name)
 		}
 		if path != "" {
-			if ctx.GlobalBool(utils.TestnetFlag.Name) {
+			if ctx.GlobalBool(utils.StagenetFlag.Name) {
+				path = filepath.Join(path, "stagenet")
+			} else if ctx.GlobalBool(utils.TestnetFlag.Name) {
 				path = filepath.Join(path, "testnet")
 			}
 		}

@@ -41,6 +41,15 @@ func TestnetGenesis() string {
 	return string(enc)
 }
 
+// StagenetGenesis returns the JSON spec to use for the Testnet network.
+func StagenetGenesis() string {
+	enc, err := json.Marshal(core.DefaultStagenetGenesisBlock())
+	if err != nil {
+		panic(err)
+	}
+	return string(enc)
+}
+
 // FoundationBootnodes returns the enode URLs of the P2P bootstrap nodes operated
 // by the foundation running the V5 discovery protocol.
 func FoundationBootnodes() *Enodes {

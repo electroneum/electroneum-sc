@@ -134,6 +134,8 @@ func CommitGenesisState(db ethdb.Database, hash common.Hash) error {
 		switch hash {
 		case params.MainnetGenesisHash:
 			genesis = DefaultGenesisBlock()
+		case params.StagenetGenesisHash:
+			genesis = DefaultStagenetGenesisBlock()
 		case params.TestnetGenesisHash:
 			genesis = DefaultTestnetGenesisBlock()
 		}
@@ -320,6 +322,8 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
+	case ghash == params.StagenetGenesisHash:
+		return params.StagenetChainConfig
 	case ghash == params.TestnetGenesisHash:
 		return params.TestnetChainConfig
 	default:
@@ -424,6 +428,21 @@ func DefaultGenesisBlock() *Genesis {
 		Nonce:      0,
 		Timestamp:  1492009146,
 		ExtraData:  hexutil.MustDecode("0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854944c7968f79c1a414c34cd4d3c1ac7a3a8413da50c946c3d358156962440424c8c2bd5a8c79664b9956d94f27ed0217ec98beec0478a221e07471885d639a2944dd607ce3b4ec9e22fd3ce59c672fafee09cf332c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc:      GenesisAlloc{},
+	}
+}
+
+// DefaultGoerliGenesisBlock returns the Görli network genesis block.
+func DefaultStagenetGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.StagenetChainConfig,
+		Nonce:      0,
+		Timestamp:  1655988355,
+		ExtraData:  hexutil.MustDecode("0xf88fa00000000000000000000000000000000000000000000000000000000000000000f86994c21ee98b5a90a6a45aba37fa5eddf90f5e8e181694ff0d56bd960c455a71f908496c79e8eafec34ccf9407afbe0d7d36b80454be1e185f55e02b9453625a944f9a82d7e094de7fb70d9ce2033ec0d65ac311249497f060952b1008c75cb030e3599725ad5cc306a2c080c0"),
 		GasLimit:   16234336,
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),

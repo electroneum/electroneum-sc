@@ -27,8 +27,9 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash = common.HexToHash("0x4fda998638776057c8c27989bc021aed4b813fcebd483bf7a6b139f6efb324a6")
-	TestnetGenesisHash = common.HexToHash("0x7919efba9544bda159e29c22a36831befbcc07bb0edbac45eef065beea115079")
+	MainnetGenesisHash  = common.HexToHash("0x4fda998638776057c8c27989bc021aed4b813fcebd483bf7a6b139f6efb324a6")
+	StagenetGenesisHash = common.HexToHash("0xbcb4821a2574f010af9e0c84a5a349c583038fe7778704297ad2f0ff70d6142d")
+	TestnetGenesisHash  = common.HexToHash("0x7919efba9544bda159e29c22a36831befbcc07bb0edbac45eef065beea115079")
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -43,6 +44,31 @@ var (
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
 		ChainID:             big.NewInt(52014),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      true,
+		EIP150Block:         big.NewInt(0),
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		MuirGlacierBlock:    nil,
+		BerlinBlock:         big.NewInt(0),
+		LondonBlock:         big.NewInt(0),
+		ArrowGlacierBlock:   nil,
+		IBFT: &IBFTConfig{
+			BlockPeriodSeconds:    5,
+			EpochLength:           30000,
+			ProposerPolicy:        0,
+			RequestTimeoutSeconds: 10,
+		},
+	}
+
+	// StagenetChainConfig is the chain parameters to run a node on the test network.
+	StagenetChainConfig = &ChainConfig{
+		ChainID:             big.NewInt(5201419),
 		HomesteadBlock:      big.NewInt(0),
 		DAOForkBlock:        nil,
 		DAOForkSupport:      true,

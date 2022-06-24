@@ -158,11 +158,17 @@ func NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {
 		if err := json.Unmarshal([]byte(config.EthereumGenesis), genesis); err != nil {
 			return nil, fmt.Errorf("invalid genesis spec: %v", err)
 		}
-		// If we have the Ropsten testnet, hard code the chain configs too
+		// If we have the testnet, hard code the chain configs too
 		if config.EthereumGenesis == TestnetGenesis() {
 			genesis.Config = params.TestnetChainConfig
 			if config.EthereumNetworkID == 1 {
 				config.EthereumNetworkID = 5201420
+			}
+		}
+		if config.EthereumGenesis == StagenetGenesis() {
+			genesis.Config = params.StagenetChainConfig
+			if config.EthereumNetworkID == 1 {
+				config.EthereumNetworkID = 5201419
 			}
 		}
 	}
