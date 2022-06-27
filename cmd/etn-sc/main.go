@@ -48,7 +48,7 @@ import (
 )
 
 const (
-	clientIdentifier = "geth" // Client identifier to advertise over the network
+	clientIdentifier = "etn-sc" // Client identifier to advertise over the network
 )
 
 var (
@@ -270,8 +270,8 @@ func prepare(ctx *cli.Context) {
 	// If we're running a known preset, log it for convenience.
 	switch {
 	case ctx.GlobalIsSet(utils.DeveloperFlag.Name):
-		log.Info("Starting Geth in ephemeral dev mode...")
-		log.Warn(`You are running Geth in --dev mode. Please note the following:
+		log.Info("Starting etn-sc in ephemeral dev mode...")
+		log.Warn(`You are running etn-sc in --dev mode. Please note the following:
 
   1. This mode is only intended for fast, iterative development without assumptions on
      security or persistence.
@@ -288,13 +288,13 @@ func prepare(ctx *cli.Context) {
 `)
 
 	case ctx.GlobalIsSet(utils.TestnetFlag.Name):
-		log.Info("Starting Geth on Electroneum testnet...")
+		log.Info("Starting etn-sc on Electroneum testnet...")
 
 	case ctx.GlobalIsSet(utils.StagenetFlag.Name):
-		log.Info("Starting Geth on Electroneum stagenet...")
+		log.Info("Starting etn-sc on Electroneum stagenet...")
 
 	case !ctx.GlobalIsSet(utils.NetworkIdFlag.Name):
-		log.Info("Starting Geth on Electroneum mainnet...")
+		log.Info("Starting etn-sc on Electroneum mainnet...")
 	}
 	// If we're a full node on mainnet without --cache specified, bump default cache allowance
 	if ctx.GlobalString(utils.SyncModeFlag.Name) != "light" && !ctx.GlobalIsSet(utils.CacheFlag.Name) && !ctx.GlobalIsSet(utils.NetworkIdFlag.Name) {
