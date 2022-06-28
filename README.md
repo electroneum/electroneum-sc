@@ -4,9 +4,9 @@ Electroneum Smart Chain implementation based on go-ethereum.
 
 Electroneum Smart Chain is EVM-compatible, supports all the existing Ethereum tooling, provides nearly instant transaction verification and 1-block finality with a modified version of the Istanbul Byzantine Fault Torerance (IBFT) consensus protocol.
 
-# Key Features
+## Key Features
 
-## IBFT Consensus Protocol
+### IBFT Consensus Protocol
 
 Electroneum Smart Chain implements a modified version of the standard IBFT proof of authority consensus protocol, making it the perfect consensus algorithm for public blockchains with a consortium of publicly-known validators participating in the block creation. Existing validators propose and vote to add or remove validators through our on-chain voting system.
 
@@ -18,16 +18,16 @@ This state-of-the-art consensus protocol features:
 - **Optimal Byzantine Resilience:** the protocol can withstand up to `(n-1)/3` Byzantine validators, where 
 `n` is the number of validators
 
-## EVM-Compatible
+### EVM-Compatible
 
 Electroneum Smart Chain supports all the existing Ethereum tooling, smart contracts, decentralized applications and regular applications based on the Ethereum JSON RPC, such as MetaMask.
 
-## Cross-chain Bridge
+### Cross-chain Bridge
 
 Electroneum Smart Chain supports cross-chain transfers between our legacy Electroneum Blockchain and the Smart Chain. All users, exchanges and other services providers can seemlessly transfer their funds over to the Electroneum Smart Chain, free of charge.
 
 
-# Building the source
+## Building the source
 
 For prerequisites and detailed build instructions please read the [Installation Instructions](https://github.com/electroneum/electroneum-sc/wiki/Install-and-Build).
 
@@ -44,7 +44,7 @@ or, to build the full suite of utilities:
 make all
 ```
 
-# Executables
+## Executables
 
 The electroneum-sc project comes with several wrappers/executables found in the `cmd`
 directory.
@@ -60,30 +60,29 @@ directory.
 |   `rlpdump`   | Developer utility tool to convert binary RLP ([Recursive Length Prefix](https://eth.wiki/en/fundamentals/rlp)) dumps (data encoding used by the Ethereum protocol both network as well as consensus wise) to user-friendlier hierarchical representation (e.g. `rlpdump --hex CE0183FFFFFFC4C304050583616263`).                                                                                                                                                                                                                                 |
 |   `puppeth`   | a CLI wizard that aids in creating a new Electroneum-SC network.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
-# Running `etn-sc`
+## Running `etn-sc`
 
 Going through all the possible command line flags is out of scope here (please consult our
 [CLI Wiki page](https://geth.ethereum.org/docs/interface/command-line-options)),
 but we've enumerated a few common parameter combos to get you up to speed quickly
 on how you can run your own `etn-sc` instance.
 
-## Hardware Requirements
+### Hardware Requirements
 
 Minimum:
 
 * CPU with 2+ cores
 * 4GB RAM
-* 1TB free storage space to sync the Mainnet
 * 8 MBit/sec download Internet service
 
 Recommended:
 
 * Fast CPU with 4+ cores
 * 16GB+ RAM
-* High Performance SSD with at least 1TB free space
+* High Performance SSD
 * 25+ MBit/sec download Internet service
 
-## Full node on the main Electroneum Smart Chain network
+### Full node on the main Electroneum Smart Chain network
 
 By far the most common scenario is people wanting to simply interact with the Electroneum Smart Chain
 network: create accounts; transfer funds; deploy and interact with contracts. For this
@@ -105,7 +104,7 @@ This command will:
    This tool is optional and if you leave it out you can always attach to an already running
    `etn-sc` instance with `etn-sc attach`.
 
-## Full node on the test network
+### Full node on the test network
 
 Transitioning towards developers, if you'd like to play around with creating Electroneum
 contracts, you almost certainly would like to do that without any real money involved until
@@ -138,7 +137,7 @@ use separate accounts for play-money and real-money. Unless you manually move
 accounts, `etn-sc` will by default correctly separate the two networks and will not make any
 accounts available between them.*
 
-## Configuration
+### Configuration
 
 As an alternative to passing the numerous flags to the `etn-sc` binary, you can also pass a
 configuration file via:
@@ -173,7 +172,7 @@ Do not forget `--http.addr 0.0.0.0`, if you want to access RPC from other contai
 and/or hosts. By default, `etn-sc` binds to the local interface and RPC endpoints are not
 accessible from the outside.
 
-## Programmatically interfacing `etn-sc` nodes
+### Programmatically interfacing `etn-sc` nodes
 
 As a developer, sooner rather than later you'll want to start interacting with `etn-sc` and the
 Electroneum Smart Chain network via your own programs and not manually through the console. To aid
@@ -214,7 +213,7 @@ Electroneum nodes with exposed APIs! Further, all browser tabs can access locall
 running web servers, so malicious web pages could try to subvert locally available
 APIs!**
 
-# Contribution
+## Contribution
 
 Thank you for considering to help out with the source code! We welcome contributions
 from anyone on the internet, and are grateful for even the smallest of fixes!
@@ -240,7 +239,7 @@ Please see the [Developers' Guide](https://geth.ethereum.org/docs/developers/dev
 for more details on configuring your environment, managing project dependencies, and
 testing procedures.
 
-# License
+## License
 
 The electroneum-sc and go-ethereum library (i.e. all code outside of the `cmd` directory) is licensed under the
 [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html),
