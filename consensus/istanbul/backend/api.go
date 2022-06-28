@@ -19,11 +19,11 @@ package backend
 import (
 	"errors"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/rpc"
 )
 
 // API is a user facing RPC API to dump Istanbul state

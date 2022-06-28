@@ -16,7 +16,7 @@
 
 package core
 
-import "github.com/ethereum/go-ethereum/common"
+import "github.com/electroneum/electroneum-sc/common"
 
 func (c *core) handleFinalCommitted() error {
 	c.currentLogger(true, nil).Info("IBFT: handle final committed")

@@ -24,11 +24,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/console/prompt"
-	"github.com/ethereum/go-ethereum/p2p/dnsdisc"
-	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/electroneum/electroneum-sc/accounts/keystore"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/console/prompt"
+	"github.com/electroneum/electroneum-sc/p2p/dnsdisc"
+	"github.com/electroneum/electroneum-sc/p2p/enode"
 	"gopkg.in/urfave/cli.v1"
 )
 

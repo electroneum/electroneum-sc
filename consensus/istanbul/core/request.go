@@ -17,7 +17,7 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 )
 
 // handleRequest is called by proposer in reaction to `miner.Seal()`

@@ -1,6 +1,6 @@
 package qbftengine
 
-import "github.com/ethereum/go-ethereum/core/types"
+import "github.com/electroneum/electroneum-sc/core/types"
 
 type ApplyQBFTExtra func(*types.QBFTExtra) error
 

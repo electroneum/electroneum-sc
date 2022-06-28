@@ -23,13 +23,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/mclock"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/memorydb"
-	"github.com/ethereum/go-ethereum/les/utils"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/ethereum/go-ethereum/p2p/nodestate"
+	"github.com/electroneum/electroneum-sc/common/mclock"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/ethdb/memorydb"
+	"github.com/electroneum/electroneum-sc/les/utils"
+	"github.com/electroneum/electroneum-sc/p2p/enode"
+	"github.com/electroneum/electroneum-sc/p2p/enr"
+	"github.com/electroneum/electroneum-sc/p2p/nodestate"
 )
 
 type zeroExpirer struct{}

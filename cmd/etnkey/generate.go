@@ -22,9 +22,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/electroneum/electroneum-sc/accounts/keystore"
+	"github.com/electroneum/electroneum-sc/cmd/utils"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/google/uuid"
 	"gopkg.in/urfave/cli.v1"
 )

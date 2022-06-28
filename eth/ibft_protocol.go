@@ -3,7 +3,7 @@ package eth
 import (
 	"errors"
 
-	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/electroneum/electroneum-sc/p2p"
 )
 
 // ibft_protocol enables the eth service to return two different protocols, one for the eth mainnet "eth" service,

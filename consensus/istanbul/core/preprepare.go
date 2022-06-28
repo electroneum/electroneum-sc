@@ -19,10 +19,10 @@ package core
 import (
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/consensus"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
 
 // sendPreprepareMsg is called either

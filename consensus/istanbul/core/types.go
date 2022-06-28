@@ -19,9 +19,9 @@ package core
 import (
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 )
 
 type State uint64

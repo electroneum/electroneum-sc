@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	"github.com/electroneum/electroneum-sc/core/types"
 )
 
 func TestPrepareExtra(t *testing.T) {

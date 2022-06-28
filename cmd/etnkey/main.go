@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/electroneum/electroneum-sc/internal/flags"
 	"gopkg.in/urfave/cli.v1"
 )
 

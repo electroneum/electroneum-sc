@@ -23,15 +23,15 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	qbftengine "github.com/ethereum/go-ethereum/consensus/istanbul/engine"
-	"github.com/ethereum/go-ethereum/consensus/istanbul/testutils"
-	"github.com/ethereum/go-ethereum/consensus/istanbul/validator"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/testutils"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 )
 
 type testerVote struct {

@@ -17,9 +17,9 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
 
 // broadcastPrepare is called after receiving PRE-PREPARE from proposer node

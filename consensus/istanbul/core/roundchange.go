@@ -21,12 +21,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
 
 // broadcastNextRoundChange sends the ROUND CHANGE message with current round + 1

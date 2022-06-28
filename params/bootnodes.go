@@ -16,7 +16,7 @@
 
 package params
 
-import "github.com/ethereum/go-ethereum/common"
+import "github.com/electroneum/electroneum-sc/common"
 
 // MainnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the main Electroneum network.

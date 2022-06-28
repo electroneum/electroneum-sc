@@ -17,8 +17,8 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 )
 
 type backlogEvent struct {

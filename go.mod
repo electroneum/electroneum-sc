@@ -1,4 +1,4 @@
-module github.com/ethereum/go-ethereum
+module github.com/electroneum/electroneum-sc
 
 go 1.16
 
