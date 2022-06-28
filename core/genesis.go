@@ -421,7 +421,7 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 	return g.MustCommit(db)
 }
 
-// DefaultGenesisBlock returns the Ethereum main net genesis block.
+// DefaultGenesisBlock returns the Electroneum-sc mainnet genesis block.
 func DefaultGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
@@ -436,7 +436,7 @@ func DefaultGenesisBlock() *Genesis {
 	}
 }
 
-// DefaultGoerliGenesisBlock returns the Görli network genesis block.
+// DefaultStagenetGenesisBlock returns the test network genesis block.
 func DefaultStagenetGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.StagenetChainConfig,
@@ -454,7 +454,7 @@ func DefaultStagenetGenesisBlock() *Genesis {
 	}
 }
 
-// DefaultGoerliGenesisBlock returns the Görli network genesis block.
+// DefaultTestnetGenesisBlock returns the stage network genesis block.
 func DefaultTestnetGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.TestnetChainConfig,
