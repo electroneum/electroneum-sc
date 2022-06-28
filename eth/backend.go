@@ -26,38 +26,38 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/bloombits"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state/pruner"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/downloader"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
-	"github.com/ethereum/go-ethereum/eth/gasprice"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/eth/protocols/snap"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/event"
-	"github.com/ethereum/go-ethereum/internal/ethapi"
-	"github.com/ethereum/go-ethereum/internal/shutdowncheck"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/miner"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/dnsdisc"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/electroneum/electroneum-sc/accounts"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/beacon"
+	"github.com/electroneum/electroneum-sc/consensus/clique"
+	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/core/bloombits"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/state/pruner"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/core/vm"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/eth/downloader"
+	"github.com/electroneum/electroneum-sc/eth/ethconfig"
+	"github.com/electroneum/electroneum-sc/eth/filters"
+	"github.com/electroneum/electroneum-sc/eth/gasprice"
+	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
+	"github.com/electroneum/electroneum-sc/eth/protocols/snap"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/event"
+	"github.com/electroneum/electroneum-sc/internal/ethapi"
+	"github.com/electroneum/electroneum-sc/internal/shutdowncheck"
+	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/miner"
+	"github.com/electroneum/electroneum-sc/node"
+	"github.com/electroneum/electroneum-sc/p2p"
+	"github.com/electroneum/electroneum-sc/p2p/dnsdisc"
+	"github.com/electroneum/electroneum-sc/p2p/enode"
+	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/rlp"
+	"github.com/electroneum/electroneum-sc/rpc"
 )
 
 // Config contains the configuration options of the ETH protocol.
@@ -146,20 +146,11 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err := pruner.RecoverPruning(stack.ResolvePath(""), chainDb, stack.ResolvePath(config.TrieCleanCacheJournal)); err != nil {
 		log.Error("Failed to recover state", "error", err)
 	}
-	// Quorum
-	if chainConfig.IsQuorum {
-		// changes to manipulate the chain id for migration from 2.0.2 and below version to 2.0.3
-		// version of Quorum  - this is applicable for v2.0.3 onwards
-		if (chainConfig.ChainID != nil && chainConfig.ChainID.Int64() == 1) || config.NetworkId == 1 {
-			return nil, errors.New("cannot have chain id or network id as 1")
-		}
-		if chainConfig.Istanbul != nil && (chainConfig.IBFT != nil || chainConfig.QBFT != nil) {
-			return nil, errors.New("the attributes config.Istanbul and config.[IBFT|QBFT] are mutually exclusive on the genesis file")
-		}
-		if chainConfig.IBFT != nil && chainConfig.QBFT != nil {
-			return nil, errors.New("the attributes config.IBFT and config.QBFT are mutually exclusive on the genesis file")
-		}
+
+	if chainConfig.Ethash != nil && chainConfig.Clique != nil && chainConfig.IBFT != nil {
+		return nil, errors.New("the attributes config.Etash, config.Clique and config.IBFT are mutually exclusive on the genesis file")
 	}
+
 	merger := consensus.NewMerger(chainDb)
 	eth := &Ethereum{
 		config:            config,
@@ -178,7 +169,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		shutdownTracker:   shutdowncheck.NewShutdownTracker(chainDb),
 	}
 
-	// Quorum: Set protocol Name/Version
+	// Set protocol Name/Version
 	// keep `var protocolName = "eth"` as is, and only update the quorum consensus specific protocol
 	// This is used to enable the eth service to return multiple devp2p subprotocols.
 	// Previously, for istanbul/64 istnbul/99 and clique (v2.6) `protocolName` would be overridden and
@@ -186,17 +177,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// communicate over the "eth" subprotocol, e.g. "eth" or "istanbul/99" but not eth" and "istanbul/99".
 	// With this change, support is added so that the "eth" subprotocol remains and optionally a consensus subprotocol
 	// can be added allowing the node to communicate over "eth" and an optional consensus subprotocol, e.g. "eth" and "istanbul/100"
-	if chainConfig.IsQuorum {
-		quorumProtocol := eth.engine.Protocol()
-		// set the quorum specific consensus devp2p subprotocol, eth subprotocol remains set to protocolName as in upstream geth.
-		quorumConsensusProtocolName = quorumProtocol.Name
-		quorumConsensusProtocolVersions = quorumProtocol.Versions
-		quorumConsensusProtocolLengths = quorumProtocol.Lengths
-	}
+	if chainConfig.IBFT != nil {
+		ibftProtocol := eth.engine.Protocol()
+		// set the ibft specific consensus devp2p subprotocol, eth subprotocol remains set to protocolName as in upstream geth.
+		ibftConsensusProtocolName = ibftProtocol.Name
+		ibftConsensusProtocolVersions = ibftProtocol.Versions
+		ibftConsensusProtocolLengths = ibftProtocol.Lengths
 
-	// Quorum
-	// force to set the istanbul etherbase to node key address
-	if chainConfig.Istanbul != nil {
+		// force to set the istanbul etherbase to node key address
 		eth.etherbase = crypto.PubkeyToAddress(stack.GetNodeKey().PublicKey)
 	}
 
@@ -205,11 +193,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if bcVersion != nil {
 		dbVer = fmt.Sprintf("%d", *bcVersion)
 	}
-	log.Info("Initialising Ethereum protocol", "network", config.NetworkId, "dbversion", dbVer)
-	// Quorum
-	if chainConfig.IsQuorum {
-		log.Info("Initialising Quorum consensus protocol", "name", quorumConsensusProtocolName, "versions", quorumConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
-	}
+
+	log.Info("Initialising protocol", "name", ibftConsensusProtocolName, "versions", ibftConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
 
 	if !config.SkipBcVersionCheck {
 		if bcVersion != nil && *bcVersion > core.BlockChainVersion {
@@ -277,7 +262,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 
 	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
-	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().IsQuorum))
+	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData, eth.blockchain.Config().IBFT != nil))
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
 	if eth.APIBackend.allowUnprotectedTxs {
@@ -314,7 +299,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	return eth, nil
 }
 
-func makeExtraData(extra []byte, isQuorum bool) []byte {
+func makeExtraData(extra []byte, isIstanbulConsensus bool) []byte {
 	if len(extra) == 0 {
 		// create default extradata
 		extra, _ = rlp.EncodeToBytes([]interface{}{
@@ -324,8 +309,8 @@ func makeExtraData(extra []byte, isQuorum bool) []byte {
 			runtime.GOOS,
 		})
 	}
-	if uint64(len(extra)) > params.GetMaximumExtraDataSize(isQuorum) {
-		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(isQuorum))
+	if uint64(len(extra)) > params.GetMaximumExtraDataSize(isIstanbulConsensus) {
+		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(isIstanbulConsensus))
 		extra = nil
 	}
 	return extra
@@ -581,8 +566,8 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 
 	// /Quorum
 	// add additional quorum consensus protocol if set and if not set to "eth", e.g. istanbul
-	if quorumConsensusProtocolName != "" && quorumConsensusProtocolName != eth.ProtocolName {
-		quorumProtos := s.quorumConsensusProtocols()
+	if ibftConsensusProtocolName != "" && ibftConsensusProtocolName != eth.ProtocolName {
+		quorumProtos := s.ibftConsensusProtocols()
 		protos = append(protos, quorumProtos...)
 	}
 	// /end Quorum

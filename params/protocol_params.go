@@ -158,9 +158,8 @@ const (
 	RefundQuotient        uint64 = 2
 	RefundQuotientEIP3529 uint64 = 5
 
-	QuorumMaximumExtraDataSize uint64 = 65 // Maximum size extra data may be after Genesis.
-	// Quorum - payload for a transaction, the size of the buffer to 128kb to match the maximum allowed in chain config
-	QuorumMaxPayloadBufferSize uint64 = 128
+	IBFTMaximumExtraDataSize uint64 = 65  // Maximum size extra data may be after Genesis.
+	IBFTMaxPayloadBufferSize uint64 = 128 // // Payload for a transaction, the size of the buffer to 128kb to match the maximum allowed in chain config
 )
 
 // Gas discount table for BLS12-381 G1 and G2 multi exponentiation operations
@@ -173,9 +172,9 @@ var (
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
 )
 
-func GetMaximumExtraDataSize(isQuorum bool) uint64 {
-	if isQuorum {
-		return QuorumMaximumExtraDataSize
+func GetMaximumExtraDataSize(isIstanbulConsensus bool) uint64 {
+	if isIstanbulConsensus {
+		return IBFTMaximumExtraDataSize
 	} else {
 		return MaximumExtraDataSize
 	}

@@ -23,20 +23,18 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/common/math"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/state"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/trie"
 )
 
 //go:generate go run github.com/fjl/gencodec -type Genesis -field-override genesisSpecMarshaling -out gen_genesis.go
@@ -136,14 +134,10 @@ func CommitGenesisState(db ethdb.Database, hash common.Hash) error {
 		switch hash {
 		case params.MainnetGenesisHash:
 			genesis = DefaultGenesisBlock()
-		case params.RopstenGenesisHash:
-			genesis = DefaultRopstenGenesisBlock()
-		case params.RinkebyGenesisHash:
-			genesis = DefaultRinkebyGenesisBlock()
-		case params.GoerliGenesisHash:
-			genesis = DefaultGoerliGenesisBlock()
-		case params.SepoliaGenesisHash:
-			genesis = DefaultSepoliaGenesisBlock()
+		case params.StagenetGenesisHash:
+			genesis = DefaultStagenetGenesisBlock()
+		case params.TestnetGenesisHash:
+			genesis = DefaultTestnetGenesisBlock()
 		}
 		if genesis != nil {
 			alloc = genesis.Alloc
@@ -328,16 +322,10 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
-	case ghash == params.RopstenGenesisHash:
-		return params.RopstenChainConfig
-	case ghash == params.SepoliaGenesisHash:
-		return params.SepoliaChainConfig
-	case ghash == params.RinkebyGenesisHash:
-		return params.RinkebyChainConfig
-	case ghash == params.GoerliGenesisHash:
-		return params.GoerliChainConfig
-	case ghash == params.KilnGenesisHash:
-		return DefaultKilnGenesisBlock().Config
+	case ghash == params.StagenetGenesisHash:
+		return params.StagenetChainConfig
+	case ghash == params.TestnetGenesisHash:
+		return params.TestnetChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -433,74 +421,55 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 	return g.MustCommit(db)
 }
 
-// DefaultGenesisBlock returns the Ethereum main net genesis block.
+// DefaultGenesisBlock returns the Electroneum-sc mainnet genesis block.
 func DefaultGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
-		Nonce:      66,
-		ExtraData:  hexutil.MustDecode("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
-		GasLimit:   5000,
-		Difficulty: big.NewInt(17179869184),
-		Alloc:      decodePrealloc(mainnetAllocData),
-	}
-}
-
-// DefaultRopstenGenesisBlock returns the Ropsten network genesis block.
-func DefaultRopstenGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.RopstenChainConfig,
-		Nonce:      66,
-		ExtraData:  hexutil.MustDecode("0x3535353535353535353535353535353535353535353535353535353535353535"),
-		GasLimit:   16777216,
-		Difficulty: big.NewInt(1048576),
-		Alloc:      decodePrealloc(ropstenAllocData),
-	}
-}
-
-// DefaultRinkebyGenesisBlock returns the Rinkeby network genesis block.
-func DefaultRinkebyGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.RinkebyChainConfig,
-		Timestamp:  1492009146,
-		ExtraData:  hexutil.MustDecode("0x52657370656374206d7920617574686f7269746168207e452e436172746d616e42eb768f2244c8811c63729a21a3569731535f067ffc57839b00206d1ad20c69a1981b489f772031b279182d99e65703f0076e4812653aab85fca0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
-		GasLimit:   4700000,
-		Difficulty: big.NewInt(1),
-		Alloc:      decodePrealloc(rinkebyAllocData),
-	}
-}
-
-// DefaultGoerliGenesisBlock returns the Görli network genesis block.
-func DefaultGoerliGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.GoerliChainConfig,
-		Timestamp:  1548854791,
-		ExtraData:  hexutil.MustDecode("0x22466c6578692069732061207468696e6722202d204166726900000000000000e0a2bd4258d2768837baa26a28fe71dc079f84c70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
-		GasLimit:   10485760,
-		Difficulty: big.NewInt(1),
-		Alloc:      decodePrealloc(goerliAllocData),
-	}
-}
-
-// DefaultSepoliaGenesisBlock returns the Sepolia network genesis block.
-func DefaultSepoliaGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.SepoliaChainConfig,
 		Nonce:      0,
-		ExtraData:  []byte("Sepolia, Athens, Attica, Greece!"),
-		GasLimit:   0x1c9c380,
-		Difficulty: big.NewInt(0x20000),
-		Timestamp:  1633267481,
-		Alloc:      decodePrealloc(sepoliaAllocData),
+		Timestamp:  1492009146,
+		ExtraData:  hexutil.MustDecode("0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854944c7968f79c1a414c34cd4d3c1ac7a3a8413da50c946c3d358156962440424c8c2bd5a8c79664b9956d94f27ed0217ec98beec0478a221e07471885d639a2944dd607ce3b4ec9e22fd3ce59c672fafee09cf332c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc:      GenesisAlloc{},
 	}
 }
 
-func DefaultKilnGenesisBlock() *Genesis {
-	g := new(Genesis)
-	reader := strings.NewReader(KilnAllocData)
-	if err := json.NewDecoder(reader).Decode(g); err != nil {
-		panic(err)
+// DefaultStagenetGenesisBlock returns the test network genesis block.
+func DefaultStagenetGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.StagenetChainConfig,
+		Nonce:      0,
+		Timestamp:  1655988355,
+		ExtraData:  hexutil.MustDecode("0xf88fa00000000000000000000000000000000000000000000000000000000000000000f86994c21ee98b5a90a6a45aba37fa5eddf90f5e8e181694ff0d56bd960c455a71f908496c79e8eafec34ccf9407afbe0d7d36b80454be1e185f55e02b9453625a944f9a82d7e094de7fb70d9ce2033ec0d65ac311249497f060952b1008c75cb030e3599725ad5cc306a2c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc: GenesisAlloc{
+			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+		},
 	}
-	return g
+}
+
+// DefaultTestnetGenesisBlock returns the stage network genesis block.
+func DefaultTestnetGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.TestnetChainConfig,
+		Nonce:      0,
+		Timestamp:  1655988353,
+		ExtraData:  hexutil.MustDecode("0xf88fa00000000000000000000000000000000000000000000000000000000000000000f86994c21ee98b5a90a6a45aba37fa5eddf90f5e8e181694ff0d56bd960c455a71f908496c79e8eafec34ccf9407afbe0d7d36b80454be1e185f55e02b9453625a944f9a82d7e094de7fb70d9ce2033ec0d65ac311249497f060952b1008c75cb030e3599725ad5cc306a2c080c0"),
+		GasLimit:   16234336,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
+		Coinbase:   common.Address{},
+		Alloc: GenesisAlloc{
+			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+		},
+	}
 }
 
 // DeveloperGenesisBlock returns the 'geth --dev' genesis block.
@@ -534,6 +503,7 @@ func DeveloperGenesisBlock(period uint64, gasLimit uint64, faucet common.Address
 	}
 }
 
+/*
 func decodePrealloc(data string) GenesisAlloc {
 	var p []struct{ Addr, Balance *big.Int }
 	if err := rlp.NewStream(strings.NewReader(data), 0).Decode(&p); err != nil {
@@ -545,3 +515,4 @@ func decodePrealloc(data string) GenesisAlloc {
 	}
 	return ga
 }
+*/

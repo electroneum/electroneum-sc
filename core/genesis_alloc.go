@@ -892,3 +892,6 @@ const KilnAllocData = `{
 	"parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 	"timestamp": "0"
   }`
+
+const electroneumAllocData = ""
+const electroneumTestnetAllocData = ""

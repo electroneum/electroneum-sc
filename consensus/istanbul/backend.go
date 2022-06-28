@@ -20,8 +20,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/event"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/event"
 )
 
 // Backend provides application specific functions for Istanbul core
@@ -75,9 +75,6 @@ type Backend interface {
 	HasBadProposal(hash common.Hash) bool
 
 	Close() error
-
-	// IsQBFTConsensus checks qbftBlock fork block and returns if it should be enabled
-	IsQBFTConsensusAt(*big.Int) bool
 
 	// StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
 	StartQBFTConsensus() error

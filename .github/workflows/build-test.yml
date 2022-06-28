@@ -45,5 +45,5 @@ jobs:
 
     - name: Test Build
       run: |
-        make geth
+        make etn-sc
 

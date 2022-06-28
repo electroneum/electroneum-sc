@@ -25,21 +25,21 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/clique"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/eth/downloader"
-	"github.com/ethereum/go-ethereum/eth/gasprice"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/miner"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/beacon"
+	"github.com/electroneum/electroneum-sc/consensus/clique"
+	"github.com/electroneum/electroneum-sc/consensus/ethash"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulBackend "github.com/electroneum/electroneum-sc/consensus/istanbul/backend"
+	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/eth/downloader"
+	"github.com/electroneum/electroneum-sc/eth/gasprice"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/miner"
+	"github.com/electroneum/electroneum-sc/node"
+	"github.com/electroneum/electroneum-sc/params"
 )
 
 // FullNodeGPO contains default gasprice oracle settings for full node.
@@ -74,7 +74,7 @@ var Defaults = Config{
 		DatasetsOnDisk:   2,
 		DatasetsLockMmap: false,
 	},
-	NetworkId:               1,
+	NetworkId:               52014,
 	TxLookupLimit:           2350000,
 	LightPeers:              100,
 	UltraLightFraction:      75,
@@ -224,35 +224,18 @@ type Config struct {
 func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config, notify []string, noverify bool, db ethdb.Database) consensus.Engine {
 	// If proof-of-authority is requested, set it up
 	var engine consensus.Engine
-	if chainConfig.Clique != nil {
+
+	if chainConfig.IBFT != nil {
+		return istanbulBackend.New(istanbul.Config{
+			BlockPeriod:            chainConfig.IBFT.BlockPeriodSeconds,
+			Epoch:                  chainConfig.IBFT.EpochLength,
+			ProposerPolicy:         istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
+			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
+			AllowedFutureBlockTime: 0,
+		}, stack.GetNodeKey(), db)
+	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)
 	} else {
-
-		//Quorum
-		// If Istanbul is requested, set it up
-		if chainConfig.Istanbul != nil {
-			log.Warn("WARNING: The attribute config.istanbul is deprecated and will be removed in the future, please use config.ibft on genesis file")
-			if chainConfig.Istanbul.Epoch != 0 {
-				config.Istanbul.Epoch = chainConfig.Istanbul.Epoch
-			}
-			config.Istanbul.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.Istanbul.ProposerPolicy))
-			config.Istanbul.Ceil2Nby3Block = chainConfig.Istanbul.Ceil2Nby3Block
-			config.Istanbul.AllowedFutureBlockTime = 0 //Quorum
-			config.Istanbul.TestQBFTBlock = chainConfig.Istanbul.TestQBFTBlock
-
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-		if chainConfig.IBFT != nil {
-			setBFTConfig(&config.Istanbul, chainConfig.IBFT.BFTConfig)
-			config.Istanbul.TestQBFTBlock = nil
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-		if chainConfig.QBFT != nil {
-			setBFTConfig(&config.Istanbul, chainConfig.QBFT.BFTConfig)
-			config.Istanbul.TestQBFTBlock = big.NewInt(0)
-			return istanbulBackend.New(&config.Istanbul, stack.GetNodeKey(), db)
-		}
-
 		switch config.Ethash.PowMode {
 		case ethash.ModeFake:
 			log.Warn("Ethash used in fake mode")
@@ -276,22 +259,4 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 		engine.(*ethash.Ethash).SetThreads(-1) // Disable CPU mining
 	}
 	return beacon.New(engine)
-}
-
-func setBFTConfig(istanbulConfig *istanbul.Config, bftConfig *params.BFTConfig) {
-	if bftConfig.BlockPeriodSeconds != 0 {
-		istanbulConfig.BlockPeriod = bftConfig.BlockPeriodSeconds
-	}
-	if bftConfig.RequestTimeoutSeconds != 0 {
-		istanbulConfig.RequestTimeout = bftConfig.RequestTimeoutSeconds
-	}
-	if bftConfig.EpochLength != 0 {
-		istanbulConfig.Epoch = bftConfig.EpochLength
-	}
-	if bftConfig.ProposerPolicy != 0 {
-		istanbulConfig.ProposerPolicy = istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(bftConfig.ProposerPolicy))
-	}
-	if bftConfig.Ceil2Nby3Block != nil {
-		istanbulConfig.Ceil2Nby3Block = bftConfig.Ceil2Nby3Block
-	}
 }

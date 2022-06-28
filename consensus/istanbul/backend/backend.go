@@ -22,22 +22,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	ibftcore "github.com/ethereum/go-ethereum/consensus/istanbul/ibft/core"
-	ibftengine "github.com/ethereum/go-ethereum/consensus/istanbul/ibft/engine"
-	qbftcore "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/core"
-	qbftengine "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/engine"
-	qbfttypes "github.com/ethereum/go-ethereum/consensus/istanbul/qbft/types"
-	"github.com/ethereum/go-ethereum/consensus/istanbul/validator"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/event"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	qbftcore "github.com/electroneum/electroneum-sc/consensus/istanbul/core"
+	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/event"
+	"github.com/electroneum/electroneum-sc/log"
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -47,14 +45,14 @@ const (
 )
 
 // New creates an Ethereum backend for Istanbul core engine.
-func New(config *istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database) *Backend {
+func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database) *Backend {
 	// Allocate the snapshot caches and create the engine
 	recents, _ := lru.NewARC(inmemorySnapshots)
 	recentMessages, _ := lru.NewARC(inmemoryPeers)
 	knownMessages, _ := lru.NewARC(inmemoryMessages)
 
 	sb := &Backend{
-		config:           config,
+		config:           &config,
 		istanbulEventMux: new(event.TypeMux),
 		privateKey:       privateKey,
 		address:          crypto.PubkeyToAddress(privateKey.PublicKey),
@@ -69,7 +67,6 @@ func New(config *istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Databas
 	}
 
 	sb.qbftEngine = qbftengine.NewEngine(sb.config, sb.address, sb.Sign)
-	sb.ibftEngine = ibftengine.NewEngine(sb.config, sb.address, sb.Sign)
 
 	return sb
 }
@@ -84,7 +81,6 @@ type Backend struct {
 
 	core istanbul.Core
 
-	ibftEngine *ibftengine.Engine
 	qbftEngine *qbftengine.Engine
 
 	istanbulEventMux *event.TypeMux
@@ -116,8 +112,6 @@ type Backend struct {
 
 	recentMessages *lru.ARCCache // the cache of peer's messages
 	knownMessages  *lru.ARCCache // the cache of self messages
-
-	qbftConsensusEnabled bool // qbft consensus
 }
 
 func (sb *Backend) Engine() istanbul.Engine {
@@ -125,14 +119,7 @@ func (sb *Backend) Engine() istanbul.Engine {
 }
 
 func (sb *Backend) EngineForBlockNumber(blockNumber *big.Int) istanbul.Engine {
-	switch {
-	case blockNumber != nil && sb.IsQBFTConsensusAt(blockNumber):
-		return sb.qbftEngine
-	case blockNumber == nil && sb.IsQBFTConsensus():
-		return sb.qbftEngine
-	default:
-		return sb.ibftEngine
-	}
+	return sb.qbftEngine
 }
 
 // zekun: HACK
@@ -192,15 +179,11 @@ func (sb *Backend) Gossip(valSet istanbul.ValidatorSet, code uint64, payload []b
 			m.Add(hash, true)
 			sb.recentMessages.Add(addr, m)
 
-			if sb.IsQBFTConsensus() {
-				var outboundCode uint64 = istanbulMsg
-				if _, ok := qbfttypes.MessageCodes()[code]; ok {
-					outboundCode = code
-				}
-				go p.SendQBFTConsensus(outboundCode, payload)
-			} else {
-				go p.SendConsensus(istanbulMsg, payload)
+			var outboundCode uint64 = istanbulMsg
+			if _, ok := qbfttypes.MessageCodes()[code]; ok {
+				outboundCode = code
 			}
+			go p.SendQBFTConsensus(outboundCode, payload)
 		}
 	}
 	return nil
@@ -211,7 +194,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// Check if the proposal is a valid block
 	block, ok := proposal.(*types.Block)
 	if !ok {
-		sb.logger.Error("BFT: invalid block proposal", "proposal", proposal)
+		sb.logger.Error("IBFT: invalid block proposal", "proposal", proposal)
 		return istanbulcommon.ErrInvalidProposal
 	}
 
@@ -228,7 +211,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// update block's header
 	block = block.WithSeal(h)
 
-	sb.logger.Info("BFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
+	sb.logger.Info("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
 
 	// - if the proposed and committed blocks are the same, send the proposed hash
 	//   to commit channel, which is being watched inside the engine.Seal() function.
@@ -259,13 +242,13 @@ func (sb *Backend) Verify(proposal istanbul.Proposal) (time.Duration, error) {
 	// Check if the proposal is a valid block
 	block, ok := proposal.(*types.Block)
 	if !ok {
-		sb.logger.Error("BFT: invalid block proposal", "proposal", proposal)
+		sb.logger.Error("IBFT: invalid block proposal", "proposal", proposal)
 		return 0, istanbulcommon.ErrInvalidProposal
 	}
 
 	// check bad block
 	if sb.HasBadProposal(block.Hash()) {
-		sb.logger.Warn("BFT: bad block proposal", "proposal", proposal)
+		sb.logger.Warn("IBFT: bad block proposal", "proposal", proposal)
 		return 0, core.ErrBannedHash
 	}
 
@@ -341,7 +324,7 @@ func (sb *Backend) LastProposal() (istanbul.Proposal, common.Address) {
 		var err error
 		proposer, err = sb.Author(block.Header())
 		if err != nil {
-			sb.logger.Error("BFT: last block proposal invalid", "err", err)
+			sb.logger.Error("IBFT: last block proposal invalid", "err", err)
 			return nil, common.Address{}
 		}
 	}
@@ -361,46 +344,14 @@ func (sb *Backend) Close() error {
 	return nil
 }
 
-// IsQBFTConsensus returns whether qbft consensus should be used
-func (sb *Backend) IsQBFTConsensus() bool {
-	if sb.qbftConsensusEnabled {
-		return true
-	}
-	if sb.chain != nil {
-		return sb.IsQBFTConsensusAt(sb.chain.CurrentHeader().Number)
-	}
-	return false
-}
-
-// IsQBFTConsensusForHeader checks if qbft consensus is enabled for the block height identified by the given header
-func (sb *Backend) IsQBFTConsensusAt(blockNumber *big.Int) bool {
-	return sb.config.IsQBFTConsensusAt(blockNumber)
-}
-
-func (sb *Backend) startIBFT() error {
-	sb.logger.Info("BFT: activate IBFT")
-	sb.logger.Trace("BFT: set ProposerPolicy sorter to ValidatorSortByStringFun")
-	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByString())
-	sb.qbftConsensusEnabled = false
-
-	sb.core = ibftcore.New(sb, sb.config)
-	if err := sb.core.Start(); err != nil {
-		sb.logger.Error("BFT: failed to activate IBFT", "err", err)
-		return err
-	}
-
-	return nil
-}
-
 func (sb *Backend) startQBFT() error {
-	sb.logger.Info("BFT: activate QBFT")
-	sb.logger.Trace("BFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
+	sb.logger.Info("IBFT: activate QBFT")
+	sb.logger.Trace("IBFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
 	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
-	sb.qbftConsensusEnabled = true
 
 	sb.core = qbftcore.New(sb, sb.config)
 	if err := sb.core.Start(); err != nil {
-		sb.logger.Error("BFT: failed to activate QBFT", "err", err)
+		sb.logger.Error("IBFT: failed to activate QBFT", "err", err)
 		return err
 	}
 
@@ -412,21 +363,19 @@ func (sb *Backend) stop() error {
 	sb.core = nil
 
 	if core != nil {
-		sb.logger.Info("BFT: deactivate")
+		sb.logger.Info("IBFT: deactivate")
 		if err := core.Stop(); err != nil {
-			sb.logger.Error("BFT: failed to deactivate", "err", err)
+			sb.logger.Error("IBFT: failed to deactivate", "err", err)
 			return err
 		}
 	}
-
-	sb.qbftConsensusEnabled = false
 
 	return nil
 }
 
 // StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
 func (sb *Backend) StartQBFTConsensus() error {
-	sb.logger.Info("BFT: switch from IBFT to QBFT")
+	sb.logger.Info("IBFT: switch from IBFT to QBFT")
 	if err := sb.stop(); err != nil {
 		return err
 	}

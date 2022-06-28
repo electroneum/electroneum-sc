@@ -21,16 +21,16 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	"github.com/ethereum/go-ethereum/consensus/istanbul/validator"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/core/state"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/rpc"
 )
 
 const (
@@ -157,7 +157,7 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 
 		err = sb.EngineForBlockNumber(header.Number).WriteVote(header, addresses[index], authorizes[index])
 		if err != nil {
-			log.Error("BFT: error writing validator vote", "err", err)
+			log.Error("IBFT: error writing validator vote", "err", err)
 			return err
 		}
 	}
@@ -269,14 +269,7 @@ func (sb *Backend) Start(chain consensus.ChainHeaderReader, currentBlock func() 
 	sb.hasBadBlock = hasBadBlock
 
 	// Check if qbft Consensus needs to be used after chain is set
-	var err error
-	if sb.IsQBFTConsensus() {
-		err = sb.startQBFT()
-	} else {
-		err = sb.startIBFT()
-	}
-
-	if err != nil {
+	if err := sb.startQBFT(); err != nil {
 		return err
 	}
 
@@ -320,9 +313,9 @@ func (sb *Backend) snapLogger(snap *Snapshot) log.Logger {
 
 func (sb *Backend) storeSnap(snap *Snapshot) error {
 	logger := sb.snapLogger(snap)
-	logger.Debug("BFT: store snapshot to database")
+	logger.Debug("IBFT: store snapshot to database")
 	if err := snap.store(sb.db); err != nil {
-		logger.Error("BFT: failed to store snapshot to database", "err", err)
+		logger.Error("IBFT: failed to store snapshot to database", "err", err)
 		return err
 	}
 
@@ -340,14 +333,14 @@ func (sb *Backend) snapshot(chain consensus.ChainHeaderReader, number uint64, ha
 		// If an in-memory snapshot was found, use that
 		if s, ok := sb.recents.Get(hash); ok {
 			snap = s.(*Snapshot)
-			sb.snapLogger(snap).Trace("BFT: loaded voting snapshot from cache")
+			sb.snapLogger(snap).Trace("IBFT: loaded voting snapshot from cache")
 			break
 		}
 		// If an on-disk checkpoint snapshot can be found, use that
 		if number%checkpointInterval == 0 {
 			if s, err := loadSnapshot(sb.config.Epoch, sb.db, hash); err == nil {
 				snap = s
-				sb.snapLogger(snap).Trace("BFT: loaded voting snapshot from database")
+				sb.snapLogger(snap).Trace("IBFT: loaded voting snapshot from database")
 				break
 			}
 		}
@@ -356,14 +349,14 @@ func (sb *Backend) snapshot(chain consensus.ChainHeaderReader, number uint64, ha
 		if number == 0 {
 			genesis := chain.GetHeaderByNumber(0)
 			if err := sb.EngineForBlockNumber(big.NewInt(0)).VerifyHeader(chain, genesis, nil, nil); err != nil {
-				sb.logger.Error("BFT: invalid genesis block", "err", err)
+				sb.logger.Error("IBFT: invalid genesis block", "err", err)
 				return nil, err
 			}
 
 			// Get the validators from genesis to create a snapshot
 			validators, err := sb.EngineForBlockNumber(big.NewInt(0)).Validators(genesis)
 			if err != nil {
-				sb.logger.Error("BFT: invalid genesis block", "err", err)
+				sb.logger.Error("IBFT: invalid genesis block", "err", err)
 				return nil, err
 			}
 
@@ -453,7 +446,7 @@ func (sb *Backend) snapApply(snap *Snapshot, headers []*types.Header) (*Snapshot
 func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	logger := sb.snapLogger(snap).New("header.number", header.Number.Uint64(), "header.hash", header.Hash().String())
 
-	logger.Trace("BFT: apply header to voting snapshot")
+	logger.Trace("IBFT: apply header to voting snapshot")
 
 	// Remove any votes on checkpoint blocks
 	number := header.Number.Uint64()
@@ -465,21 +458,21 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	// Resolve the authorization key and check against validators
 	validator, err := sb.EngineForBlockNumber(header.Number).Author(header)
 	if err != nil {
-		logger.Error("BFT: invalid header author", "err", err)
+		logger.Error("IBFT: invalid header author", "err", err)
 		return err
 	}
 
 	logger = logger.New("header.author", validator)
 
 	if _, v := snap.ValSet.GetByAddress(validator); v == nil {
-		logger.Error("BFT: header author is not a validator")
+		logger.Error("IBFT: header author is not a validator")
 		return istanbulcommon.ErrUnauthorized
 	}
 
 	// Read vote from header
 	candidate, authorize, err := sb.EngineForBlockNumber(header.Number).ReadVote(header)
 	if err != nil {
-		logger.Error("BFT: invalid header vote", "err", err)
+		logger.Error("IBFT: invalid header vote", "err", err)
 		return err
 	}
 
@@ -487,7 +480,7 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	// Header authorized, discard any previous votes from the validator
 	for i, vote := range snap.Votes {
 		if vote.Validator == validator && vote.Address == candidate {
-			logger.Trace("BFT: discard previous vote from tally", "old.authorize", vote.Authorize)
+			logger.Trace("IBFT: discard previous vote from tally", "old.authorize", vote.Authorize)
 			// Uncast the vote from the cached tally
 			snap.uncast(vote.Address, vote.Authorize)
 
@@ -497,7 +490,7 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 		}
 	}
 
-	logger.Debug("BFT: add vote to tally")
+	logger.Debug("IBFT: add vote to tally")
 	if snap.cast(candidate, authorize) {
 		snap.Votes = append(snap.Votes, &Vote{
 			Validator: validator,
@@ -511,10 +504,10 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	if tally := snap.Tally[candidate]; tally.Votes > snap.ValSet.Size()/2 {
 
 		if tally.Authorize {
-			logger.Info("BFT: reached majority to add validator")
+			logger.Info("IBFT: reached majority to add validator")
 			snap.ValSet.AddValidator(candidate)
 		} else {
-			logger.Info("BFT: reached majority to remove validator")
+			logger.Info("IBFT: reached majority to remove validator")
 			snap.ValSet.RemoveValidator(candidate)
 
 			// Discard any previous votes the deauthorized validator cast

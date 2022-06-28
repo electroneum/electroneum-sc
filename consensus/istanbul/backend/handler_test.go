@@ -23,60 +23,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/p2p"
+	"github.com/electroneum/electroneum-sc/rlp"
+	"github.com/electroneum/electroneum-sc/trie"
 )
-
-func TestIstanbulMessage(t *testing.T) {
-	_, backend := newBlockChain(1, nil)
-	defer backend.Stop()
-
-	// generate one msg
-	data := []byte("data1")
-	hash := istanbul.RLPHash(data)
-	msg := makeMsg(istanbulMsg, data)
-	addr := common.StringToAddress("address")
-
-	// 1. this message should not be in cache
-	// for peers
-	if _, ok := backend.recentMessages.Get(addr); ok {
-		t.Fatalf("the cache of messages for this peer should be nil")
-	}
-
-	// for self
-	if _, ok := backend.knownMessages.Get(hash); ok {
-		t.Fatalf("the cache of messages should be nil")
-	}
-
-	// 2. this message should be in cache after we handle it
-	_, err := backend.HandleMsg(addr, msg)
-	if err != nil {
-		t.Fatalf("handle message failed: %v", err)
-	}
-	// for peers
-	if ms, ok := backend.recentMessages.Get(addr); ms == nil || !ok {
-		t.Fatalf("the cache of messages for this peer cannot be nil")
-	} else if m, ok := ms.(*lru.ARCCache); !ok {
-		t.Fatalf("the cache of messages for this peer cannot be casted")
-	} else if _, ok := m.Get(hash); !ok {
-		t.Fatalf("the cache of messages for this peer cannot be found")
-	}
-
-	// for self
-	if _, ok := backend.knownMessages.Get(hash); !ok {
-		t.Fatalf("the cache of messages cannot be found")
-	}
-}
-
-func makeMsg(msgcode uint64, data interface{}) p2p.Msg {
-	size, r, _ := rlp.EncodeToReader(data)
-	return p2p.Msg{Code: msgcode, Size: uint32(size), Payload: r}
-}
 
 func tryUntilMessageIsHandled(backend *Backend, arbitraryAddress common.Address, arbitraryP2PMessage p2p.Msg) (handled bool, err error) {
 	for i := 0; i < 5; i++ { // make 5 tries if a little wait
@@ -90,7 +43,7 @@ func tryUntilMessageIsHandled(backend *Backend, arbitraryAddress common.Address,
 }
 
 func TestHandleNewBlockMessage_whenTypical(t *testing.T) {
-	_, backend := newBlockChain(1, nil)
+	_, backend := newBlockChain(1)
 	defer backend.Stop()
 	arbitraryAddress := common.StringToAddress("arbitrary")
 	arbitraryBlock, arbitraryP2PMessage := buildArbitraryP2PNewBlockMessage(t, false)
@@ -109,7 +62,7 @@ func TestHandleNewBlockMessage_whenTypical(t *testing.T) {
 }
 
 func TestHandleNewBlockMessage_whenNotAProposedBlock(t *testing.T) {
-	_, backend := newBlockChain(1, nil)
+	_, backend := newBlockChain(1)
 	defer backend.Stop()
 	arbitraryAddress := common.StringToAddress("arbitrary")
 	_, arbitraryP2PMessage := buildArbitraryP2PNewBlockMessage(t, false)
@@ -133,7 +86,7 @@ func TestHandleNewBlockMessage_whenNotAProposedBlock(t *testing.T) {
 }
 
 func TestHandleNewBlockMessage_whenFailToDecode(t *testing.T) {
-	_, backend := newBlockChain(1, nil)
+	_, backend := newBlockChain(1)
 	defer backend.Stop()
 	arbitraryAddress := common.StringToAddress("arbitrary")
 	_, arbitraryP2PMessage := buildArbitraryP2PNewBlockMessage(t, true)

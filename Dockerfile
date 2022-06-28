@@ -23,7 +23,7 @@ RUN apk add --no-cache ca-certificates
 COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
 
 EXPOSE 8545 8546 30303 30303/udp
-ENTRYPOINT ["geth"]
+ENTRYPOINT ["etn-sc"]
 
 # Add some metadata labels to help programatic image consumption
 ARG COMMIT=""

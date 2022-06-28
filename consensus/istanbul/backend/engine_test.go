@@ -24,25 +24,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/istanbul"
-	istanbulcommon "github.com/ethereum/go-ethereum/consensus/istanbul/common"
-	"github.com/ethereum/go-ethereum/consensus/istanbul/testutils"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/testutils"
+	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/core/vm"
+	"github.com/electroneum/electroneum-sc/crypto"
 )
 
-func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey, cfg *istanbul.Config) (*core.BlockChain, *Backend) {
+func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey, cfg istanbul.Config) (*core.BlockChain, *Backend) {
 	memDB := rawdb.NewMemoryDatabase()
 
 	// Use the first key as private key
 	backend := New(cfg, nodeKeys[0], memDB)
 
-	backend.qbftConsensusEnabled = backend.IsQBFTConsensus()
 	genesis.MustCommit(memDB)
 
 	blockchain, err := core.NewBlockChain(memDB, nil, genesis.Config, backend, vm.Config{}, nil, nil)
@@ -76,21 +75,17 @@ func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey
 // in this test, we can set n to 1, and it means we can process Istanbul and commit a
 // block by one node. Otherwise, if n is larger than 1, we have to generate
 // other fake events to process Istanbul.
-func newBlockChain(n int, qbftBlock *big.Int) (*core.BlockChain, *Backend) {
-	isQBFT := qbftBlock != nil && qbftBlock.Uint64() == 0
-	genesis, nodeKeys := testutils.GenesisAndKeys(n, isQBFT)
-
+func newBlockChain(n int) (*core.BlockChain, *Backend) {
+	genesis, nodeKeys := testutils.GenesisAndKeys(n)
 	config := copyConfig(istanbul.DefaultConfig)
-
-	config.TestQBFTBlock = qbftBlock
 
 	return newBlockchainFromConfig(genesis, nodeKeys, config)
 }
 
 // copyConfig create a copy of istanbul.Config, so that changing it does not update the original
-func copyConfig(config *istanbul.Config) *istanbul.Config {
+func copyConfig(config *istanbul.Config) istanbul.Config {
 	cpy := *config
-	return &cpy
+	return cpy
 }
 
 func makeHeader(parent *types.Block, config *istanbul.Config) *types.Header {
@@ -129,9 +124,8 @@ func makeBlockWithoutSeal(chain *core.BlockChain, engine *Backend, parent *types
 }
 
 func TestIBFTPrepare(t *testing.T) {
-	chain, engine := newBlockChain(1, nil)
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
-	chain.Config().Istanbul.TestQBFTBlock = nil
 	header := makeHeader(chain.Genesis(), engine.config)
 	err := engine.Prepare(chain, header)
 	if err != nil {
@@ -145,7 +139,7 @@ func TestIBFTPrepare(t *testing.T) {
 }
 
 func TestQBFTPrepare(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	header := makeHeader(chain.Genesis(), engine.config)
 	err := engine.Prepare(chain, header)
@@ -161,7 +155,7 @@ func TestQBFTPrepare(t *testing.T) {
 }
 
 func TestSealStopChannel(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	stop := make(chan struct{}, 1)
@@ -191,7 +185,7 @@ func TestSealStopChannel(t *testing.T) {
 }
 
 func TestSealCommittedOtherHash(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), false)
 	otherBlock := makeBlockWithoutSeal(chain, engine, block, false)
@@ -239,7 +233,7 @@ func updateQBFTBlock(block *types.Block, addr common.Address) *types.Block {
 }
 
 func TestSealCommitted(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	expectedBlock := updateQBFTBlock(block, engine.Address())
@@ -260,12 +254,11 @@ func TestSealCommitted(t *testing.T) {
 }
 
 func TestVerifyHeader(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 
 	// istanbulcommon.ErrEmptyCommittedSeals case
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-	header := engine.chain.GetHeader(block.ParentHash(), block.NumberU64()-1)
 	block = updateQBFTBlock(block, engine.Address())
 	err := engine.VerifyHeader(chain, block.Header(), false)
 	if err != istanbulcommon.ErrEmptyCommittedSeals {
@@ -273,7 +266,7 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	// short extra data
-	header = block.Header()
+	header := block.Header()
 	header.Extra = []byte{}
 	err = engine.VerifyHeader(chain, header, false)
 	if err != istanbulcommon.ErrInvalidExtraDataFormat {
@@ -356,7 +349,7 @@ func TestVerifyHeader(t *testing.T) {
 }
 
 func TestVerifyHeaders(t *testing.T) {
-	chain, engine := newBlockChain(1, big.NewInt(0))
+	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	genesis := chain.Genesis()
 
