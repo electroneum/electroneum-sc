@@ -448,8 +448,8 @@ func DefaultStagenetGenesisBlock() *Genesis {
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		Coinbase:   common.Address{},
 		Alloc: GenesisAlloc{
-			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: big.NewInt(math.MaxInt64)},
-			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: big.NewInt(math.MaxInt64)},
+			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
 		},
 	}
 }
@@ -466,8 +466,8 @@ func DefaultTestnetGenesisBlock() *Genesis {
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		Coinbase:   common.Address{},
 		Alloc: GenesisAlloc{
-			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: big.NewInt(math.MaxInt64)},
-			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: big.NewInt(math.MaxInt64)},
+			common.HexToAddress("0x72f1a0bAA7f1C79129A391C2F32bCD8247A18a63"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+			common.HexToAddress("0xf29A0844926Fe8d63e5B211978B26E3f6d9e9fd5"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
 		},
 	}
 }
