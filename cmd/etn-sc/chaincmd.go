@@ -189,6 +189,13 @@ func initGenesis(ctx *cli.Context) error {
 		utils.Fatalf("invalid genesis file: %v", err)
 	}
 
+	if genesis.Config.IBFT != nil {
+		err = genesis.Config.CheckTransitionsData()
+		if err != nil {
+			utils.Fatalf("transitions data invalid: %v", err)
+		}
+	}
+
 	// Open and initialise both full and light databases
 	stack, _ := makeConfigNode(ctx)
 	defer stack.Close()
