@@ -29,7 +29,7 @@ var StagenetBootnodes = []string{}
 // TestnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
 // the main Electroneum Testnet network.
 var TestnetBootnodes = []string{
-	"enode://973089afc9ae8141a47b211cb48979bb1fd2cbf5f24c498b4aab93a7cee5fcb996c7badac0d3b8414608b113bb12b9b997ac5bea35dd7842149a3182e42dfe18@127.0.0.1:30303",
+	"enode://973089afc9ae8141a47b211cb48979bb1fd2cbf5f24c498b4aab93a7cee5fcb996c7badac0d3b8414608b113bb12b9b997ac5bea35dd7842149a3182e42dfe18@46.137.237.72:30303",
 }
 
 var V5Bootnodes = []string{}
