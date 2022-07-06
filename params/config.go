@@ -18,6 +18,7 @@ package params
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -121,16 +122,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, nil}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int), false)
 )
 
@@ -220,6 +221,8 @@ type ChainConfig struct {
 	Ethash *EthashConfig `json:"ethash,omitempty"`
 	Clique *CliqueConfig `json:"clique,omitempty"`
 	IBFT   *IBFTConfig   `json:"ibft,omitempty"`
+
+	Transitions []Transition `json:"transitions,omitempty"` // Transition config based on the block number
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -251,6 +254,13 @@ type IBFTConfig struct {
 
 func (c IBFTConfig) String() string {
 	return "IBFT"
+}
+
+type Transition struct {
+	Block                 *big.Int `json:"block"`
+	EpochLength           uint64   `json:"epochlength,omitempty"`           // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds    uint64   `json:"blockperiodseconds,omitempty"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds uint64   `json:"requesttimeoutseconds,omitempty"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
 }
 
 // String implements the fmt.Stringer interface.
@@ -367,6 +377,12 @@ func (c *ChainConfig) IsTerminalPoWBlock(parentTotalDiff *big.Int, totalDiff *bi
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
 	bhead := new(big.Int).SetUint64(height)
+
+	// compare the transitions data between the old and new config
+	err, cBlock, newCfgBlock := isTransitionsConfigCompatible(c, newcfg, bhead)
+	if err != nil {
+		return newCompatError(err.Error(), cBlock, newCfgBlock)
+	}
 
 	// Iterate checkCompatible to find the lowest conflict.
 	var lasterr *ConfigCompatError
@@ -495,6 +511,77 @@ func isForked(s, head *big.Int) bool {
 		return false
 	}
 	return s.Cmp(head) <= 0
+}
+
+func (c *ChainConfig) CheckTransitionsData() error {
+	prevBlock := big.NewInt(0)
+	for _, transition := range c.Transitions {
+		if transition.Block == nil {
+			return ErrBlockNumberMissing
+		}
+		if transition.Block.Cmp(prevBlock) < 0 {
+			return ErrBlockOrder
+		}
+		prevBlock = transition.Block
+	}
+	return nil
+}
+
+func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (error, *big.Int, *big.Int) {
+	if len(c1.Transitions) == 0 && len(c2.Transitions) == 0 {
+		// maxCodeSizeConfig not used. return
+		return nil, big.NewInt(0), big.NewInt(0)
+	}
+
+	// existing config had Transitions and new one does not have the same return error
+	if len(c1.Transitions) > 0 && len(c2.Transitions) == 0 {
+		return fmt.Errorf("genesis file missing transitions information"), head, head
+	}
+
+	if len(c2.Transitions) > 0 && len(c1.Transitions) == 0 {
+		return nil, big.NewInt(0), big.NewInt(0)
+	}
+
+	// check the number of records below current head in both configs
+	// if they do not match throw an error
+	c1RecsBelowHead := 0
+	for _, data := range c1.Transitions {
+		if data.Block.Cmp(head) <= 0 {
+			c1RecsBelowHead++
+		} else {
+			break
+		}
+	}
+
+	c2RecsBelowHead := 0
+	for _, data := range c2.Transitions {
+		if data.Block.Cmp(head) <= 0 {
+			c2RecsBelowHead++
+		} else {
+			break
+		}
+	}
+
+	// if the count of past records is not matching return error
+	if c1RecsBelowHead != c2RecsBelowHead {
+		return errors.New("transitions data incompatible. updating transitions for past"), head, head
+	}
+
+	// validate that each past record is matching exactly. if not return error
+	for i := 0; i < c1RecsBelowHead; i++ {
+		isSameBlock := c1.Transitions[i].Block.Cmp(c2.Transitions[i].Block) != 0
+		if isSameBlock || c1.Transitions[i].BlockPeriodSeconds != c2.Transitions[i].BlockPeriodSeconds {
+			return ErrTransitionIncompatible("BlockPeriodSeconds"), head, head
+		}
+		if isSameBlock || c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
+			return ErrTransitionIncompatible("RequestTimeoutSeconds"), head, head
+		}
+		if isSameBlock || c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
+			return ErrTransitionIncompatible("EpochLength"), head, head
+		}
+	}
+
+	return nil, big.NewInt(0), big.NewInt(0)
 }
 
 func configNumEqual(x, y *big.Int) bool {

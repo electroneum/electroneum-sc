@@ -96,3 +96,64 @@ func TestCheckCompatible(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckTransitionsData(t *testing.T) {
+	type test struct {
+		stored  *ChainConfig
+		wantErr error
+	}
+	var ibftTransitionsConfig, qbftTransitionsConfig, invalidBlockOrder []Transition
+	tranI0 := Transition{big.NewInt(0), 30000, 5, 10}
+	tranI5 := Transition{big.NewInt(5), 30000, 5, 10}
+	tranI8 := Transition{big.NewInt(8), 30000, 5, 10}
+	tranI10 := Transition{big.NewInt(10), 30000, 5, 10}
+
+	ibftTransitionsConfig = append(ibftTransitionsConfig, tranI0, tranI5, tranI8, tranI10)
+	invalidBlockOrder = append(invalidBlockOrder, tranI8, tranI5)
+
+	tests := []test{
+		{stored: MainnetChainConfig, wantErr: nil},
+		{stored: AllEthashProtocolChanges, wantErr: nil},
+		{stored: AllCliqueProtocolChanges, wantErr: nil},
+		{stored: TestChainConfig, wantErr: nil},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: ibftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: qbftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: ibftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: qbftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: invalidBlockOrder},
+			wantErr: ErrBlockOrder,
+		},
+		{
+			stored:  &ChainConfig{Transitions: []Transition{{nil, 30000, 5, 10}}},
+			wantErr: ErrBlockNumberMissing,
+		},
+		{
+			stored:  &ChainConfig{Transitions: []Transition{{Block: big.NewInt(0)}}},
+			wantErr: nil,
+		},
+	}
+
+	for _, test := range tests {
+		err := test.stored.CheckTransitionsData()
+		if !reflect.DeepEqual(err, test.wantErr) {
+			t.Errorf("error mismatch:\nstored: %v\nerr: %v\nwant: %v", test.stored, err, test.wantErr)
+		}
+	}
+}

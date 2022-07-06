@@ -17,8 +17,10 @@
 package istanbul
 
 import (
+	"math/big"
 	"sync"
 
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/naoina/toml"
 )
 
@@ -122,6 +124,7 @@ type Config struct {
 	ProposerPolicy         *ProposerPolicy `toml:",omitempty"` // The policy for proposer selection
 	Epoch                  uint64          `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
 	AllowedFutureBlockTime uint64          `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
+	Transitions            []params.Transition
 }
 
 var DefaultConfig = &Config{
@@ -130,4 +133,20 @@ var DefaultConfig = &Config{
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	AllowedFutureBlockTime: 0,
+}
+
+func (c Config) GetConfig(blockNumber *big.Int) Config {
+	newConfig := c
+	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
+		if c.Transitions[i].RequestTimeoutSeconds != 0 {
+			newConfig.RequestTimeout = c.Transitions[i].RequestTimeoutSeconds
+		}
+		if c.Transitions[i].EpochLength != 0 {
+			newConfig.Epoch = c.Transitions[i].EpochLength
+		}
+		if c.Transitions[i].BlockPeriodSeconds != 0 {
+			newConfig.BlockPeriod = c.Transitions[i].BlockPeriodSeconds
+		}
+	}
+	return newConfig
 }

@@ -17,8 +17,11 @@
 package istanbul
 
 import (
+	"math/big"
+	"reflect"
 	"testing"
 
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/naoina/toml"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,4 +44,49 @@ func TestProposerPolicy_MarshalTOML(t *testing.T) {
 		t.Errorf("error marshalling ProposerPolicy: %v", err)
 	}
 	assert.Equal(t, output, b, "ProposerPolicy MarshalTOML mismatch")
+}
+
+func TestGetConfig(t *testing.T) {
+	if !reflect.DeepEqual(DefaultConfig.GetConfig(nil), *DefaultConfig) {
+		t.Errorf("error default config:\nexpected: %v\n", DefaultConfig)
+	}
+
+	config := DefaultConfig
+	config.Transitions = []params.Transition{{
+		Block:       big.NewInt(1),
+		EpochLength: 40000,
+	}, {
+		Block:              big.NewInt(3),
+		BlockPeriodSeconds: 5,
+	}, {
+		Block:                 big.NewInt(5),
+		RequestTimeoutSeconds: 15000,
+	}}
+	config1 := *DefaultConfig
+	config1.Epoch = 40000
+	config3 := config1
+	config3.BlockPeriod = 5
+	config5 := config3
+	config5.RequestTimeout = 15000
+
+	type test struct {
+		blockNumber    int64
+		expectedConfig Config
+	}
+	tests := []test{
+		{1, config1},
+		{2, config1},
+		{3, config3},
+		{4, config3},
+		{5, config5},
+		{10, config5},
+		{100, config5},
+	}
+
+	for _, test := range tests {
+		c := config.GetConfig(big.NewInt(test.blockNumber))
+		if !reflect.DeepEqual(c, test.expectedConfig) {
+			t.Errorf("error mismatch:\nexpected: %v\ngot: %v\n", test.expectedConfig, c)
+		}
+	}
 }
