@@ -107,7 +107,7 @@ This command will:
 ### Full node on the test network
 
 Transitioning towards developers, if you'd like to play around with creating Electroneum
-contracts, you almost certainly would like to do that without any real money involved until
+contracts, you almost certainly would like to do that without any real cryptocurrency involved until
 you get the hang of the entire system. In other words, instead of attaching to the main
 network, you want to join the **test** network with your node, which is fully equivalent to
 the main network, but with play-ETN only.
@@ -133,7 +133,7 @@ Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instanc
 
 *Note: Although there are some internal protective measures to prevent transactions from
 crossing over between the main network and test network, you should make sure to always
-use separate accounts for play-money and real-money. Unless you manually move
+use separate accounts for play-cryptocurrency and real-cryptocurrency. Unless you manually move
 accounts, `etn-sc` will by default correctly separate the two networks and will not make any
 accounts available between them.*
 
