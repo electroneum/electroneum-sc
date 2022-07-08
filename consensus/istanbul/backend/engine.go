@@ -30,6 +30,7 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rpc"
 )
 
@@ -135,7 +136,20 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 		return err
 	}
 
-	err = sb.EngineForBlockNumber(header.Number).Prepare(chain, header, snap.ValSet)
+	newValSet := snap.ValSet
+
+	// If in ContractMode, gets validator set from governance smart contract and
+	// sets it in the block header
+	parentNumber := new(big.Int).SetUint64(header.Number.Uint64() - 1)
+	if sb.config.GetValidatorSelectionMode(parentNumber) == params.ContractMode {
+		validators, err := snap.ValSet.FromGovernanceContract(parentNumber, sb.config.GetValidatorContractAddress(parentNumber), sb.config.Client)
+		if err != nil {
+			return err
+		}
+		newValSet = validator.NewSet(validators, sb.config.ProposerPolicy)
+	}
+
+	err = sb.EngineForBlockNumber(header.Number).Prepare(chain, header, newValSet)
 	if err != nil {
 		return err
 	}
@@ -354,7 +368,7 @@ func (sb *Backend) snapshot(chain consensus.ChainHeaderReader, number uint64, ha
 			}
 
 			// Get the validators from genesis to create a snapshot
-			validators, err := sb.EngineForBlockNumber(big.NewInt(0)).Validators(genesis)
+			validators, err := sb.EngineForBlockNumber(big.NewInt(0)).ExtractGenesisValidators(genesis)
 			if err != nil {
 				sb.logger.Error("IBFT: invalid genesis block", "err", err)
 				return nil, err
@@ -456,81 +470,92 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	}
 
 	// Resolve the authorization key and check against validators
-	validator, err := sb.EngineForBlockNumber(header.Number).Author(header)
+	val, err := sb.EngineForBlockNumber(header.Number).Author(header)
 	if err != nil {
 		logger.Error("IBFT: invalid header author", "err", err)
 		return err
 	}
 
-	logger = logger.New("header.author", validator)
+	logger = logger.New("header.author", val)
 
-	if _, v := snap.ValSet.GetByAddress(validator); v == nil {
+	if _, v := snap.ValSet.GetByAddress(val); v == nil {
 		logger.Error("IBFT: header author is not a validator")
 		return istanbulcommon.ErrUnauthorized
 	}
 
-	// Read vote from header
-	candidate, authorize, err := sb.EngineForBlockNumber(header.Number).ReadVote(header)
-	if err != nil {
-		logger.Error("IBFT: invalid header vote", "err", err)
-		return err
-	}
+	// If in ContractMode, update snapshot with validator set in header
+	if number > 0 && sb.config.GetValidatorSelectionMode(new(big.Int).SetUint64(number-1)) == params.ContractMode {
 
-	logger = logger.New("candidate", candidate.String(), "authorize", authorize)
-	// Header authorized, discard any previous votes from the validator
-	for i, vote := range snap.Votes {
-		if vote.Validator == validator && vote.Address == candidate {
-			logger.Trace("IBFT: discard previous vote from tally", "old.authorize", vote.Authorize)
-			// Uncast the vote from the cached tally
-			snap.uncast(vote.Address, vote.Authorize)
-
-			// Uncast the vote from the chronological list
-			snap.Votes = append(snap.Votes[:i], snap.Votes[i+1:]...)
-			break // only one vote allowed
+		extra, err := types.ExtractQBFTExtra(header)
+		if err != nil {
+			return err
 		}
-	}
+		snap.ValSet = validator.NewSet(extra.Validators, sb.config.ProposerPolicy)
 
-	logger.Debug("IBFT: add vote to tally")
-	if snap.cast(candidate, authorize) {
-		snap.Votes = append(snap.Votes, &Vote{
-			Validator: validator,
-			Block:     number,
-			Address:   candidate,
-			Authorize: authorize,
-		})
-	}
+	} else {
+		// Read vote from header
+		candidate, authorize, err := sb.EngineForBlockNumber(header.Number).ReadVote(header)
+		if err != nil {
+			logger.Error("IBFT: invalid header vote", "err", err)
+			return err
+		}
 
-	// If the vote passed, update the list of validators
-	if tally := snap.Tally[candidate]; tally.Votes > snap.ValSet.Size()/2 {
+		logger = logger.New("candidate", candidate.String(), "authorize", authorize)
+		// Header authorized, discard any previous votes from the validator
+		for i, vote := range snap.Votes {
+			if vote.Validator == val && vote.Address == candidate {
+				logger.Trace("IBFT: discard previous vote from tally", "old.authorize", vote.Authorize)
+				// Uncast the vote from the cached tally
+				snap.uncast(vote.Address, vote.Authorize)
 
-		if tally.Authorize {
-			logger.Info("IBFT: reached majority to add validator")
-			snap.ValSet.AddValidator(candidate)
-		} else {
-			logger.Info("IBFT: reached majority to remove validator")
-			snap.ValSet.RemoveValidator(candidate)
+				// Uncast the vote from the chronological list
+				snap.Votes = append(snap.Votes[:i], snap.Votes[i+1:]...)
+				break // only one vote allowed
+			}
+		}
 
-			// Discard any previous votes the deauthorized validator cast
+		logger.Debug("IBFT: add vote to tally")
+		if snap.cast(candidate, authorize) {
+			snap.Votes = append(snap.Votes, &Vote{
+				Validator: val,
+				Block:     number,
+				Address:   candidate,
+				Authorize: authorize,
+			})
+		}
+
+		// If the vote passed, update the list of validators
+		if tally := snap.Tally[candidate]; tally.Votes > snap.ValSet.Size()/2 {
+
+			if tally.Authorize {
+				logger.Info("IBFT: reached majority to add validator")
+				snap.ValSet.AddValidator(candidate)
+			} else {
+				logger.Info("IBFT: reached majority to remove validator")
+				snap.ValSet.RemoveValidator(candidate)
+
+				// Discard any previous votes the deauthorized validator cast
+				for i := 0; i < len(snap.Votes); i++ {
+					if snap.Votes[i].Validator == candidate {
+						// Uncast the vote from the cached tally
+						snap.uncast(snap.Votes[i].Address, snap.Votes[i].Authorize)
+
+						// Uncast the vote from the chronological list
+						snap.Votes = append(snap.Votes[:i], snap.Votes[i+1:]...)
+
+						i--
+					}
+				}
+			}
+			// Discard any previous votes around the just changed account
 			for i := 0; i < len(snap.Votes); i++ {
-				if snap.Votes[i].Validator == candidate {
-					// Uncast the vote from the cached tally
-					snap.uncast(snap.Votes[i].Address, snap.Votes[i].Authorize)
-
-					// Uncast the vote from the chronological list
+				if snap.Votes[i].Address == candidate {
 					snap.Votes = append(snap.Votes[:i], snap.Votes[i+1:]...)
-
 					i--
 				}
 			}
+			delete(snap.Tally, candidate)
 		}
-		// Discard any previous votes around the just changed account
-		for i := 0; i < len(snap.Votes); i++ {
-			if snap.Votes[i].Address == candidate {
-				snap.Votes = append(snap.Votes[:i], snap.Votes[i+1:]...)
-				i--
-			}
-		}
-		delete(snap.Tally, candidate)
 	}
 	return nil
 }

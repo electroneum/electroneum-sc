@@ -20,6 +20,8 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
+	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/naoina/toml"
 )
@@ -125,6 +127,8 @@ type Config struct {
 	Epoch                  uint64          `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
 	AllowedFutureBlockTime uint64          `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
 	Transitions            []params.Transition
+	ValidatorContract      common.Address
+	Client                 bind.ContractCaller `toml:",omitempty"`
 }
 
 var DefaultConfig = &Config{
@@ -133,6 +137,26 @@ var DefaultConfig = &Config{
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	AllowedFutureBlockTime: 0,
+}
+
+func (c Config) GetValidatorContractAddress(blockNumber *big.Int) common.Address {
+	validatorContractAddress := c.ValidatorContract
+	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
+		if c.Transitions[i].ValidatorContractAddress != (common.Address{}) {
+			validatorContractAddress = c.Transitions[i].ValidatorContractAddress
+		}
+	}
+	return validatorContractAddress
+}
+
+func (c Config) GetValidatorSelectionMode(blockNumber *big.Int) string {
+	mode := params.BlockHeaderMode
+	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
+		if c.Transitions[i].ValidatorSelectionMode != "" {
+			mode = c.Transitions[i].ValidatorSelectionMode
+		}
+	}
+	return mode
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {

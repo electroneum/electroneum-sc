@@ -18,9 +18,11 @@ package istanbul
 
 import (
 	"bytes"
+	"math/big"
 	"sort"
 	"strings"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
 	"github.com/electroneum/electroneum-sc/common"
 )
 
@@ -105,6 +107,9 @@ type ValidatorSet interface {
 
 	// SortValidators sorts the validators based on the configured By function
 	SortValidators()
+
+	// Get validator set from governance smart contract
+	FromGovernanceContract(blockNumber *big.Int, validatorContract common.Address, client bind.ContractCaller) ([]common.Address, error)
 }
 
 // ----------------------------------------------------------------------------

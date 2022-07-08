@@ -17,12 +17,17 @@
 package validator
 
 import (
+	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"sync"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	contract "github.com/electroneum/electroneum-sc/contracts/governance"
+	"github.com/electroneum/electroneum-sc/log"
 )
 
 type defaultValidator struct {
@@ -189,6 +194,31 @@ func (valSet *defaultSet) RemoveValidator(address common.Address) bool {
 		}
 	}
 	return false
+}
+
+// FromGovernanceContract gets validator set from the governance smart contract
+func (valSet *defaultSet) FromGovernanceContract(blockNumber *big.Int, validatorContract common.Address, client bind.ContractCaller) ([]common.Address, error) {
+	if validatorContract != (common.Address{}) {
+		log.Trace("Applying snap with smart contract validators", "address", validatorContract, "client", client)
+
+		validatorContractCaller, err := contract.NewETNGovernanceInterfaceCaller(validatorContract, client)
+
+		if err != nil {
+			return nil, fmt.Errorf("IBFT: invalid smart contract in genesis alloc: %w", err)
+		}
+		opts := bind.CallOpts{
+			Pending:     false,
+			BlockNumber: blockNumber,
+		}
+		validators, err := validatorContractCaller.GetValidators(&opts)
+
+		if err != nil {
+			log.Error("IBFT: invalid validator smart contract", "err", err)
+			return nil, err
+		}
+		return validators, nil
+	}
+	return nil, nil
 }
 
 func (valSet *defaultSet) Copy() istanbul.ValidatorSet {

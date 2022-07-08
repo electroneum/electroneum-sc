@@ -38,6 +38,7 @@ import (
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
 	"github.com/electroneum/electroneum-sc/node"
+	"github.com/electroneum/electroneum-sc/rlp"
 	"gopkg.in/urfave/cli.v1"
 )
 
@@ -194,6 +195,14 @@ func initGenesis(ctx *cli.Context) error {
 		if err != nil {
 			utils.Fatalf("transitions data invalid: %v", err)
 		}
+		if genesis.Config.IBFT.ValidatorContractAddress != (common.Address{}) {
+			qbftExtra := new(types.QBFTExtra)
+			err := rlp.DecodeBytes(genesis.ExtraData[:], qbftExtra)
+			if err != nil || len(qbftExtra.Validators) > 0 {
+				utils.Fatalf("invalid genesis file: cant combine extraData validators and config.IBFT.validatorcontractaddress at the same time")
+			}
+		}
+
 	}
 
 	// Open and initialise both full and light databases

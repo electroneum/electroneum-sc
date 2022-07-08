@@ -34,4 +34,12 @@ var (
 	// ErrInvalidNumber is returned if a block's number doesn't equal its parent's
 	// plus one.
 	ErrInvalidNumber = errors.New("invalid block number")
+
+	// ErrMismatchingEpochValidators is returned when an invalid validator set is
+	// set in proposed block header
+	ErrMismatchingEpochValidators = errors.New("mismatching validator list on block")
+
+	// ErrGovernanceContractInaccessible is returned when etn-sc fails to communicate
+	// with the governance smart contract
+	ErrGovernanceContractInaccessible = errors.New("failed to call governance contract")
 )

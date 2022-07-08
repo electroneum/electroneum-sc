@@ -12,6 +12,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 	"golang.org/x/crypto/sha3"
@@ -88,6 +89,33 @@ func (e *Engine) VerifyBlockProposal(chain consensus.ChainHeaderReader, block *t
 	uncleHash := types.CalcUncleHash(block.Uncles())
 	if uncleHash != nilUncleHash {
 		return 0, istanbulcommon.ErrInvalidUncleHash
+	}
+
+	// Validate block proposal against the validator set from the governance smart contract
+	parentNumber := new(big.Int).SetUint64(block.Header().Number.Uint64() - 1)
+	if e.cfg.GetValidatorSelectionMode(parentNumber) == params.ContractMode {
+		valz, err := validators.FromGovernanceContract(parentNumber, e.cfg.GetValidatorContractAddress(parentNumber), e.cfg.Client)
+		if err != nil {
+			return 0, consensus.ErrGovernanceContractInaccessible
+		}
+		// sort validator by address
+		valSet := validator.NewSet(valz, e.cfg.ProposerPolicy)
+		valAddrs := validator.SortedAddresses(valSet.List())
+
+		extra, err := types.ExtractQBFTExtra(block.Header())
+		if err != nil {
+			return 0, istanbulcommon.ErrInvalidExtraDataFormat
+		}
+
+		if len(extra.Validators) != len(valAddrs) {
+			return 0, consensus.ErrMismatchingEpochValidators
+		}
+
+		for i := 0; i < len(extra.Validators); i++ {
+			if valAddrs[i] != extra.Validators[i] {
+				return 0, consensus.ErrMismatchingEpochValidators
+			}
+		}
 	}
 
 	// verify the header of proposed block
@@ -395,7 +423,7 @@ func (e *Engine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, 
 	return new(big.Int)
 }
 
-func (e *Engine) Validators(header *types.Header) ([]common.Address, error) {
+func (e *Engine) ExtractGenesisValidators(header *types.Header) ([]common.Address, error) {
 	extra, err := types.ExtractQBFTExtra(header)
 	if err != nil {
 		return nil, err
