@@ -60,7 +60,7 @@ var (
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
 			BlockPeriodSeconds:    5,
-			EpochLength:           30000,
+			EpochLength:           17280,
 			ProposerPolicy:        0,
 			RequestTimeoutSeconds: 10,
 		},
@@ -85,7 +85,7 @@ var (
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
 			BlockPeriodSeconds:    5,
-			EpochLength:           30000,
+			EpochLength:           17280,
 			ProposerPolicy:        0,
 			RequestTimeoutSeconds: 10,
 		},
@@ -110,7 +110,7 @@ var (
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
 			BlockPeriodSeconds:    5,
-			EpochLength:           30000,
+			EpochLength:           17280,
 			ProposerPolicy:        0,
 			RequestTimeoutSeconds: 10,
 		},
