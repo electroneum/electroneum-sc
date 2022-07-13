@@ -52,7 +52,13 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 		return
 	}
 
-	roundChange := qbfttypes.NewRoundChange(c.current.Sequence(), round, c.current.preparedRound, c.current.preparedBlock)
+	// Check if we should round-change due to a bad block proposal
+	hasBadProposal := false
+	if c.current.preparedBlock != nil {
+		hasBadProposal = c.current.hasBadProposal(c.current.preparedBlock.Hash())
+	}
+
+	roundChange := qbfttypes.NewRoundChange(c.current.Sequence(), round, c.current.preparedRound, c.current.preparedBlock, hasBadProposal)
 
 	// Sign message
 	encodedPayload, err := roundChange.EncodePayloadForSigning()
@@ -148,8 +154,11 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		// If we have received a quorum of PREPARE message
 		// then we propose the same block proposal again if not we
 		// propose the block proposal that we generated
+		//
+		// If we have received a quorum of PREPARE messages with hadBlockProposal=false,
+		// propose the same block again. If hadBlockProposal=true, propose the block that we generated
 		_, proposal := c.highestPrepared(currentRound)
-		if proposal == nil {
+		if proposal == nil || c.backend.HasBadProposal(proposal.Hash()) {
 			proposal = c.current.pendingRequest.Proposal
 		}
 
@@ -233,7 +242,7 @@ func (rcs *roundChangeSet) Add(r *big.Int, msg qbfttypes.QBFTMessage, preparedRo
 
 	if preparedRound != nil && (rcs.highestPreparedRound[round] == nil || preparedRound.Cmp(rcs.highestPreparedRound[round]) > 0) {
 		roundChange := msg.(*qbfttypes.RoundChange)
-		if hasMatchingRoundChangeAndPrepares(roundChange, prepareMessages, quorumSize) == nil {
+		if hasMatchingRoundChangeAndPrepares(roundChange, prepareMessages, quorumSize, roundChange.HasBadProposal) == nil {
 			rcs.highestPreparedRound[round] = preparedRound
 			rcs.highestPreparedBlock[round] = preparedBlock
 			rcs.prepareMessages[round] = prepareMessages
