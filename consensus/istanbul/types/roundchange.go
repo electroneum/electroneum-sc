@@ -21,7 +21,7 @@ type RoundChange struct {
 	Justification []*Prepare
 }
 
-func NewRoundChange(sequence *big.Int, round *big.Int, preparedRound *big.Int, preparedBlock istanbul.Proposal) *RoundChange {
+func NewRoundChange(sequence *big.Int, round *big.Int, preparedRound *big.Int, preparedBlock istanbul.Proposal, hasBadProposal bool) *RoundChange {
 	roundChange := &RoundChange{
 		SignedRoundChangePayload: SignedRoundChangePayload{
 			CommonPayload: CommonPayload{
@@ -37,6 +37,7 @@ func NewRoundChange(sequence *big.Int, round *big.Int, preparedRound *big.Int, p
 	if preparedBlock != nil {
 		roundChange.PreparedBlock = preparedBlock.(*types.Block)
 		roundChange.PreparedDigest = preparedBlock.Hash()
+		roundChange.HasBadProposal = hasBadProposal
 	}
 
 	return roundChange
@@ -46,11 +47,12 @@ type SignedRoundChangePayload struct {
 	CommonPayload
 	PreparedRound  *big.Int
 	PreparedDigest common.Hash
+	HasBadProposal bool
 }
 
 func (p *SignedRoundChangePayload) String() string {
-	return fmt.Sprintf("RoundChange {seq=%v, round=%v, pr=%v, pv=%v}",
-		p.Sequence, p.Round, p.PreparedRound, p.PreparedDigest.Hex())
+	return fmt.Sprintf("RoundChange {seq=%v, round=%v, pr=%v, pv=%v, hasBadProposal=%v}",
+		p.Sequence, p.Round, p.PreparedRound, p.PreparedDigest.Hex(), p.HasBadProposal)
 }
 
 func (p *SignedRoundChangePayload) EncodeRLP(w io.Writer) error {
@@ -111,6 +113,10 @@ func (p *SignedRoundChangePayload) DecodeRLP(stream *rlp.Stream) error {
 			log.Error("IBFT: Error Decode(&p.PreparedDigest)", "err", err)
 			return err
 		}
+		if err = payloadStream.Decode(&p.HasBadProposal); err != nil {
+			log.Error("IBFT: Error Decode(&p.HasBadProposal)", "err", err)
+			return err
+		}
 	}
 	// End Prepared
 	if err = payloadStream.ListEnd(); err != nil {
@@ -140,7 +146,7 @@ func (p *SignedRoundChangePayload) DecodeRLP(stream *rlp.Stream) error {
 func (p *SignedRoundChangePayload) encodePayloadInternal() ([]byte, error) {
 	var prepared = []interface{}{}
 	if p.PreparedRound != nil && !common.EmptyHash(p.PreparedDigest) {
-		prepared = []interface{}{p.PreparedRound, p.PreparedDigest}
+		prepared = []interface{}{p.PreparedRound, p.PreparedDigest, p.HasBadProposal}
 	}
 	return rlp.EncodeToBytes(
 		[]interface{}{
@@ -231,6 +237,10 @@ func (m *RoundChange) DecodeRLP(stream *rlp.Stream) error {
 		}
 		if err = payloadStream.Decode(&m.PreparedDigest); err != nil {
 			log.Error("IBFT: Error Decode(&m.PreparedDigest)", "err", err)
+			return err
+		}
+		if err = payloadStream.Decode(&m.HasBadProposal); err != nil {
+			log.Error("IBFT: Error Decode(&m.HasBadProposal)", "err", err)
 			return err
 		}
 	}

@@ -148,7 +148,7 @@ func testParameterizedCase(
 }
 
 func createRoundChangeMessage(from common.Address, round int64, preparedRound int64, preparedBlock istanbul.Proposal) *qbfttypes.SignedRoundChangePayload {
-	m := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(preparedRound), preparedBlock)
+	m := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(preparedRound), preparedBlock, false)
 	m.SetSource(from)
 	return &m.SignedRoundChangePayload
 }
