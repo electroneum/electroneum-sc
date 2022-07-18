@@ -11,20 +11,17 @@ import (
 // this is for backward compatibility which allows a mixed old/new istanbul node network
 // istanbul/64 will continue using old status data as eth/63
 const (
-	eth66      = 66
-	Istanbul64 = 64
-	Istanbul99 = 99
-	// this istanbul subprotocol will be registered in addition to "eth"
+	eth66       = 66
 	Istanbul100 = 100
 )
 
 var (
 	IstanbulProtocol = Protocol{
 		Name:     "etn-istanbul",
-		Versions: []uint{Istanbul100, Istanbul99, Istanbul64},
+		Versions: []uint{Istanbul100},
 		// istanbul/100 has to have 22 message to be backwards compatible although at the p2p layer it only has
 		// 1 message with msg.Code 17
-		Lengths: map[uint]uint64{Istanbul100: 22, Istanbul99: 18, Istanbul64: 18},
+		Lengths: map[uint]uint64{Istanbul100: 22},
 	}
 
 	CliqueProtocol = Protocol{
