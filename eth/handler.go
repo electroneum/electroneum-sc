@@ -786,15 +786,15 @@ func (h *handler) makeIbftConsensusProtocol(ProtoName string, version uint, leng
 				if ethPeer == nil {
 					p2pPeerId = fmt.Sprintf("%x", p.ID().Bytes()) //TODO:BBO
 					ethPeer = h.peers.peer(p2pPeerId)
-					log.Warn("full p2p peer", "id", p2pPeerId, "ethPeer", ethPeer)
+					log.Warn("full p2p peer", "id", p2pPeerId, "etnPeer", ethPeer)
 				}
 				if ethPeer != nil {
-					p.Log().Debug("consensus subprotocol retrieved eth peer from peerset", "ethPeer.id", p2pPeerId, "ProtoName", ProtoName)
+					p.Log().Debug("consensus subprotocol retrieved eth peer from peerset", "etnPeer.id", p2pPeerId, "ProtoName", ProtoName)
 					// add the rw protocol for the ibft subprotocol to the eth peer.
 					ethPeer.AddConsensusProtoRW(rw)
 					return h.handleConsensusLoop(p, rw)
 				}
-				p.Log().Error("consensus subprotocol retrieved nil eth peer from peerset", "ethPeer.id", p2pPeerId)
+				p.Log().Error("consensus subprotocol retrieved nil eth peer from peerset", "etnPeer.id", p2pPeerId)
 				return errEthPeerNil
 			case <-p.EthPeerDisconnected:
 				return errEthPeerNotRegistered
