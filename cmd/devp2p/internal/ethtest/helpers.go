@@ -76,8 +76,8 @@ func (s *Suite) dial() (*Conn, error) {
 	}
 	// set default p2p capabilities
 	conn.caps = []p2p.Cap{
-		{Name: "eth", Version: 64},
-		{Name: "eth", Version: 65},
+		{Name: "etn", Version: 64},
+		{Name: "etn", Version: 65},
 	}
 	conn.ourHighestProtoVersion = 65
 	return &conn, nil
@@ -91,7 +91,7 @@ func (s *Suite) dial66() (*Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial failed: %v", err)
 	}
-	conn.caps = append(conn.caps, p2p.Cap{Name: "eth", Version: 66})
+	conn.caps = append(conn.caps, p2p.Cap{Name: "etn", Version: 66})
 	conn.ourHighestProtoVersion = 66
 	return conn, nil
 }
@@ -104,7 +104,7 @@ func (s *Suite) dialSnap() (*Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial failed: %v", err)
 	}
-	conn.caps = append(conn.caps, p2p.Cap{Name: "snap", Version: 1})
+	conn.caps = append(conn.caps, p2p.Cap{Name: "etn-snap", Version: 1})
 	conn.ourHighestSnapProtoVersion = 1
 	return conn, nil
 }
@@ -163,11 +163,11 @@ func (c *Conn) negotiateEthProtocol(caps []p2p.Cap) {
 	var highestSnapVersion uint
 	for _, capability := range caps {
 		switch capability.Name {
-		case "eth":
+		case "etn":
 			if capability.Version > highestEthVersion && capability.Version <= c.ourHighestProtoVersion {
 				highestEthVersion = capability.Version
 			}
-		case "snap":
+		case "etn-snap":
 			if capability.Version > highestSnapVersion && capability.Version <= c.ourHighestSnapProtoVersion {
 				highestSnapVersion = capability.Version
 			}
@@ -580,24 +580,24 @@ func (s *Suite) maliciousHandshakes(t *utesting.T, isEth66 bool) error {
 		{
 			Version: 5,
 			Caps: []p2p.Cap{
-				{Name: "eth", Version: 64},
-				{Name: "eth", Version: 65},
+				{Name: "etn", Version: 64},
+				{Name: "etn", Version: 65},
 			},
 			ID: append(pub0, byte(0)),
 		},
 		{
 			Version: 5,
 			Caps: []p2p.Cap{
-				{Name: "eth", Version: 64},
-				{Name: "eth", Version: 65},
+				{Name: "etn", Version: 64},
+				{Name: "etn", Version: 65},
 			},
 			ID: append(pub0, pub0...),
 		},
 		{
 			Version: 5,
 			Caps: []p2p.Cap{
-				{Name: "eth", Version: 64},
-				{Name: "eth", Version: 65},
+				{Name: "etn", Version: 64},
+				{Name: "etn", Version: 65},
 			},
 			ID: largeBuffer(2),
 		},

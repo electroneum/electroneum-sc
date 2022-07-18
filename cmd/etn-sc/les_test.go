@@ -93,7 +93,7 @@ func (g *gethrpc) waitSynced() {
 
 	// Actually wait, subscribe to the event
 	ch := make(chan interface{})
-	sub, err := g.rpc.Subscribe(context.Background(), "eth", ch, "syncing")
+	sub, err := g.rpc.Subscribe(context.Background(), "etn", ch, "syncing")
 	if err != nil {
 		g.geth.Fatalf("%v syncing: %v", g.name, err)
 	}

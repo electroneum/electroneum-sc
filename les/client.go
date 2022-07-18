@@ -225,7 +225,7 @@ func (s *LightEthereum) vfxVersion(n *enode.Node) uint {
 	}
 
 	var les []rlp.RawValue
-	if err := n.Load(enr.WithEntry("les", &les)); err != nil || len(les) < 1 {
+	if err := n.Load(enr.WithEntry("etn-les", &les)); err != nil || len(les) < 1 {
 		return 0
 	}
 	var version uint
@@ -242,7 +242,7 @@ func (s *LightEthereum) prenegQuery(n *enode.Node) int {
 	}
 
 	var requests vflux.Requests
-	requests.Add("les", vflux.CapacityQueryName, vflux.CapacityQueryReq{
+	requests.Add("etn-les", vflux.CapacityQueryName, vflux.CapacityQueryReq{
 		Bias:      180,
 		AddTokens: []vflux.IntOrInf{{}},
 	})

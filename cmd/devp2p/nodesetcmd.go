@@ -242,7 +242,7 @@ func ethFilter(args []string) (nodeFilter, error) {
 			ForkID forkid.ID
 			Tail   []rlp.RawValue `rlp:"tail"`
 		}
-		if n.N.Load(enr.WithEntry("eth", &eth)) != nil {
+		if n.N.Load(enr.WithEntry("etn", &eth)) != nil {
 			return false
 		}
 		return filter(eth.ForkID) == nil
@@ -255,7 +255,7 @@ func lesFilter(args []string) (nodeFilter, error) {
 		var les struct {
 			Tail []rlp.RawValue `rlp:"tail"`
 		}
-		return n.N.Load(enr.WithEntry("les", &les)) == nil
+		return n.N.Load(enr.WithEntry("etn-les", &les)) == nil
 	}
 	return f, nil
 }
@@ -265,7 +265,7 @@ func snapFilter(args []string) (nodeFilter, error) {
 		var snap struct {
 			Tail []rlp.RawValue `rlp:"tail"`
 		}
-		return n.N.Load(enr.WithEntry("snap", &snap)) == nil
+		return n.N.Load(enr.WithEntry("etn-snap", &snap)) == nil
 	}
 	return f, nil
 }

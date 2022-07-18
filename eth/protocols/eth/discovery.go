@@ -33,7 +33,7 @@ type enrEntry struct {
 
 // ENRKey implements enr.Entry.
 func (e enrEntry) ENRKey() string {
-	return "eth"
+	return "etn"
 }
 
 // StartENRUpdater starts the `eth` ENR updater loop, which listens for chain
