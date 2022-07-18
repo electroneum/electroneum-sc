@@ -30,7 +30,7 @@ type lesEntry struct {
 	Rest       []rlp.RawValue `rlp:"tail"`
 }
 
-func (lesEntry) ENRKey() string { return "les" }
+func (lesEntry) ENRKey() string { return "etn-les" }
 
 // ethEntry is the "eth" ENR entry. This is redeclared here to avoid depending on package eth.
 type ethEntry struct {
@@ -38,7 +38,7 @@ type ethEntry struct {
 	Tail   []rlp.RawValue `rlp:"tail"`
 }
 
-func (ethEntry) ENRKey() string { return "eth" }
+func (ethEntry) ENRKey() string { return "etn" }
 
 // setupDiscovery creates the node discovery source for the eth protocol.
 func (eth *LightEthereum) setupDiscovery() (enode.Iterator, error) {

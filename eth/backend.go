@@ -194,7 +194,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		dbVer = fmt.Sprintf("%d", *bcVersion)
 	}
 
-	log.Info("Initialising protocol", "name", ibftConsensusProtocolName, "versions", ibftConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
+	log.Info("Initialising Electroneum protocol", "name", ibftConsensusProtocolName, "versions", ibftConsensusProtocolVersions, "network", config.NetworkId, "dbversion", dbVer)
 
 	if !config.SkipBcVersionCheck {
 		if bcVersion != nil && *bcVersion > core.BlockChainVersion {

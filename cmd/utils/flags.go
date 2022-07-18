@@ -1750,7 +1750,7 @@ func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 	}
 	protocol := "all"
 	if cfg.SyncMode == downloader.LightSync {
-		protocol = "les"
+		protocol = "etn-les"
 	}
 	if url := params.KnownDNSNetwork(genesis, protocol); url != "" {
 		cfg.EthDiscoveryURLs = []string{url}

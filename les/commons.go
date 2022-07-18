@@ -77,7 +77,7 @@ func (c *lesCommons) makeProtocols(versions []uint, runPeer func(version uint, p
 	for i, version := range versions {
 		version := version
 		protos[i] = p2p.Protocol{
-			Name:     "les",
+			Name:     "etn-les",
 			Version:  version,
 			Length:   ProtocolLengths[version],
 			NodeInfo: c.nodeInfo,
