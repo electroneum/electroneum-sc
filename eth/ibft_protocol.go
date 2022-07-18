@@ -29,11 +29,39 @@ var ibftConsensusProtocolLengths map[uint]uint64
 func (s *Ethereum) ibftConsensusProtocols() []p2p.Protocol {
 	protos := make([]p2p.Protocol, len(ibftConsensusProtocolVersions))
 	for i, vsn := range ibftConsensusProtocolVersions {
-		length, ok := ibftConsensusProtocolLengths[vsn]
-		if !ok {
-			panic("makeIbftConsensusProtocol for unknown version")
+		// if we have a legacy protocol, e.g. istanbul/99, istanbul/64 then the protocol handler is will be the "eth"
+		// protocol handler, and the subprotocol "eth" will not be used, but rather the legacy subprotocol will handle
+		// both eth messages and consensus messages.
+		if isLegacyProtocol(ibftConsensusProtocolName, vsn) {
+			length, ok := ibftConsensusProtocolLengths[vsn]
+			if !ok {
+				panic("makeProtocol for unknown version")
+			}
+			lp := s.handler.makeLegacyProtocol(ibftConsensusProtocolName, vsn, length)
+			protos[i] = lp
+		} else {
+			length, ok := ibftConsensusProtocolLengths[vsn]
+			if !ok {
+				panic("makeIbftConsensusProtocol for unknown version")
+			}
+			protos[i] = s.handler.makeIbftConsensusProtocol(ibftConsensusProtocolName, vsn, length)
 		}
-		protos[i] = s.handler.makeIbftConsensusProtocol(ibftConsensusProtocolName, vsn, length)
 	}
 	return protos
+}
+
+// istanbul/64, istanbul/99, clique/63, clique/64 all override the "eth" subprotocol.
+func isLegacyProtocol(name string, version uint) bool {
+	// protocols that override "eth" subprotocol and run only the ibft subprotocol.
+	ibftLegacyProtocols := map[string][]uint{"istanbul": {64, 99}, "clique": {63, 64}}
+	for lpName, lpVersions := range ibftLegacyProtocols {
+		if lpName == name {
+			for _, v := range lpVersions {
+				if v == version {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
