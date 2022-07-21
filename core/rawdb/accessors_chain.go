@@ -26,7 +26,6 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
-	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
@@ -334,7 +333,8 @@ func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValu
 		return rlpHeaders
 	}
 	// read remaining from ancients
-	max := count * 700
+	// expect max of 24 validators with each 128bytes (97bytes to be exact) for Vanity+Seal, 928 bytes for other header fields
+	max := count * 4000
 	data, err := db.AncientRange(freezerHeaderTable, i+1-count, count, max)
 	if err == nil && uint64(len(data)) == count {
 		// the data is on the order [h, h+1, .., n] -- reordering needed
@@ -348,18 +348,28 @@ func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValu
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
 func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 	var data []byte
-	db.ReadAncients(func(reader ethdb.AncientReaderOp) error {
+	err := db.ReadAncients(func(reader ethdb.AncientReaderOp) error {
 		// First try to look up the data in ancient database. Extra hash
 		// comparison is necessary since ancient database only maintains
 		// the canonical data.
 		data, _ = reader.Ancient(freezerHeaderTable, number)
-		if len(data) > 0 && crypto.Keccak256Hash(data) == hash {
-			return nil
+		if len(data) > 0 {
+			var header *types.Header
+			err := rlp.DecodeBytes(data, &header)
+			if err != nil {
+				return err
+			}
+			if header != nil && header.Hash() == hash {
+				return nil
+			}
 		}
 		// If not, try reading from leveldb
 		data, _ = db.Get(headerKey(number, hash))
 		return nil
 	})
+	if err != nil {
+		return nil
+	}
 	return data
 }
 
