@@ -124,7 +124,7 @@ Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instanc
  * Instead of connecting the main Electroneum Smart Chain network, the client will connect to the test network, which uses different P2P bootnodes, different network IDs and genesis
    states.
  * Instead of using the default data directory (`~/.electroneum` on Linux for example), `etn-sc`
-   will nest itself one level deeper into a `testnet` subfolder (`~/.ethereum/testbet` on
+   will nest itself one level deeper into a `testnet` subfolder (`~/.ethereum/testnet` on
    Linux). Note, on OSX and Linux this also means that attaching to a running testnet node
    requires the use of a custom endpoint since `etn-sc attach` will try to attach to a
    production node endpoint by default, e.g.,
@@ -233,7 +233,7 @@ Please make sure your contributions adhere to our coding guidelines:
    guidelines.
  * Pull requests need to be based on and opened against the `master` branch.
  * Commit messages should be prefixed with the package(s) they modify.
-   * E.g. "eth, rpc: make trace configs optional"
+   * E.g. "etn, rpc: make trace configs optional"
 
 Please see the [Developers' Guide](https://geth.ethereum.org/docs/developers/devguide)
 for more details on configuring your environment, managing project dependencies, and
