@@ -589,7 +589,7 @@ var (
 	}
 	HTTPApiFlag = cli.StringFlag{
 		Name:  "http.api",
-		Usage: "API's offered over the HTTP-RPC interface",
+		Usage: "Comma separated list of APIs offered over the HTTP-RPC interface (default: eth,net,web3). Proceed with caution when exposing other APIs (admin,clique,debug,les,miner,personal,txpool)",
 		Value: "",
 	}
 	HTTPPathPrefixFlag = cli.StringFlag{
@@ -627,7 +627,7 @@ var (
 	}
 	WSApiFlag = cli.StringFlag{
 		Name:  "ws.api",
-		Usage: "API's offered over the WS-RPC interface",
+		Usage: "Comma separated list of API's offered over the HTTP-RPC interface (default: eth,net,web3). Proceed with caution when exposing other APIs (admin,clique,debug,les,miner,personal,txpool)",
 		Value: "",
 	}
 	WSAllowedOriginsFlag = cli.StringFlag{
