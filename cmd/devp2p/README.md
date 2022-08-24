@@ -5,7 +5,7 @@ protocol development purposes. It can do many things.
 
 ### ENR Decoding
 
-Use `devp2p enrdump <base64>` to verify and display an Ethereum Node Record.
+Use `devp2p enrdump <base64>` to verify and display an Electroneum Node Record.
 
 ### Node Key Management
 
@@ -44,14 +44,14 @@ set to standard output. The following filters are supported:
 - `-limit <N>` limits the output set to N entries, taking the top N nodes by score
 - `-ip <CIDR>` filters nodes by IP subnet
 - `-min-age <duration>` filters nodes by 'first seen' time
-- `-eth-network <mainnet/rinkeby/goerli/ropsten>` filters nodes by "eth" ENR entry
+- `-etn-network <mainnet/testnet>` filters nodes by "eth" ENR entry
 - `-les-server` filters nodes by LES server support
 - `-snap` filters nodes by snap protocol support
 
 For example, given a node set in `nodes.json`, you could create a filtered set containing
 up to 20 eth mainnet nodes which also support snap sync using this command:
 
-    devp2p nodeset filter nodes.json -eth-network mainnet -snap -limit 20
+    devp2p nodeset filter nodes.json -etn-network mainnet -snap -limit 20
 
 ### Discovery v4 Utilities
 
@@ -104,22 +104,22 @@ Now get the ENR of your node and store it in the `NODE` environment variable.
 
 Start the test by running `devp2p discv5 test -listen1 127.0.0.1 -listen2 127.0.0.2 $NODE`.
 
-### Eth Protocol Test Suite
+### ETN Protocol Test Suite
 
-The Eth Protocol test suite is a conformance test suite for the [eth protocol][eth].
+The Eth Protocol test suite is a conformance test suite for the [etn protocol][etn].
 
-To run the eth protocol test suite against your implementation, the node needs to be initialized as such:
+To run the etn protocol test suite against your implementation, the node needs to be initialized as such:
 
-1. initialize the geth node with the `genesis.json` file contained in the `testdata` directory
+1. initialize the etn node with the `genesis.json` file contained in the `testdata` directory
 2. import the `halfchain.rlp` file in the `testdata` directory
-3. run geth with the following flags:
+3. run etn-sc with the following flags:
 ```
-geth --datadir <datadir> --nodiscover --nat=none --networkid 19763 --verbosity 5
+etn-sc --datadir <datadir> --nodiscover --nat=none --networkid 19763 --verbosity 5
 ```
 
-Then, run the following command, replacing `<enode>` with the enode of the geth node:
+Then, run the following command, replacing `<enode>` with the enode of the etn-sc node:
  ```
- devp2p rlpx eth-test <enode> cmd/devp2p/internal/ethtest/testdata/chain.rlp cmd/devp2p/internal/ethtest/testdata/genesis.json
+ devp2p rlpx etn-test <enode> cmd/devp2p/internal/ethtest/testdata/chain.rlp cmd/devp2p/internal/ethtest/testdata/genesis.json
 ```
 
 Repeat the above process (re-initialising the node) in order to run the Eth Protocol test suite again.
@@ -127,8 +127,8 @@ Repeat the above process (re-initialising the node) in order to run the Eth Prot
 #### Eth66 Test Suite
 
 The Eth66 test suite is also a conformance test suite for the eth 66 protocol version specifically.
-To run the eth66 protocol test suite, initialize a geth node as described above and run the following command,
-replacing `<enode>` with the enode of the geth node:
+To run the eth66 protocol test suite, initialize a etn-sc node as described above and run the following command,
+replacing `<enode>` with the enode of the etn-sc node:
 
  ```
  devp2p rlpx eth66-test <enode> cmd/devp2p/internal/ethtest/testdata/chain.rlp cmd/devp2p/internal/ethtest/testdata/genesis.json

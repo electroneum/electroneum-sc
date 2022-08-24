@@ -27,7 +27,7 @@ build/_vendor/pkg
 /build/_workspace/
 /build/cache/
 /build/bin/
-/geth*.zip
+/etn-sc*.zip
 
 # travis
 profile.tmp

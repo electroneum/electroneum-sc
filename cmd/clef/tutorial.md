@@ -290,13 +290,13 @@ t=2019-07-01T15:52:23+0300 lvl=info msg=SignData   api=signer type=response data
 
 For more details on writing automatic rules, please see the [rules spec](https://github.com/electroneum/electroneum-sc/blob/master/cmd/clef/rules.md).
 
-## Geth integration
+## ETN-SC integration
 
-Of course, as awesome as Clef is, it's not feasible to interact with it via JSON RPC by hand. Long term, we're hoping to convince the general Ethereum community to support Clef as a general signer (it's only 3-5 methods), thus allowing your favorite DApp, Metamask, MyCrypto, etc to request signatures directly.
+Of course, as awesome as Clef is, it's not feasible to interact with it via JSON RPC by hand. Long term, we're hoping to convince the general Electroneum community to support Clef as a general signer (it's only 3-5 methods), thus allowing your favorite DApp, Metamask, MyCrypto, etc to request signatures directly.
 
 Until then however, we're trying to pave the way via ETN-SC. ETN-SC v1.0.0 has built in support via `--signer <API endpoint>` for using a local or remote Clef instance as an account backend!
 
-We can try this by running Clef with our previous rules on our testnet (for now it's a good idea to allow auto-listing accounts, since Geth likes to retrieve them once in a while).
+We can try this by running Clef with our previous rules on our testnet (for now it's a good idea to allow auto-listing accounts, since ETN-SC likes to retrieve them once in a while).
 
 ```text
 $ clef --keystore ~/.electroneum-sc/testnet/keystore --chainid 5201420 --rules rules.js
