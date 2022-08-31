@@ -137,7 +137,7 @@ var filterFlags = map[string]nodeFilterC{
 	"-limit":       {1, trueFilter}, // needed to skip over -limit
 	"-ip":          {1, ipFilter},
 	"-min-age":     {1, minAgeFilter},
-	"-eth-network": {1, ethFilter},
+	"-eth-network": {1, etnFilter},
 	"-les-server":  {0, lesFilter},
 	"-snap":        {0, snapFilter},
 }
@@ -224,7 +224,7 @@ func minAgeFilter(args []string) (nodeFilter, error) {
 	return f, nil
 }
 
-func ethFilter(args []string) (nodeFilter, error) {
+func etnFilter(args []string) (nodeFilter, error) {
 	var filter forkid.Filter
 	switch args[0] {
 	case "mainnet":

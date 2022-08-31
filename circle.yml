@@ -23,7 +23,7 @@ dependencies:
 
 test:
   override:
-    # Build Geth and move into a known folder
+    # Build etn-sc and move into a known folder
     - make etn-sc
     - cp ./build/bin/etn-sc $HOME/etn-sc
 

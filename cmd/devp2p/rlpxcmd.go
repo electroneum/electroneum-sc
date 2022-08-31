@@ -45,7 +45,7 @@ var (
 		Action: rlpxPing,
 	}
 	rlpxEthTestCommand = cli.Command{
-		Name:      "eth-test",
+		Name:      "etn-test",
 		Usage:     "Runs tests against a node",
 		ArgsUsage: "<node> <chain.rlp> <genesis.json>",
 		Action:    rlpxEthTest,

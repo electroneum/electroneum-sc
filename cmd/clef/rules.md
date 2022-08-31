@@ -4,8 +4,8 @@ The `signer` binary contains a ruleset engine, implemented with [OttoVM](https:/
 
 It enables usecases like the following:
 
-* I want to auto-approve transactions with contract `CasinoDapp`, with up to `0.05 ether` in value to maximum `1 ether` per 24h period
-* I want to auto-approve transaction to contract `EthAlarmClock` with `data`=`0xdeadbeef`, if `value=0`, `gas < 44k` and `gasPrice < 40Gwei`
+* I want to auto-approve transactions with contract `CasinoDapp`, with up to `0.05 ETN` in value to maximum `1 ETN` per 24h period
+* I want to auto-approve transaction to contract `ETNAlarmClock` with `data`=`0xdeadbeef`, if `value=0`, `gas < 44k` and `gasPrice < 40Gwei`
 
 The two main features that are required for this to work well are;
 
@@ -89,7 +89,7 @@ Some security precautions can be made, such as:
 ##### Security of implementation
 
 The drawbacks of this very flexible solution is that the `signer` needs to contain a javascript engine. This is pretty simple to implement, since it's already
-implemented for `geth`. There are no known security vulnerabilities in, nor have we had any security-problems with it so far.
+implemented for `etn-sc`. There are no known security vulnerabilities in, nor have we had any security-problems with it so far.
 
 The javascript engine would be an added attack surface; but if the validation of `rulesets` is made good (with hash-based attestation), the actual javascript cannot be considered
 an attack surface -- if an attacker can control the ruleset, a much simpler attack would be to implement an "always-approve" rule instead of exploiting the js vm. The only benefit

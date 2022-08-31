@@ -589,7 +589,7 @@ var (
 	}
 	HTTPApiFlag = cli.StringFlag{
 		Name:  "http.api",
-		Usage: "API's offered over the HTTP-RPC interface",
+		Usage: "Comma separated list of APIs offered over the HTTP-RPC interface (default: eth,net,web3). Proceed with caution when exposing other APIs (admin,clique,debug,les,miner,personal,txpool,istanbul)",
 		Value: "",
 	}
 	HTTPPathPrefixFlag = cli.StringFlag{
@@ -627,7 +627,7 @@ var (
 	}
 	WSApiFlag = cli.StringFlag{
 		Name:  "ws.api",
-		Usage: "API's offered over the WS-RPC interface",
+		Usage: "Comma separated list of API's offered over the HTTP-RPC interface (default: eth,net,web3). Proceed with caution when exposing other APIs (admin,clique,debug,les,miner,personal,txpool,istanbul)",
 		Value: "",
 	}
 	WSAllowedOriginsFlag = cli.StringFlag{
@@ -1150,7 +1150,7 @@ func MakeAddress(ks *keystore.KeyStore, account string) (accounts.Account, error
 	log.Warn("-------------------------------------------------------------------")
 	log.Warn("Referring to accounts by order in the keystore folder is dangerous!")
 	log.Warn("This functionality is deprecated and will be removed in the future!")
-	log.Warn("Please use explicit addresses! (can search via `geth account list`)")
+	log.Warn("Please use explicit addresses! (can search via `etn-sc account list`)")
 	log.Warn("-------------------------------------------------------------------")
 
 	accs := ks.Accounts()
@@ -1851,13 +1851,13 @@ func SetupMetrics(ctx *cli.Context) {
 
 			log.Info("Enabling metrics export to InfluxDB")
 
-			go influxdb.InfluxDBWithTags(metrics.DefaultRegistry, 10*time.Second, endpoint, database, username, password, "geth.", tagsMap)
+			go influxdb.InfluxDBWithTags(metrics.DefaultRegistry, 10*time.Second, endpoint, database, username, password, "etn-sc.", tagsMap)
 		} else if enableExportV2 {
 			tagsMap := SplitTagsFlag(ctx.GlobalString(MetricsInfluxDBTagsFlag.Name))
 
 			log.Info("Enabling metrics export to InfluxDB (v2)")
 
-			go influxdb.InfluxDBV2WithTags(metrics.DefaultRegistry, 10*time.Second, endpoint, token, bucket, organization, "geth.", tagsMap)
+			go influxdb.InfluxDBV2WithTags(metrics.DefaultRegistry, 10*time.Second, endpoint, token, bucket, organization, "etn-sc.", tagsMap)
 		}
 
 		if ctx.GlobalIsSet(MetricsHTTPFlag.Name) {
@@ -1995,11 +1995,11 @@ func MakeConsolePreloads(ctx *cli.Context) []string {
 // This is a temporary function used for migrating old command/flags to the
 // new format.
 //
-// e.g. geth account new --keystore /tmp/mykeystore --lightkdf
+// e.g. etn-sc account new --keystore /tmp/mykeystore --lightkdf
 //
 // is equivalent after calling this method with:
 //
-// geth --keystore /tmp/mykeystore --lightkdf account new
+// etn-sc --keystore /tmp/mykeystore --lightkdf account new
 //
 // This allows the use of the existing configuration functionality.
 // When all flags are migrated this function can be removed and the existing
