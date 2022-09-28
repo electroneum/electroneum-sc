@@ -929,6 +929,18 @@ web3._extend({
 			params: 1,
             inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
 		}),
+		new web3._extend.Method({
+			name: 'getBaseBlockReward',
+			call: 'istanbul_getBaseBlockReward',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getTotalEmission',
+			call: 'istanbul_getTotalEmission',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
+		}),
 
 	],
 	properties:

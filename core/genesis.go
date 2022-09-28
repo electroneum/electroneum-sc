@@ -432,7 +432,7 @@ func DefaultGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		Coinbase:   common.Address{},
-		Alloc:      GenesisAlloc{},
+		Alloc:      GenesisAlloc{}, //TODO: get etn circulating supply allocated to the bridge address
 	}
 }
 
