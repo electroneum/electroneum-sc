@@ -272,7 +272,6 @@ func (api *API) IsValidator(blockNum *rpc.BlockNumber) (bool, error) {
 }
 
 func (api *API) GetBaseBlockReward(blockNum *rpc.BlockNumber) (*big.Int, error) {
-
 	var (
 		blockNumber rpc.BlockNumber
 		header      *types.Header
@@ -289,7 +288,7 @@ func (api *API) GetBaseBlockReward(blockNum *rpc.BlockNumber) (*big.Int, error) 
 
 		header = api.chain.GetHeaderByNumber(uint64(blockNum.Int64()))
 	} else {
-		// get latest header if block number was omited
+		// get latest header if block number was omitted
 		header = api.chain.CurrentHeader()
 	}
 
@@ -313,7 +312,7 @@ func (api *API) GetTotalEmission(blockNum *rpc.BlockNumber) (*big.Int, error) {
 
 		header = api.chain.GetHeaderByNumber(uint64(blockNum.Int64()))
 	} else {
-		// get latest header if block number was omited
+		// get latest header if block number was omitted
 		header = api.chain.CurrentHeader()
 	}
 

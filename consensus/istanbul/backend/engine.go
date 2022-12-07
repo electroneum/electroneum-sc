@@ -180,7 +180,6 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 // Note, the block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
 func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
-
 	if header.Coinbase != (common.Address{}) {
 		blockReward := sb.GetBaseBlockReward(chain, header)
 		state.AddBalance(header.Coinbase, blockReward)
@@ -255,7 +254,6 @@ func (sb *Backend) Seal(chain consensus.ChainHeaderReader, block *types.Block, r
 }
 
 func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header) *big.Int {
-
 	var legacyV9BlockHeight = big.NewInt(862866 * 24) // original 862866 height * 24 to make it compatible with 5-second block time
 	var halvingPeriod = big.NewInt(25228800)          // 4 years in 5-second block time
 	var baseReward = big.NewInt(4e+18)                // ~100ETN every 120 seconds
@@ -281,7 +279,6 @@ func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header 
 }
 
 func (sb *Backend) GetTotalEmission(chain consensus.ChainHeaderReader, header *types.Header) *big.Int {
-
 	emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
 	if err != nil {
 		return big.NewInt(0)
