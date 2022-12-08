@@ -18,7 +18,7 @@ package backend
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"testing"
 	"time"
@@ -56,7 +56,7 @@ func TestHandleNewBlockMessage_whenTypical(t *testing.T) {
 	if !handled {
 		t.Errorf("expected message being handled but not")
 	}
-	if _, err := ioutil.ReadAll(arbitraryP2PMessage.Payload); err != nil {
+	if _, err := io.ReadAll(arbitraryP2PMessage.Payload); err != nil {
 		t.Errorf("expected p2p message payload is restored")
 	}
 }
@@ -80,7 +80,7 @@ func TestHandleNewBlockMessage_whenNotAProposedBlock(t *testing.T) {
 	if handled {
 		t.Errorf("expected message not being handled")
 	}
-	if _, err := ioutil.ReadAll(arbitraryP2PMessage.Payload); err != nil {
+	if _, err := io.ReadAll(arbitraryP2PMessage.Payload); err != nil {
 		t.Errorf("expected p2p message payload is restored")
 	}
 }
@@ -103,7 +103,7 @@ func TestHandleNewBlockMessage_whenFailToDecode(t *testing.T) {
 	if handled {
 		t.Errorf("expected message not being handled")
 	}
-	if _, err := ioutil.ReadAll(arbitraryP2PMessage.Payload); err != nil {
+	if _, err := io.ReadAll(arbitraryP2PMessage.Payload); err != nil {
 		t.Errorf("expected p2p message payload is restored")
 	}
 }
@@ -139,7 +139,7 @@ func buildArbitraryP2PNewBlockMessage(t *testing.T, invalidMsg bool) (*types.Blo
 	if err != nil {
 		t.Fatalf("can't encode due to %s", err)
 	}
-	payload, err := ioutil.ReadAll(r)
+	payload, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatalf("can't read payload due to %s", err)
 	}

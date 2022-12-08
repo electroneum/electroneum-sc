@@ -444,9 +444,8 @@ func TestTracingWithOverrides(t *testing.T) {
 	}))
 	randomAccounts := newAccounts(3)
 	type res struct {
-		Gas         int
-		Failed      bool
-		returnValue string
+		Gas    int
+		Failed bool
 	}
 	var testSuite = []struct {
 		blockNumber rpc.BlockNumber

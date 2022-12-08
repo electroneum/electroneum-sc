@@ -19,7 +19,7 @@ package backend
 import (
 	"bytes"
 	"errors"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"reflect"
 
@@ -101,7 +101,7 @@ func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 		// as p2p.Msg can only be decoded once (get EOF for any subsequence read), we need to make sure the payload is restored after we decode it
 		sb.logger.Debug("IBFT: received NewBlockMsg", "size", msg.Size, "payload.type", reflect.TypeOf(msg.Payload), "sender", addr)
 		if reader, ok := msg.Payload.(*bytes.Reader); ok {
-			payload, err := ioutil.ReadAll(reader)
+			payload, err := io.ReadAll(reader)
 			if err != nil {
 				return true, err
 			}

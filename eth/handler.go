@@ -760,7 +760,6 @@ func (h *handler) FindPeers(targets map[common.Address]bool) map[common.Address]
 // leverages the peer created and managed by the "eth" subprotocol.
 // The ibft consensus protocol requires that the "eth" protocol is running as well.
 func (h *handler) makeIbftConsensusProtocol(ProtoName string, version uint, length uint64) p2p.Protocol {
-
 	return p2p.Protocol{
 		Name:    ProtoName,
 		Version: version,
@@ -857,35 +856,4 @@ func (h *handler) handleConsensusMsg(p *p2p.Peer, msg p2p.Msg) (bool, error) {
 		return handled, err
 	}
 	return false, nil
-}
-
-// makeLegacyProtocol is basically a copy of the eth makeProtocol, but for legacy subprotocols, e.g. "istanbul/99" "istabnul/64"
-// If support legacy subprotocols is removed, remove this and associated code as well.
-// If ibft protocol is using a legacy protocol then the "eth" subprotocol should not be available.
-func (h *handler) makeLegacyProtocol(protoName string, version uint, length uint64) p2p.Protocol {
-	log.Debug("registering a legacy protocol ", "protoName", protoName)
-	return p2p.Protocol{
-		Name:    protoName,
-		Version: version,
-		Length:  length,
-		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
-			peer := eth.NewPeer(version, p, rw, h.txpool)
-			peer.AddConsensusProtoRW(rw)
-			return h.runEthPeer(peer, func(peer *eth.Peer) error {
-				return h.handleConsensusLoop(p, rw)
-			})
-		},
-		NodeInfo: func() interface{} {
-			return h.NodeInfo()
-		},
-		PeerInfo: func(id enode.ID) interface{} {
-			if p := h.peers.peer(fmt.Sprintf("%x", id[:8])); p != nil {
-				return p.Info()
-			}
-			if p := h.peers.peer(fmt.Sprintf("%x", id)); p != nil { // TODO:BBO
-				return p.Info()
-			}
-			return nil
-		},
-	}
 }

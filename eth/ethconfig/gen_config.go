@@ -62,7 +62,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		CheckpointOracle                *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideArrowGlacier            *big.Int                       `toml:",omitempty"`
 		OverrideTerminalTotalDifficulty *big.Int                       `toml:",omitempty"`
-		Istanbul                		istanbul.Config
+		Istanbul                        istanbul.Config
 	}
 	var enc Config
 	enc.Genesis = c.Genesis
@@ -158,7 +158,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		CheckpointOracle                *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideArrowGlacier            *big.Int                       `toml:",omitempty"`
 		OverrideTerminalTotalDifficulty *big.Int                       `toml:",omitempty"`
-		Istanbul                		*istanbul.Config
+		Istanbul                        *istanbul.Config
 	}
 	var dec Config
 	if err := unmarshal(&dec); err != nil {
