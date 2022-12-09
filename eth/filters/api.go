@@ -250,13 +250,12 @@ func (api *PublicFilterAPI) Logs(ctx context.Context, crit FilterCriteria) (*rpc
 	if err != nil {
 		return nil, err
 	}
-
 	go func() {
-
 		for {
 			select {
 			case logs := <-matchedLogs:
 				for _, log := range logs {
+					log := log
 					notifier.Notify(rpcSub.ID, &log)
 				}
 			case <-rpcSub.Err(): // client send an unsubscribe request

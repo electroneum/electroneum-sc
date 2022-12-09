@@ -85,7 +85,7 @@ func checkDanglingMemStorage(db ethdb.KeyValueStore) error {
 	}
 	r := rlp.NewStream(bytes.NewReader(journal), 0)
 	// Firstly, resolve the first element as the journal version
-	version, err := r.Uint()
+	version, err := r.Uint64()
 	if err != nil {
 		log.Warn("Failed to resolve the journal version", "error", err)
 		return nil

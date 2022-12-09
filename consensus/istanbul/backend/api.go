@@ -245,7 +245,6 @@ func (api *API) Status(startBlockNum *rpc.BlockNumber, endBlockNum *rpc.BlockNum
 		blockNum := rpc.BlockNumber(int64(n))
 		s, _ := api.GetSignersFromBlock(&blockNum)
 		signStatus[s.Author]++
-
 	}
 	return &Status{
 		SigningStatus: signStatus,

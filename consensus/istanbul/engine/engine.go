@@ -345,7 +345,6 @@ func WriteValidators(validators []common.Address) ApplyQBFTExtra {
 // Note, the block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
 func (e *Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
-
 	// Block Reward if Coinbase address is provided
 	var emptyAddr = common.Address{}
 	if header.Coinbase != emptyAddr {

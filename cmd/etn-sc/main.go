@@ -441,7 +441,6 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 	if backend.ChainConfig().IBFT != nil && ctx.GlobalString(utils.SyncModeFlag.Name) != "light" {
 		ibftValidateEthService(stack)
 	}
-
 }
 
 // unlockAccounts unlocks any account specifically requested.
