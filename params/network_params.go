@@ -64,4 +64,9 @@ const (
 	// the downloader as a hard limit against deep ancestors, by the blockchain against deep
 	// reorgs, by the light pruner as the pruning validity guarantee.
 	LightImmutabilityThreshold = 30000
+
+	// ETNMaxSupply is the max amount of ETN that can ever be created.
+	// 21Bn with 18 decimal places
+	// 21.000.000.000 + 18 decimal places
+	ETNMaxSupply = "21000000000000000000000000000"
 )

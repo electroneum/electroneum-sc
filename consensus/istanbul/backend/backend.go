@@ -48,6 +48,7 @@ const (
 func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database) *Backend {
 	// Allocate the snapshot caches and create the engine
 	recents, _ := lru.NewARC(inmemorySnapshots)
+	recentsEmission, _ := lru.NewARC(inmemoryEmissions)
 	recentMessages, _ := lru.NewARC(inmemoryPeers)
 	knownMessages, _ := lru.NewARC(inmemoryMessages)
 
@@ -60,6 +61,7 @@ func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database
 		db:               db,
 		commitCh:         make(chan *types.Block, 1),
 		recents:          recents,
+		recentsEmission:  recentsEmission,
 		candidates:       make(map[common.Address]bool),
 		coreStarted:      false,
 		recentMessages:   recentMessages,
@@ -106,6 +108,8 @@ type Backend struct {
 	candidatesLock sync.RWMutex
 	// Snapshots for recent block to speed up reorgs
 	recents *lru.ARCCache
+	// Emission for recent blocks
+	recentsEmission *lru.ARCCache
 
 	// event subscription for ChainHeadEvent event
 	broadcaster consensus.Broadcaster

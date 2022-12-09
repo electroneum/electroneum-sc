@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/math"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
@@ -30,12 +31,14 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rpc"
 )
 
 const (
 	checkpointInterval = 1024 // Number of blocks after which to save the vote snapshot to the database
 	inmemorySnapshots  = 128  // Number of recent vote snapshots to keep in memory
+	inmemoryEmissions  = 128
 	inmemoryPeers      = 40
 	inmemoryMessages   = 1024
 )
@@ -64,6 +67,12 @@ func (sb *Backend) VerifyHeader(chain consensus.ChainHeaderReader, header *types
 func (sb *Backend) verifyHeader(chain consensus.ChainHeaderReader, header *types.Header, parents []*types.Header) error {
 	// Assemble the voting snapshot
 	snap, err := sb.snapshot(chain, header.Number.Uint64()-1, header.ParentHash, parents)
+	if err != nil {
+		return err
+	}
+
+	// Compute etn emission per block
+	_, err = sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, parents)
 	if err != nil {
 		return err
 	}
@@ -171,12 +180,17 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 // Note, the block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
 func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
+	if header.Coinbase != (common.Address{}) {
+		blockReward := sb.GetBaseBlockReward(chain, header)
+		state.AddBalance(header.Coinbase, blockReward)
+	}
 	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
 }
 
 // FinalizeAndAssemble implements consensus.Engine, ensuring no uncles are set,
 // nor block rewards given, and returns the final block.
 func (sb *Backend) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
+	sb.Finalize(chain, header, state, txs, uncles)
 	return sb.EngineForBlockNumber(header.Number).FinalizeAndAssemble(chain, header, state, txs, uncles, receipts)
 }
 
@@ -239,6 +253,39 @@ func (sb *Backend) Seal(chain consensus.ChainHeaderReader, block *types.Block, r
 	return nil
 }
 
+func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header) *big.Int {
+	var legacyV9BlockHeight = big.NewInt(862866 * 24) // original 862866 height * 24 to make it compatible with 5-second block time
+	var halvingPeriod = big.NewInt(25228800)          // 4 years in 5-second block time
+	var baseReward = big.NewInt(4e+18)                // ~100ETN every 120 seconds
+
+	var offset = new(big.Int).Sub(big.NewInt(1500000*24), legacyV9BlockHeight) // block height at time of BC migration - legacyV9BlockHeight
+
+	var offsetBlockNumber = new(big.Int).Add(header.Number, offset)
+	var halvings = new(big.Int).Div(offsetBlockNumber, halvingPeriod) // (blockNumber + offset) / halvingPeriod
+
+	// Get current circulating supply
+	emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
+	if err != nil {
+		return big.NewInt(0)
+	}
+
+	// 0 block reward once circulating supply = max supply
+	if emission.CirculatingSupply.Cmp(math.MustParseBig256(params.ETNMaxSupply)) >= 0 {
+		return big.NewInt(0)
+	}
+
+	// Shift the base reward "halvings" times
+	return new(big.Int).Rsh(baseReward, uint(halvings.Uint64()))
+}
+
+func (sb *Backend) GetTotalEmission(chain consensus.ChainHeaderReader, header *types.Header) *big.Int {
+	emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
+	if err != nil {
+		return big.NewInt(0)
+	}
+	return emission.CirculatingSupply
+}
+
 // APIs returns the RPC APIs this consensus engine provides.
 func (sb *Backend) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 	return []rpc.API{{
@@ -299,6 +346,130 @@ func addrsToString(addrs []common.Address) []string {
 		strs[i] = addr.String()
 	}
 	return strs
+}
+
+func (sb *Backend) emissionLogger(emission *Emission) log.Logger {
+	return sb.logger.New(
+		"emission.number", emission.Number,
+		"emission.hash", emission.Hash.String(),
+		"emission.circulatingsupply", emission.CirculatingSupply,
+	)
+}
+
+func (sb *Backend) storeEmission(emission *Emission) error {
+	logger := sb.emissionLogger(emission)
+	logger.Debug("IBFT: store emission to database")
+	if err := emission.store(sb.db); err != nil {
+		logger.Error("IBFT: failed to store emission to database", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+func (sb *Backend) emission(chain consensus.ChainHeaderReader, number uint64, hash common.Hash, parents []*types.Header) (*Emission, error) {
+	var (
+		headers  []*types.Header
+		emission *Emission
+	)
+
+	for emission == nil {
+		// If an in-memory emission was found, use that
+		if e, ok := sb.recentsEmission.Get(hash); ok {
+			emission = e.(*Emission)
+			sb.emissionLogger(emission).Trace("IBFT: loaded emission from cache")
+			break
+		}
+		// If an on-disk checkpoint emission can be found, use that
+		if number%checkpointInterval == 0 {
+			if s, err := loadEmission(hash, sb.db); err == nil {
+				emission = s
+				sb.emissionLogger(emission).Trace("IBFT: loaded emission from database")
+				break
+			}
+		}
+
+		// If we're at block zero, set initial emission
+		if number == 0 {
+			genesis := chain.GetHeaderByNumber(0)
+			if err := sb.EngineForBlockNumber(big.NewInt(0)).VerifyHeader(chain, genesis, nil, nil); err != nil {
+				sb.logger.Error("IBFT: invalid genesis block", "err", err)
+				return nil, err
+			}
+
+			emission = newEmission(0, genesis.Hash(), chain.Config().GenesisETN)
+			if err := sb.storeEmission(emission); err != nil {
+				return nil, err
+			}
+			break
+		}
+
+		// No emission for this header, gather the header and move backward
+		var header *types.Header
+		if len(parents) > 0 {
+			// If we have explicit parents, pick from there (enforced)
+			header = parents[len(parents)-1]
+			if header.Hash() != hash || header.Number.Uint64() != number {
+				return nil, consensus.ErrUnknownAncestor
+			}
+			parents = parents[:len(parents)-1]
+		} else {
+			// No explicit parents (or no more left), reach out to the database
+			header = chain.GetHeader(hash, number)
+			if header == nil {
+				return nil, consensus.ErrUnknownAncestor
+			}
+		}
+
+		headers = append(headers, header)
+		number, hash = number-1, header.ParentHash
+	}
+
+	// Previous emission found, apply any pending headers on top of it
+	for i := 0; i < len(headers)/2; i++ {
+		headers[i], headers[len(headers)-1-i] = headers[len(headers)-1-i], headers[i]
+	}
+
+	emission, err := sb.emissionApply(chain, emission, headers)
+	if err != nil {
+		return nil, err
+	}
+	sb.recentsEmission.Add(emission.Hash, emission)
+
+	// If we've generated a new checkpoint emission, save to disk
+	if emission.Number%checkpointInterval == 0 && len(headers) > 0 {
+		if err = sb.storeEmission(emission); err != nil {
+			return nil, err
+		}
+	}
+
+	return emission, err
+}
+
+func (sb *Backend) emissionApply(chain consensus.ChainHeaderReader, emission *Emission, headers []*types.Header) (*Emission, error) {
+	// Allow passing in no headers for cleaner code
+	if len(headers) == 0 {
+		return emission, nil
+	}
+	// Sanity check that the headers can be applied
+	for i := 0; i < len(headers)-1; i++ {
+		if headers[i+1].Number.Uint64() != headers[i].Number.Uint64()+1 {
+			return nil, istanbulcommon.ErrInvalidVotingChain
+		}
+	}
+	if headers[0].Number.Uint64() != emission.Number+1 {
+		return nil, istanbulcommon.ErrInvalidVotingChain
+	}
+	// Iterate through the headers and create a new snapshot
+	emissionCpy := emission.copy()
+
+	for _, header := range headers {
+		emissionCpy.CirculatingSupply = new(big.Int).Add(emissionCpy.CirculatingSupply, sb.GetBaseBlockReward(chain, header))
+	}
+	emissionCpy.Number += uint64(len(headers))
+	emissionCpy.Hash = headers[len(headers)-1].Hash()
+
+	return emissionCpy, nil
 }
 
 func (sb *Backend) snapLogger(snap *Snapshot) log.Logger {

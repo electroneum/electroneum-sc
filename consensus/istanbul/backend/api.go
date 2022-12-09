@@ -18,6 +18,7 @@ package backend
 
 import (
 	"errors"
+	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
@@ -268,4 +269,52 @@ func (api *API) IsValidator(blockNum *rpc.BlockNumber) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (api *API) GetBaseBlockReward(blockNum *rpc.BlockNumber) (*big.Int, error) {
+	var (
+		blockNumber rpc.BlockNumber
+		header      *types.Header
+	)
+
+	// block number arg is optional
+	if blockNum != nil {
+		blockNumber = *blockNum
+
+		latestHeader := api.chain.CurrentHeader()
+		if uint64(blockNumber.Int64()) > latestHeader.Number.Uint64() {
+			return nil, errors.New("block number should be less than or equal to current block height")
+		}
+
+		header = api.chain.GetHeaderByNumber(uint64(blockNum.Int64()))
+	} else {
+		// get latest header if block number was omitted
+		header = api.chain.CurrentHeader()
+	}
+
+	return api.backend.GetBaseBlockReward(api.chain, header), nil
+}
+
+func (api *API) GetTotalEmission(blockNum *rpc.BlockNumber) (*big.Int, error) {
+	var (
+		blockNumber rpc.BlockNumber
+		header      *types.Header
+	)
+
+	// block number arg is optional
+	if blockNum != nil {
+		blockNumber = *blockNum
+
+		latestHeader := api.chain.CurrentHeader()
+		if uint64(blockNumber.Int64()) > latestHeader.Number.Uint64() {
+			return nil, errors.New("block number should be less than or equal to current block height")
+		}
+
+		header = api.chain.GetHeaderByNumber(uint64(blockNum.Int64()))
+	} else {
+		// get latest header if block number was omitted
+		header = api.chain.CurrentHeader()
+	}
+
+	return api.backend.GetTotalEmission(api.chain, header), nil
 }
