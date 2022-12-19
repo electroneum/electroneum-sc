@@ -131,11 +131,11 @@ func remoteConsole(ctx *cli.Context) error {
 				path = filepath.Join(path, "testnet")
 			}
 		}
-		endpoint = fmt.Sprintf("%s/geth.ipc", path)
+		endpoint = fmt.Sprintf("%s/etn-sc.ipc", path)
 	}
 	client, err := dialRPC(endpoint)
 	if err != nil {
-		utils.Fatalf("Unable to attach to remote geth: %v", err)
+		utils.Fatalf("Unable to attach to remote etn-sc: %v", err)
 	}
 	config := console.Config{
 		DataDir: utils.MakeDataDir(ctx),
