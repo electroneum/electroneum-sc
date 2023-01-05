@@ -36,6 +36,10 @@ type Emission struct {
 }
 
 func newEmission(blockNumber uint64, hash common.Hash, circulatingSupply *big.Int) *Emission {
+	if circulatingSupply == nil {
+		circulatingSupply = big.NewInt(0)
+	}
+
 	emission := &Emission{
 		Number:            blockNumber,
 		Hash:              hash,
