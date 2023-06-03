@@ -134,7 +134,7 @@ Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instanc
 *Note: Although there are some internal protective measures to prevent transactions from
 crossing over between the main network and test network, you should make sure to always
 use separate accounts for play-cryptocurrency and real-cryptocurrency. Unless you manually move
-accounts, `etn-sc` will by default correctly separate the two networks and will not make any
+accounts, `ls etn-sc` will by default correctly separate the two networks and will not make any
 accounts available between them.*
 
 ### Configuration
@@ -220,7 +220,7 @@ from anyone on the internet, and are grateful for even the smallest of fixes!
 
 If you'd like to contribute to electroneum-sc, please fork, fix, commit and send a pull request
 for the maintainers to review and merge into the main code base. If you wish to submit
-more complex changes though, please check up with the core devs first on [our Discord Server](https://discord.gg/invite/nthXNEv)
+more complex changes though, please check up with the core devs first on [our Discord Server](https://discord.gg/mBzrW9SvkJ)
 to ensure those changes are in line with the general philosophy of the project and/or get
 some early feedback which can make both your efforts much lighter as well as our review
 and merge procedures quick and simple.
@@ -235,9 +235,6 @@ Please make sure your contributions adhere to our coding guidelines:
  * Commit messages should be prefixed with the package(s) they modify.
    * E.g. "etn, rpc: make trace configs optional"
 
-Please see the [Developers' Guide](https://geth.ethereum.org/docs/developers/devguide)
-for more details on configuring your environment, managing project dependencies, and
-testing procedures.
 
 ## License
 
