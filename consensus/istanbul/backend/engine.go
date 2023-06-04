@@ -17,6 +17,7 @@
 package backend
 
 import (
+	"fmt"
 	"math/big"
 	"math/rand"
 	"time"
@@ -266,7 +267,7 @@ func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header 
 	// Get current circulating supply
 	emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
 	if err != nil {
-		return big.NewInt(0)
+		panic(fmt.Sprintf("Failed to get next base block reward: %v", err))
 	}
 
 	// 0 block reward once circulating supply = max supply
