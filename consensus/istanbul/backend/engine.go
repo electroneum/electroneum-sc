@@ -270,9 +270,11 @@ func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header 
 		panic(fmt.Sprintf("Failed to get next base block reward: %v", err))
 	}
 
-	// 0 block reward once circulating supply = max supply
+	// 0 block reward once circulating supply = max supply & if circsupply+basereward > maxsupply, reduce the base reward accordingly
 	if emission.CirculatingSupply.Cmp(math.MustParseBig256(params.ETNMaxSupply)) >= 0 {
 		return big.NewInt(0)
+	} else if new(big.Int).Add(emission.CirculatingSupply, baseReward).Cmp(math.MustParseBig256(params.ETNMaxSupply)) > 0 {
+		baseReward = new(big.Int).Sub(math.MustParseBig256(params.ETNMaxSupply), emission.CirculatingSupply)
 	}
 
 	// Shift the base reward "halvings" times
