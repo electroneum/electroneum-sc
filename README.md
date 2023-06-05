@@ -103,6 +103,7 @@ This command will:
    as well as `etn-sc`'s own [management APIs](https://geth.ethereum.org/docs/rpc/server).
    This tool is optional and if you leave it out you can always attach to an already running
    `etn-sc` instance with `etn-sc attach`.
+ * Write blockchain data to the default data directory: default data directory (`~/.electroneum-sc` on linux, `C:\Users\<username>\AppData\Roaming\Electroneum-sc` on Windows and `~/Library/Electroneum-sc` on Darwin) 
 
 ### Full node on the test network
 
@@ -123,8 +124,8 @@ Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instanc
 
  * Instead of connecting the main Electroneum Smart Chain network, the client will connect to the test network, which uses different P2P bootnodes, different network IDs and genesis
    states.
- * Instead of using the default data directory (`~/.electroneum` on Linux for example), `etn-sc`
-   will nest itself one level deeper into a `testnet` subfolder (`~/.ethereum/testnet` on
+ * Instead of using the default data directory (`~/.electroneum-sc` on Linux for example), `etn-sc`
+   will nest itself one level deeper into a `testnet` subfolder (`~/.electroneum-sc/testnet` on
    Linux). Note, on OSX and Linux this also means that attaching to a running testnet node
    requires the use of a custom endpoint since `etn-sc attach` will try to attach to a
    production node endpoint by default, e.g.,

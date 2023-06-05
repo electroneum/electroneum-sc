@@ -141,7 +141,7 @@ var (
 	}
 	NetworkIdFlag = cli.Uint64Flag{
 		Name:  "networkid",
-		Usage: "Explicitly set network id (integer)(For testnets: use --ropsten, --rinkeby, --goerli instead)",
+		Usage: "Explicitly set network id (integer)(For the test and stagenets: use --testnet and --stagenet instead)",
 		Value: ethconfig.Defaults.NetworkId,
 	}
 	MainnetFlag = cli.BoolFlag{
@@ -150,7 +150,7 @@ var (
 	}
 	StagenetFlag = cli.BoolFlag{
 		Name:  "stagenet",
-		Usage: "Electroneum Test network: pre-configured IBFT test network",
+		Usage: "Electroneum Staging network: pre-configured IBFT staging network",
 	}
 	TestnetFlag = cli.BoolFlag{
 		Name:  "testnet",
