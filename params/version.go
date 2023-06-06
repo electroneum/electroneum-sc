@@ -20,14 +20,9 @@ import (
 	"fmt"
 )
 
-// The legacy system's terminal version was V4 (github.com/electroneum/electroneum), however, new system represents
-// a significant departure from the legacy system  in terms of architecture, functionality, and underlying technology.
-// Therefore the versioning for this smartchain project begins at 1.0.0 - this indicates a fresh start, acknowledges
-// the substantial changes in the system, and provides for a clean break. It avoids any confusion that may arise from
-// starting at 5 in a completely new codebase.
-
 const (
-	VersionMajor = 1        // Major version component of the current release
+	VersionName  = "Aurelius"
+	VersionMajor = 5        // Major version component of the current release
 	VersionMinor = 0        // Minor version component of the current release
 	VersionPatch = 0        // Patch version component of the current release
 	VersionMeta  = "stable" // Version metadata to append to the version string
@@ -40,7 +35,7 @@ var Version = func() string {
 
 // VersionWithMeta holds the textual version string including the metadata.
 var VersionWithMeta = func() string {
-	v := Version
+	v := VersionName + "-" + Version
 	if VersionMeta != "" {
 		v += "-" + VersionMeta
 	}
