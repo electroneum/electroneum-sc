@@ -17,8 +17,10 @@
 package miner
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -32,6 +34,7 @@ import (
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
@@ -88,12 +91,13 @@ var (
 type environment struct {
 	signer types.Signer
 
-	state     *state.StateDB // apply state changes here
-	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
-	family    mapset.Set     // family set (used for checking uncle invalidity)
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
-	coinbase  common.Address
+	state                 *state.StateDB // apply state changes here
+	ancestors             mapset.Set     // ancestor set (used for checking uncle parent validity)
+	family                mapset.Set     // family set (used for checking uncle invalidity)
+	tcount                int            // tx count in cycle
+	gasPool               *core.GasPool  // available gas used to pack transactions
+	coinbase              common.Address
+	prioritiseElectroneum bool // prioritise electroneum's transactions over others?
 
 	header   *types.Header
 	txs      []*types.Transaction
@@ -104,14 +108,15 @@ type environment struct {
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
 	cpy := &environment{
-		signer:    env.signer,
-		state:     env.state.Copy(),
-		ancestors: env.ancestors.Clone(),
-		family:    env.family.Clone(),
-		tcount:    env.tcount,
-		coinbase:  env.coinbase,
-		header:    types.CopyHeader(env.header),
-		receipts:  copyReceipts(env.receipts),
+		signer:                env.signer,
+		state:                 env.state.Copy(),
+		ancestors:             env.ancestors.Clone(),
+		family:                env.family.Clone(),
+		tcount:                env.tcount,
+		coinbase:              env.coinbase,
+		prioritiseElectroneum: env.prioritiseElectroneum,
+		header:                types.CopyHeader(env.header),
+		receipts:              copyReceipts(env.receipts),
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -1076,14 +1081,76 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
-	// Split the pending transactions into locals and remotes
-	// Fill the block with all available pending transactions.
+	// First pull Electroneum Ltd transactions out of 'pending' if flag --prioritiseElectroneum was passed by
+	// cli argument and then Split the pending transactions into locals and remotes
+	// pending is a local copy of the pool not a pointer, so it's ok to strip out Electroneum tx from localTxs and
+	// remoteTxs before processing them separately and avoid double counting.
 	pending := w.eth.TxPool().Pending(true)
+
+	electroneumTxs := make(map[common.Address]types.Transactions)
+	if w.config.PrioritiseElectroneum {
+
+		//todo: move this into worker or somewhere to save doing this every time we fill a block
+		//testing keys only
+		// private key : 8dd88ba44afa275e0dd9be1d633732242d84ea955e453b28719d17897035b4c2
+		//NB the 0x04 is to tell us that the key is uncompressed 64bytes +1 byte
+		etnSigningPubKey := "04" + "d6e7d6da18e8cfb9cf20bbb7182ac36deb9b77f2c617f3698fc12aebf22ee9b00060775349a2312813818a9c7a0a4b143fddfa36611129daf01c26bc9080d418"
+		byteStringETNKey, err := hex.DecodeString(etnSigningPubKey)
+		if err != nil {
+			fmt.Println("Error decoding hex string:", err)
+			panic("Error decoding etn signing key")
+		}
+
+		// If the first transaction for a given account has the Electroneum Ltd signature present, then all of the tx
+		// for that account do, so we can just pull that account out of pending without further thought
+		for account, txs := range pending {
+			// Extract the nonce - it's a uint64, so we need to convert it to bytes
+			nonceHex := hexutil.EncodeUint64(txs[0].Nonce())
+			nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
+			// Create signer depending on whether the transaction is protected
+			var signer types.Signer
+			if txs[0].Protected() {
+				signer = types.NewEIP155Signer(w.chainConfig.ChainID)
+			} else {
+				signer = types.HomesteadSigner{}
+			}
+
+			// Extract the sender - the function returns an address, we convert it to bytes
+			var sender []byte
+			if from, err := types.Sender(signer, txs[0]); err != nil {
+				panic(fmt.Sprintf("Failed to get transaction sender: %v", err))} else {
+				sender = from.Bytes()
+			}
+
+			// Concatenate the nonce and sender
+			data := append(nonce, sender...)
+
+			// Generate the hash
+			digestHash := crypto.Keccak256(data)
+
+			//note that the signature txs[0].Data()[:64] is just (r,s) not (r,s,v)
+			if len(txs) > 0 && len(txs[0].Data()) >= 64 && crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[:64]) {
+				delete(pending, account)
+				electroneumTxs[account] = txs
+			} // conditional is >=64 in case we add more to the data field at a later stage for whatever reason
+		}
+	}
+
+	//
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
 		if txs := remoteTxs[account]; len(txs) > 0 {
 			delete(remoteTxs, account)
 			localTxs[account] = txs
+		}
+	}
+
+	// By default the miner prioritises their own (local) transactions and then moves onto everyone else's (remote) tx
+	// if --miner.PrioritiseElectroneum flag is present, electroneumTxs take priority over both local & remote
+	if len(electroneumTxs) > 0 {
+		txs := types.NewTransactionsByPriceAndNonce(env.signer, electroneumTxs, env.header.BaseFee)
+		if err := w.commitTransactions(env, txs, interrupt); err != nil {
+			return err
 		}
 	}
 	if len(localTxs) > 0 {

@@ -482,6 +482,10 @@ var (
 		Name:  "miner.noverify",
 		Usage: "Disable remote sealing verification",
 	}
+	MinerPrioritiseElectroneumFlag = cli.BoolFlag{
+		Name:  "miner.PrioritiseElectroneum",
+		Usage: "Prioritise Electroneum Ltd Transactions when filling blocks",
+	}
 	// Account settings
 	UnlockedAccountFlag = cli.StringFlag{
 		Name:  "unlock",
@@ -1455,8 +1459,15 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.GlobalIsSet(MinerNoVerifyFlag.Name) {
 		cfg.Noverify = ctx.GlobalBool(MinerNoVerifyFlag.Name)
 	}
+	if ctx.GlobalIsSet(MinerPrioritiseElectroneumFlag.Name) {
+		cfg.PrioritiseElectroneum = ctx.GlobalBool(MinerPrioritiseElectroneumFlag.Name)
+	}
 	if ctx.GlobalIsSet(LegacyMinerGasTargetFlag.Name) {
 		log.Warn("The generic --miner.gastarget flag is deprecated and will be removed in the future!")
+	}
+	if ctx.GlobalIsSet(MinerPrioritiseElectroneumFlag.Name) {
+		log.Warn("In using --PrioritiseElectroneum you have decided to Prioritise Electroneum's transactions when mining")
+		cfg.PrioritiseElectroneum = ctx.GlobalBool(MinerPrioritiseElectroneumFlag.Name)
 	}
 }
 
@@ -1938,7 +1949,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	if ctx.GlobalBool(FakePoWFlag.Name) {
 		ethashConf.PowMode = ethash.ModeFake
 	}
-	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, chainDb)
+	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, false, chainDb)
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}

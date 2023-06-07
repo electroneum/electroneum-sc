@@ -158,7 +158,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		chainDb:           chainDb,
 		eventMux:          stack.EventMux(),
 		accountManager:    stack.AccountManager(),
-		engine:            ethconfig.CreateConsensusEngine(stack, chainConfig, config, config.Miner.Notify, config.Miner.Noverify, chainDb),
+		engine:            ethconfig.CreateConsensusEngine(stack, chainConfig, config, config.Miner.Notify, config.Miner.Noverify, config.Miner.PrioritiseElectroneum, chainDb),
 		closeBloomHandler: make(chan struct{}),
 		networkID:         config.NetworkId,
 		gasPrice:          config.Miner.GasPrice,
