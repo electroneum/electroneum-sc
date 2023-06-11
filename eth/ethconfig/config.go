@@ -94,7 +94,7 @@ var Defaults = Config{
 	RPCGasCap:     50000000,
 	RPCEVMTimeout: 5 * time.Second,
 	GPO:           FullNodeGPO,
-	RPCTxFeeCap:   2000000, //  ETH($)/ETN($) correct to jun 02 2023
+	RPCTxFeeCap:   100000, //  [[ETH($)/ETN($)] / 20(to allow for appreciation, and given that fees will start very low] : correct to jun 2023
 
 	// Quorum
 	Istanbul: *istanbul.DefaultConfig, // Quorum
