@@ -231,7 +231,7 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			Epoch:                  chainConfig.IBFT.EpochLength,
 			ProposerPolicy:         istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
 			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
-			AllowedFutureBlockTime: 0,
+			AllowedFutureBlockTime: 5,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)

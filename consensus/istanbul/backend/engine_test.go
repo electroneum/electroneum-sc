@@ -329,7 +329,7 @@ func TestVerifyHeader(t *testing.T) {
 	header = block.Header()
 	header.Time = new(big.Int).Add(big.NewInt(time.Now().Unix()), new(big.Int).SetUint64(10)).Uint64()
 	priorValue := engine.config.AllowedFutureBlockTime
-	engine.config.AllowedFutureBlockTime = 10
+	engine.config.AllowedFutureBlockTime = 5
 	err = engine.VerifyHeader(chain, header, false)
 	engine.config.AllowedFutureBlockTime = priorValue //restore changed value
 	if err == consensus.ErrFutureBlock {
