@@ -94,7 +94,7 @@ var Defaults = Config{
 	RPCGasCap:     50000000,
 	RPCEVMTimeout: 5 * time.Second,
 	GPO:           FullNodeGPO,
-	RPCTxFeeCap:   1, // 1 ether
+	RPCTxFeeCap:   100000, //  [[ETH($)/ETN($)] / 20(to allow for appreciation, and given that fees will start very low] : correct to jun 2023
 
 	// Quorum
 	Istanbul: *istanbul.DefaultConfig, // Quorum
@@ -231,7 +231,7 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			Epoch:                  chainConfig.IBFT.EpochLength,
 			ProposerPolicy:         istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
 			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
-			AllowedFutureBlockTime: 0,
+			AllowedFutureBlockTime: 5,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)
