@@ -327,7 +327,7 @@ func TestVerifyHeader(t *testing.T) {
 	// future block which is within AllowedFutureBlockTime
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
-	header.Time = new(big.Int).Add(big.NewInt(time.Now().Unix()), new(big.Int).SetUint64(10)).Uint64()
+	header.Time = new(big.Int).Add(big.NewInt(time.Now().Unix()), new(big.Int).SetUint64(5)).Uint64()
 	priorValue := engine.config.AllowedFutureBlockTime
 	engine.config.AllowedFutureBlockTime = 5
 	err = engine.VerifyHeader(chain, header, false)
