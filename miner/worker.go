@@ -1131,10 +1131,19 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 
 			//check the last 64 bytes of data to see if there is a myETN signature present.
 			//note that the signature txs[0].Data()[len(txs[0].Data())-64:] is just (r,s) not (r,s,v)
-			if len(txs) > 0 && len(txs[0].Data()) >= 64 && crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[len(txs[0].Data())-64:]) {
-				delete(pending, account)
-				electroneumTxs[account] = txs
-			} // conditional is >=64 in case we add more to the data field at a later stage for whatever reason
+			if len(txs) > 0 && len(txs[0].Data()) >= 64 { // conditional is >=64 in case we add more to the data field at a later stage for whatever reason
+				_, err := crypto.SigToPub(digestHash, txs[0].Data()[len(txs[0].Data())-64:]) // first check if the last 64 bytes is even a secp256k1 signature before verifying
+				if err != nil {
+					err = nil
+					break
+				}
+				if crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[len(txs[0].Data())-64:]) {
+					delete(pending, account)
+					electroneumTxs[account] = txs
+				} else {
+					log.Warn("Got a data field signature but couldn't verify: %v", txs[0].Hash())
+				}
+			}
 		}
 	}
 
