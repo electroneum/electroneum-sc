@@ -1118,7 +1118,8 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			// Extract the sender - the function returns an address, we convert it to bytes
 			var sender []byte
 			if from, err := types.Sender(signer, txs[0]); err != nil {
-				panic(fmt.Sprintf("Failed to get transaction sender: %v", err))} else {
+				panic(fmt.Sprintf("Failed to get transaction sender: %v", err))
+			} else {
 				sender = from.Bytes()
 			}
 
@@ -1128,8 +1129,9 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			// Generate the hash
 			digestHash := crypto.Keccak256(data)
 
-			//note that the signature txs[0].Data()[:64] is just (r,s) not (r,s,v)
-			if len(txs) > 0 && len(txs[0].Data()) >= 64 && crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[:64]) {
+			//check the last 64 bytes of data to see if there is a myETN signature present.
+			//note that the signature txs[0].Data()[len(txs[0].Data())-64:] is just (r,s) not (r,s,v)
+			if len(txs) > 0 && len(txs[0].Data()) >= 64 && crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[len(txs[0].Data())-64:]) {
 				delete(pending, account)
 				electroneumTxs[account] = txs
 			} // conditional is >=64 in case we add more to the data field at a later stage for whatever reason
