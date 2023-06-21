@@ -19,6 +19,7 @@ package utils
 
 import (
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
@@ -524,6 +525,11 @@ var (
 		Name:  "rpc.txfeecap",
 		Usage: "Sets a cap on transaction fee (in ether) that can be sent via the RPC APIs (0 = no cap)",
 		Value: ethconfig.Defaults.RPCTxFeeCap,
+	}
+	RPCPrivateKeyForDataFieldSignature = cli.StringFlag{
+		Name:  "rpc.privatekeyfordatafieldsignature",
+		Usage: "Pass a secp256k1 private key for signing concat(nonce, account) of your transactions to identify yourself. This goes at the end of preexisting tx data.",
+		Value: "",
 	}
 	// Authenticated RPC HTTP settings
 	AuthListenFlag = cli.StringFlag{
@@ -1499,6 +1505,15 @@ func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
 	}
 }
 
+func setPrivateKeyForDataFieldSignature(ctx *cli.Context, cfg *ethconfig.Config) {
+	privateKeyHex := ctx.GlobalString("rpc.privatekeyfordatafieldsignature")
+	privateKeyForDataFieldSignature, err := hex.DecodeString(privateKeyHex)
+	if err != nil {
+		panic("Error setting the data field signature key!")
+	}
+	cfg.PrivateKeyForDataFieldSignature = privateKeyForDataFieldSignature
+}
+
 // CheckExclusive verifies that only a single instance of the provided flags was
 // set by the user. Each flag might optionally be followed by a string type to
 // specialize it further.
@@ -1564,6 +1579,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)
+	setPrivateKeyForDataFieldSignature(ctx, cfg)
 
 	// Cap the cache allowance and tune the garbage collector
 	mem, err := gopsutil.VirtualMemory()

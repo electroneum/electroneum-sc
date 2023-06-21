@@ -47,6 +47,10 @@ type LesApiBackend struct {
 	gpo                 *gasprice.Oracle
 }
 
+func (b *LesApiBackend) PrivateKeyforDataFieldSignature() []byte {
+	return b.eth.config.PrivateKeyForDataFieldSignature
+}
+
 func (b *LesApiBackend) ChainConfig() *params.ChainConfig {
 	return b.eth.chainConfig
 }

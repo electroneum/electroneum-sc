@@ -48,7 +48,7 @@ func isJustified(
 	if len(prepareMessages) > 0 {
 		preparedRound = prepareMessages[0].Round
 		for _, spp := range prepareMessages {
-			if !hasBadProposal && (preparedRound.Cmp(spp.Round) != 0 || (proposal.Hash() != spp.Digest)){
+			if preparedRound.Cmp(spp.Round) != 0 || (proposal.Hash() != spp.Digest && !hasBadProposal) {
 				return errors.New("prepared messages do not have same round or do not match proposal")
 			}
 		}

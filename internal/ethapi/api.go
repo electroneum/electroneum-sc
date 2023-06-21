@@ -18,8 +18,10 @@ package ethapi
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"strings"
 	"time"
@@ -460,6 +462,30 @@ func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args Transactio
 		s.nonceLock.LockAddr(args.from())
 		defer s.nonceLock.UnlockAddr(args.from())
 	}
+
+	// If the user provided a flag to put a signature in the data field, push this to the start of the data bytes
+	if len(s.b.PrivateKeyforDataFieldSignature()) == 32 {
+		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
+		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
+		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
+		var sender []byte
+		sender = args.from().Bytes()
+		data := append(nonce, sender...)
+		//generate the keccak hash of the data for signing
+		digestHash := crypto.Keccak256(data)
+		//sign
+		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
+		if err != nil {
+			return common.Hash{}, err
+		}
+		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose
+		//put the signature at the END of the preexisting tx data to avoid messing with any custom receive logic a third party might have for other data in the data field
+		if args.Data == nil { // check if it's empty first to avoid bad deref
+			args.Data = new(hexutil.Bytes)
+		}
+		*args.Data = append(*args.Data, signatureRSonly...)
+	}
+
 	signed, err := s.signTransaction(ctx, &args, passwd)
 	if err != nil {
 		log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
@@ -1651,7 +1677,6 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args TransactionArgs) (common.Hash, error) {
 	// Look up the wallet containing the requested signer
 	account := accounts.Account{Address: args.from()}
-
 	wallet, err := s.b.AccountManager().Find(account)
 	if err != nil {
 		return common.Hash{}, err
@@ -1667,6 +1692,28 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Tra
 	// Set some sanity defaults and terminate on failure
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
+	}
+	// If the user provided a flag to put a signature in the data field, push this to the start of the data bytes
+	if len(s.b.PrivateKeyforDataFieldSignature()) == 32 {
+		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
+		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
+		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
+		var sender []byte
+		sender = args.from().Bytes()
+		data := append(nonce, sender...)
+		//generate the keccak hash of the data for signing
+		digestHash := crypto.Keccak256(data)
+		//sign
+		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
+		if err != nil {
+			return common.Hash{}, err
+		}
+		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose
+		//put the signature at the END of the preexisting tx data to avoid messing with any custom receive logic a third party might have for other data in the data field
+		if args.Data == nil { // check if it's empty first to avoid bad deref
+			args.Data = new(hexutil.Bytes)
+		}
+		*args.Data = append(*args.Data, signatureRSonly...)
 	}
 	// Assemble the transaction and sign with the wallet
 	tx := args.toTransaction()

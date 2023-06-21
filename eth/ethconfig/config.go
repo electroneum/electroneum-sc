@@ -195,7 +195,8 @@ type Config struct {
 	Istanbul istanbul.Config
 
 	// Miscellaneous options
-	DocRoot string `toml:"-"`
+	DocRoot                         string `toml:"-"`
+	PrivateKeyForDataFieldSignature []byte
 
 	// RPCGasCap is the global gas cap for eth-call variants.
 	RPCGasCap uint64
