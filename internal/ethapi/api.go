@@ -468,14 +468,14 @@ func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args Transactio
 		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
 		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
 		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-		var sender []byte
-		sender = args.from().Bytes()
+		sender := args.from().Bytes()
 		data := append(nonce, sender...)
 		//generate the keccak hash of the data for signing
 		digestHash := crypto.Keccak256(data)
 		//sign
 		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
 		if err != nil {
+			log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
 			return common.Hash{}, err
 		}
 		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose
@@ -1698,14 +1698,14 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Tra
 		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
 		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
 		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-		var sender []byte
-		sender = args.from().Bytes()
+		sender := args.from().Bytes()
 		data := append(nonce, sender...)
 		//generate the keccak hash of the data for signing
 		digestHash := crypto.Keccak256(data)
 		//sign
 		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
 		if err != nil {
+			log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
 			return common.Hash{}, err
 		}
 		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose

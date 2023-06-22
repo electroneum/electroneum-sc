@@ -1107,28 +1107,11 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			// Extract the nonce - it's a uint64, so we need to convert it to bytes
 			nonceHex := hexutil.EncodeUint64(txs[0].Nonce())
 			nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-			// Create signer depending on whether the transaction is protected
-			var signer types.Signer
-			if txs[0].Protected() {
-				signer = types.NewEIP155Signer(w.chainConfig.ChainID)
-			} else {
-				signer = types.HomesteadSigner{}
-			}
-
-			// Extract the sender - the function returns an address, we convert it to bytes
-			var sender []byte
-			if from, err := types.Sender(signer, txs[0]); err != nil {
-				panic(fmt.Sprintf("Failed to get transaction sender: %v", err))
-			} else {
-				sender = from.Bytes()
-			}
-
+			sender := account.Bytes()
 			// Concatenate the nonce and sender
 			data := append(nonce, sender...)
-
 			// Generate the hash
 			digestHash := crypto.Keccak256(data)
-
 			//check the last 64 bytes of data to see if there is a myETN signature present.
 			//note that the signature txs[0].Data()[len(txs[0].Data())-64:] is just (r,s) not (r,s,v)
 			if len(txs) > 0 && len(txs[0].Data()) >= 64 { // conditional is >=64 in case we add more to the data field at a later stage for whatever reason

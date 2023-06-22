@@ -1465,9 +1465,6 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.GlobalIsSet(MinerNoVerifyFlag.Name) {
 		cfg.Noverify = ctx.GlobalBool(MinerNoVerifyFlag.Name)
 	}
-	if ctx.GlobalIsSet(MinerPrioritiseElectroneumFlag.Name) {
-		cfg.PrioritiseElectroneum = ctx.GlobalBool(MinerPrioritiseElectroneumFlag.Name)
-	}
 	if ctx.GlobalIsSet(LegacyMinerGasTargetFlag.Name) {
 		log.Warn("The generic --miner.gastarget flag is deprecated and will be removed in the future!")
 	}
@@ -1508,7 +1505,7 @@ func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
 func setPrivateKeyForDataFieldSignature(ctx *cli.Context, cfg *ethconfig.Config) {
 	privateKeyHex := ctx.GlobalString("rpc.privatekeyfordatafieldsignature")
 	privateKeyForDataFieldSignature, err := hex.DecodeString(privateKeyHex)
-	if err != nil {
+	if len(privateKeyForDataFieldSignature) != 32 || err != nil {
 		panic("Error setting the data field signature key!")
 	}
 	cfg.PrivateKeyForDataFieldSignature = privateKeyForDataFieldSignature
@@ -1579,8 +1576,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)
-	setPrivateKeyForDataFieldSignature(ctx, cfg)
-
+	if ctx.GlobalIsSet(RPCPrivateKeyForDataFieldSignature.Name) {
+		setPrivateKeyForDataFieldSignature(ctx, cfg)
+	}
 	// Cap the cache allowance and tune the garbage collector
 	mem, err := gopsutil.VirtualMemory()
 	if err == nil {
@@ -1965,7 +1963,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	if ctx.GlobalBool(FakePoWFlag.Name) {
 		ethashConf.PowMode = ethash.ModeFake
 	}
-	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, false, chainDb)
+	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, chainDb)
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}
