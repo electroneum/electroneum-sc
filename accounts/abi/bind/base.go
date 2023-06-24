@@ -234,6 +234,58 @@ func (c *BoundContract) Transfer(opts *TransactOpts) (*types.Transaction, error)
 	return c.transact(opts, &c.address, nil)
 }
 
+func (c *BoundContract) createETNTx(opts *TransactOpts, contract *common.Address, input []byte, head *types.Header) (*types.Transaction, error) {
+	// Normalize value
+	value := opts.Value
+	if value == nil {
+		value = new(big.Int)
+	}
+	// Estimate TipCap
+	gasTipCap := opts.GasTipCap
+	if gasTipCap == nil {
+		tip, err := c.transactor.SuggestGasTipCap(ensureContext(opts.Context))
+		if err != nil {
+			return nil, err
+		}
+		gasTipCap = tip
+	}
+	// Estimate FeeCap
+	gasFeeCap := opts.GasFeeCap
+	if gasFeeCap == nil {
+		gasFeeCap = new(big.Int).Add(
+			gasTipCap,
+			new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
+		)
+	}
+	if gasFeeCap.Cmp(gasTipCap) < 0 {
+		return nil, fmt.Errorf("maxFeePerGas (%v) < maxPriorityFeePerGas (%v)", gasFeeCap, gasTipCap)
+	}
+	// Estimate GasLimit
+	gasLimit := opts.GasLimit
+	if opts.GasLimit == 0 {
+		var err error
+		gasLimit, err = c.estimateGasLimit(opts, contract, input, nil, gasTipCap, gasFeeCap, value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// create the transaction
+	nonce, err := c.getNonce(opts)
+	if err != nil {
+		return nil, err
+	}
+	baseTx := &types.ETNTx{
+		To:        contract,
+		Nonce:     nonce,
+		GasFeeCap: gasFeeCap,
+		GasTipCap: gasTipCap,
+		Gas:       gasLimit,
+		Value:     value,
+		Data:      input,
+	}
+	return types.NewTx(baseTx), nil
+}
+
 func (c *BoundContract) createDynamicTx(opts *TransactOpts, contract *common.Address, input []byte, head *types.Header) (*types.Transaction, error) {
 	// Normalize value
 	value := opts.Value

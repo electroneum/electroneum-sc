@@ -40,6 +40,9 @@ type txJSON struct {
 	V                    *hexutil.Big    `json:"v"`
 	R                    *hexutil.Big    `json:"r"`
 	S                    *hexutil.Big    `json:"s"`
+	VElectroneum         *hexutil.Big    `json:"VElectroneum"`
+	RElectroneum         *hexutil.Big    `json:"RElectroneum"`
+	SElectroneum         *hexutil.Big    `json:"SElectroneum"`
 	To                   *common.Address `json:"to"`
 
 	// Access list transaction fields:
@@ -94,6 +97,22 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 		enc.V = (*hexutil.Big)(tx.V)
 		enc.R = (*hexutil.Big)(tx.R)
 		enc.S = (*hexutil.Big)(tx.S)
+	case *ETNTx:
+		enc.ChainID = (*hexutil.Big)(tx.ChainID)
+		enc.AccessList = &tx.AccessList
+		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
+		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
+		enc.MaxPriorityFeePerGas = (*hexutil.Big)(tx.GasTipCap)
+		enc.Value = (*hexutil.Big)(tx.Value)
+		enc.Data = (*hexutil.Bytes)(&tx.Data)
+		enc.To = t.To()
+		enc.V = (*hexutil.Big)(tx.V)
+		enc.R = (*hexutil.Big)(tx.R)
+		enc.S = (*hexutil.Big)(tx.S)
+		enc.VElectroneum = (*hexutil.Big)(tx.VElectroneum)
+		enc.RElectroneum = (*hexutil.Big)(tx.RElectroneum)
+		enc.SElectroneum = (*hexutil.Big)(tx.SElectroneum)
 	}
 	return json.Marshal(&enc)
 }
@@ -259,6 +278,78 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 		withSignature := itx.V.Sign() != 0 || itx.R.Sign() != 0 || itx.S.Sign() != 0
 		if withSignature {
 			if err := sanityCheckSignature(itx.V, itx.R, itx.S, false); err != nil {
+				return err
+			}
+		}
+
+	case ETNTxType:
+		var itx ETNTx
+		inner = &itx
+		// Access list is optional for now.
+		if dec.AccessList != nil {
+			itx.AccessList = *dec.AccessList
+		}
+		if dec.ChainID == nil {
+			return errors.New("missing required field 'chainId' in transaction")
+		}
+		itx.ChainID = (*big.Int)(dec.ChainID)
+		if dec.To != nil {
+			itx.To = dec.To
+		}
+		if dec.Nonce == nil {
+			return errors.New("missing required field 'nonce' in transaction")
+		}
+		itx.Nonce = uint64(*dec.Nonce)
+		if dec.MaxPriorityFeePerGas == nil {
+			return errors.New("missing required field 'maxPriorityFeePerGas' for txdata")
+		}
+		itx.GasTipCap = (*big.Int)(dec.MaxPriorityFeePerGas)
+		if dec.MaxFeePerGas == nil {
+			return errors.New("missing required field 'maxFeePerGas' for txdata")
+		}
+		itx.GasFeeCap = (*big.Int)(dec.MaxFeePerGas)
+		if dec.Gas == nil {
+			return errors.New("missing required field 'gas' for txdata")
+		}
+		itx.Gas = uint64(*dec.Gas)
+		if dec.Value == nil {
+			return errors.New("missing required field 'value' in transaction")
+		}
+		itx.Value = (*big.Int)(dec.Value)
+		if dec.Data == nil {
+			return errors.New("missing required field 'input' in transaction")
+		}
+		itx.Data = *dec.Data
+		if dec.V == nil {
+			return errors.New("missing required field 'v' in transaction")
+		}
+		itx.V = (*big.Int)(dec.V)
+		if dec.R == nil {
+			return errors.New("missing required field 'r' in transaction")
+		}
+		itx.R = (*big.Int)(dec.R)
+		if dec.S == nil {
+			return errors.New("missing required field 's' in transaction")
+		}
+		itx.S = (*big.Int)(dec.S)
+		withSignature := itx.V.Sign() != 0 || itx.R.Sign() != 0 || itx.S.Sign() != 0
+		if withSignature {
+			if err := sanityCheckSignature(itx.V, itx.R, itx.S, false); err != nil {
+				return err
+			}
+		}
+		itx.VElectroneum = (*big.Int)(dec.VElectroneum)
+		if dec.RElectroneum == nil {
+			return errors.New("missing required field 'RElectroneum' in transaction")
+		}
+		itx.RElectroneum = (*big.Int)(dec.RElectroneum)
+		if dec.SElectroneum == nil {
+			return errors.New("missing required field 'SElectroneum' in transaction")
+		}
+		itx.SElectroneum = (*big.Int)(dec.SElectroneum)
+		withElectroneumSignature := itx.VElectroneum.Sign() != 0 || itx.RElectroneum.Sign() != 0 || itx.SElectroneum.Sign() != 0
+		if withElectroneumSignature {
+			if err := sanityCheckSignature(itx.VElectroneum, itx.RElectroneum, itx.SElectroneum, false); err != nil {
 				return err
 			}
 		}

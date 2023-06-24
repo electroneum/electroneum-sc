@@ -40,11 +40,12 @@ var (
 	errShortTypedTx         = errors.New("typed transaction too short")
 )
 
-// Transaction types.
+// Transaction types. ETH types begin from 0 and ETN Types begin from 125
 const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
+	ETNTxType = 125 // give plenty of room for new eth types to be merged in but also give us room for our new types.
 )
 
 // Transaction is an Ethereum transaction.
@@ -67,7 +68,7 @@ func NewTx(inner TxData) *Transaction {
 
 // TxData is the underlying data of a transaction.
 //
-// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx.
+// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx and ETNTx
 type TxData interface {
 	txType() byte // returns the type ID
 	copy() TxData // creates a deep copy and initializes all fields
@@ -182,6 +183,10 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		return &inner, err
 	case DynamicFeeTxType:
 		var inner DynamicFeeTx
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
+	case ETNTxType:
+		var inner ETNTx
 		err := rlp.DecodeBytes(b[1:], &inner)
 		return &inner, err
 	default:

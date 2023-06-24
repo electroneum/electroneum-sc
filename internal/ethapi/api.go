@@ -447,7 +447,7 @@ func (s *PrivateAccountAPI) signTransaction(ctx context.Context, args *Transacti
 		return nil, err
 	}
 	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction()
+	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 
 	return wallet.SignTxWithPassphrase(account, passwd, tx, s.b.ChainConfig().ChainID)
 }
@@ -514,7 +514,7 @@ func (s *PrivateAccountAPI) SignTransaction(ctx context.Context, args Transactio
 		return nil, fmt.Errorf("nonce not specified")
 	}
 	// Before actually signing the transaction, ensure the transaction fee is reasonable.
-	tx := args.toTransaction()
+	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 	if err := checkTxFee(tx.GasPrice(), tx.Gas(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
@@ -1300,6 +1300,20 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 		} else {
 			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
 		}
+	case types.ETNTxType:
+		al := tx.AccessList()
+		result.Accesses = &al
+		result.ChainID = (*hexutil.Big)(tx.ChainId())
+		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
+		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
+		// if the transaction has been mined, compute the effective gas price
+		if baseFee != nil && blockHash != (common.Hash{}) {
+			// price = min(tip, gasFeeCap - baseFee) + baseFee
+			price := math.BigMin(new(big.Int).Add(tx.GasTipCap(), baseFee), tx.GasFeeCap())
+			result.GasPrice = (*hexutil.Big)(price)
+		} else {
+			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
+		}
 	}
 	return result
 }
@@ -1435,7 +1449,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		}
 		res, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.Gas()))
 		if err != nil {
-			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.toTransaction().Hash(), err)
+			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.toTransaction(b.PrivateKeyforDataFieldSignature()).Hash(), err)
 		}
 		if tracer.Equal(prevTracer) {
 			return accessList, res.UsedGas, res.Err, nil
@@ -1716,7 +1730,7 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Tra
 		*args.Data = append(*args.Data, signatureRSonly...)
 	}
 	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction()
+	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 
 	signed, err := wallet.SignTx(account, tx, s.b.ChainConfig().ChainID)
 	if err != nil {
@@ -1734,7 +1748,7 @@ func (s *PublicTransactionPoolAPI) FillTransaction(ctx context.Context, args Tra
 		return nil, err
 	}
 	// Assemble the transaction and obtain rlp
-	tx := args.toTransaction()
+	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 	data, err := tx.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1800,7 +1814,7 @@ func (s *PublicTransactionPoolAPI) SignTransaction(ctx context.Context, args Tra
 		return nil, err
 	}
 	// Before actually sign the transaction, ensure the transaction fee is reasonable.
-	tx := args.toTransaction()
+	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 	if err := checkTxFee(tx.GasPrice(), tx.Gas(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
@@ -1848,7 +1862,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs Transact
 	if err := sendArgs.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
 	}
-	matchTx := sendArgs.toTransaction()
+	matchTx := sendArgs.toTransaction(s.b.PrivateKeyforDataFieldSignature())
 
 	// Before replacing the old transaction, ensure the _new_ transaction fee is reasonable.
 	var price = matchTx.GasPrice()
@@ -1878,7 +1892,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs Transact
 			if gasLimit != nil && *gasLimit != 0 {
 				sendArgs.Gas = gasLimit
 			}
-			signedTx, err := s.sign(sendArgs.from(), sendArgs.toTransaction())
+			signedTx, err := s.sign(sendArgs.from(), sendArgs.toTransaction(s.b.PrivateKeyforDataFieldSignature()))
 			if err != nil {
 				return common.Hash{}, err
 			}

@@ -587,7 +587,7 @@ func (api *SignerAPI) SignTransaction(ctx context.Context, args apitypes.SendTxA
 		return nil, err
 	}
 	// Convert fields into a real transaction
-	var unsignedTx = result.Transaction.ToTransaction()
+	var unsignedTx = result.Transaction.ToTransaction(nil) // the parent function is only for Clef. No need to support ETN transactions right now. You can't grab pkey for signature with no backend without extra faff
 	// Get the password for the transaction
 	pw, err := api.lookupOrQueryPassword(acc.Address, "Account password",
 		fmt.Sprintf("Please enter the password for account %s", acc.Address.String()))
