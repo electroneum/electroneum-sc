@@ -40,12 +40,12 @@ var (
 	errShortTypedTx         = errors.New("typed transaction too short")
 )
 
-// Transaction types. ETH types begin from 0 and ETN Types begin from 125
+// Transaction types. ETH types begin from 0 and ETN Types begin from 64
 const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
-	ETNTxType = 125 // give plenty of room for new eth types to be merged in but also give us room for our new types.
+	ETNTxType = 64 // give plenty of room for new eth types to be merged in but also give us room for our new types.
 )
 
 // Transaction is an Ethereum transaction.

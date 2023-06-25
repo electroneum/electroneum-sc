@@ -338,6 +338,9 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 				return err
 			}
 		}
+		if dec.VElectroneum == nil {
+			return errors.New("missing required field 'VElectroneum' in transaction")
+		}
 		itx.VElectroneum = (*big.Int)(dec.VElectroneum)
 		if dec.RElectroneum == nil {
 			return errors.New("missing required field 'RElectroneum' in transaction")

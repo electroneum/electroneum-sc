@@ -37,17 +37,17 @@ func (tx *ETNTx) copy() TxData {
 		Data:  common.CopyBytes(tx.Data),
 		Gas:   tx.Gas,
 		// These are copied below.
-		AccessList: make(AccessList, len(tx.AccessList)),
-		Value:      new(big.Int),
-		ChainID:    new(big.Int),
-		GasTipCap:  new(big.Int),
-		GasFeeCap:  new(big.Int),
-		V:          new(big.Int),
-		R:          new(big.Int),
-		S:          new(big.Int),
-		VElectroneum:          new(big.Int),
-		RElectroneum:          new(big.Int),
-		SElectroneum:          new(big.Int),
+		AccessList:   make(AccessList, len(tx.AccessList)),
+		Value:        new(big.Int),
+		ChainID:      new(big.Int),
+		GasTipCap:    new(big.Int),
+		GasFeeCap:    new(big.Int),
+		V:            new(big.Int),
+		R:            new(big.Int),
+		S:            new(big.Int),
+		VElectroneum: new(big.Int),
+		RElectroneum: new(big.Int),
+		SElectroneum: new(big.Int),
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {
@@ -72,13 +72,13 @@ func (tx *ETNTx) copy() TxData {
 		cpy.S.Set(tx.S)
 	}
 	if tx.VElectroneum != nil {
-		cpy.VElectroneum.Set(tx.V)
+		cpy.VElectroneum.Set(tx.VElectroneum)
 	}
 	if tx.RElectroneum != nil {
-		cpy.R.Set(tx.R)
+		cpy.RElectroneum.Set(tx.RElectroneum)
 	}
 	if tx.SElectroneum != nil {
-		cpy.S.Set(tx.S)
+		cpy.SElectroneum.Set(tx.SElectroneum)
 	}
 	return cpy
 }
@@ -100,7 +100,7 @@ func (tx *ETNTx) rawSignatureValues() (v, r, s *big.Int) {
 	return tx.V, tx.R, tx.S
 }
 func (tx *ETNTx) rawElectroneumSignatureValues() (v, r, s *big.Int) {
-	return tx.V, tx.R, tx.S
+	return tx.VElectroneum, tx.RElectroneum, tx.SElectroneum
 }
 
 func (tx *ETNTx) setSignatureValues(chainID, v, r, s *big.Int) {
