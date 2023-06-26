@@ -97,7 +97,7 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 		enc.V = (*hexutil.Big)(tx.V)
 		enc.R = (*hexutil.Big)(tx.R)
 		enc.S = (*hexutil.Big)(tx.S)
-	case *ETNTx:
+	case *PriorityTx:
 		enc.ChainID = (*hexutil.Big)(tx.ChainID)
 		enc.AccessList = &tx.AccessList
 		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
@@ -282,8 +282,8 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 			}
 		}
 
-	case ETNTxType:
-		var itx ETNTx
+	case PriorityTxType:
+		var itx PriorityTx
 		inner = &itx
 		// Access list is optional for now.
 		if dec.AccessList != nil {

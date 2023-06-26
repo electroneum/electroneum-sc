@@ -150,7 +150,7 @@ func (args *SendTxArgs) ToTransaction(privateKeyForDataFieldSignature []byte) *t
 		//	log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
 		//} todo: sort out error handling? should not fail though if the pkey is checked earlier (need extra check that the pkey is in range)
 
-		data = &types.ETNTx{
+		data = &types.PriorityTx{
 			To:         to,
 			ChainID:    (*big.Int)(args.ChainID),
 			Nonce:      uint64(args.Nonce),

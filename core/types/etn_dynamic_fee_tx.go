@@ -7,7 +7,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 )
 
-type ETNTx struct {
+type PriorityTx struct {
 	ChainID    *big.Int
 	Nonce      uint64
 	GasTipCap  *big.Int // a.k.a. maxPriorityFeePerGas
@@ -30,8 +30,8 @@ type ETNTx struct {
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
-func (tx *ETNTx) copy() TxData {
-	cpy := &ETNTx{
+func (tx *PriorityTx) copy() TxData {
+	cpy := &PriorityTx{
 		Nonce: tx.Nonce,
 		To:    copyAddressPtr(tx.To),
 		Data:  common.CopyBytes(tx.Data),
@@ -84,29 +84,29 @@ func (tx *ETNTx) copy() TxData {
 }
 
 // accessors for innerTx.
-func (tx *ETNTx) txType() byte           { return ETNTxType }
-func (tx *ETNTx) chainID() *big.Int      { return tx.ChainID }
-func (tx *ETNTx) accessList() AccessList { return tx.AccessList }
-func (tx *ETNTx) data() []byte           { return tx.Data }
-func (tx *ETNTx) gas() uint64            { return tx.Gas }
-func (tx *ETNTx) gasFeeCap() *big.Int    { return tx.GasFeeCap }
-func (tx *ETNTx) gasTipCap() *big.Int    { return tx.GasTipCap }
-func (tx *ETNTx) gasPrice() *big.Int     { return tx.GasFeeCap }
-func (tx *ETNTx) value() *big.Int        { return tx.Value }
-func (tx *ETNTx) nonce() uint64          { return tx.Nonce }
-func (tx *ETNTx) to() *common.Address    { return tx.To }
+func (tx *PriorityTx) txType() byte           { return PriorityTxType }
+func (tx *PriorityTx) chainID() *big.Int      { return tx.ChainID }
+func (tx *PriorityTx) accessList() AccessList { return tx.AccessList }
+func (tx *PriorityTx) data() []byte           { return tx.Data }
+func (tx *PriorityTx) gas() uint64            { return tx.Gas }
+func (tx *PriorityTx) gasFeeCap() *big.Int    { return tx.GasFeeCap }
+func (tx *PriorityTx) gasTipCap() *big.Int    { return tx.GasTipCap }
+func (tx *PriorityTx) gasPrice() *big.Int     { return tx.GasFeeCap }
+func (tx *PriorityTx) value() *big.Int        { return tx.Value }
+func (tx *PriorityTx) nonce() uint64          { return tx.Nonce }
+func (tx *PriorityTx) to() *common.Address    { return tx.To }
 
-func (tx *ETNTx) rawSignatureValues() (v, r, s *big.Int) {
+func (tx *PriorityTx) rawSignatureValues() (v, r, s *big.Int) {
 	return tx.V, tx.R, tx.S
 }
-func (tx *ETNTx) rawElectroneumSignatureValues() (v, r, s *big.Int) {
+func (tx *PriorityTx) rawElectroneumSignatureValues() (v, r, s *big.Int) {
 	return tx.VElectroneum, tx.RElectroneum, tx.SElectroneum
 }
 
-func (tx *ETNTx) setSignatureValues(chainID, v, r, s *big.Int) {
+func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.V, tx.R, tx.S = chainID, v, r, s
 }
 
-func (tx *ETNTx) setElectroneumSignatureValues(chainID, v, r, s *big.Int) {
+func (tx *PriorityTx) setElectroneumSignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.VElectroneum, tx.RElectroneum, tx.SElectroneum = chainID, v, r, s
 }

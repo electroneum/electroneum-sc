@@ -589,7 +589,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		return ErrTxTypeNotSupported
 	}
 	// Reject dynamic fee transactions until EIP-1559 activates.
-	if !pool.eip1559 && (tx.Type() == types.DynamicFeeTxType || tx.Type() == types.ETNTxType) {
+	if !pool.eip1559 && (tx.Type() == types.DynamicFeeTxType || tx.Type() == types.PriorityTxType) {
 		return ErrTxTypeNotSupported
 	}
 	// Reject transactions over defined size to prevent DOS attacks

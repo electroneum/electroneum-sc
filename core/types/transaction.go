@@ -45,7 +45,7 @@ const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
-	ETNTxType = 64 // give plenty of room for new eth types to be merged in but also give us room for our new types.
+	PriorityTxType = 100 // give plenty of room for new eth types to be merged in but also give us room for our new types.
 )
 
 // Transaction is an Ethereum transaction.
@@ -68,7 +68,7 @@ func NewTx(inner TxData) *Transaction {
 
 // TxData is the underlying data of a transaction.
 //
-// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx and ETNTx
+// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx and PriorityTx
 type TxData interface {
 	txType() byte // returns the type ID
 	copy() TxData // creates a deep copy and initializes all fields
@@ -185,8 +185,8 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		var inner DynamicFeeTx
 		err := rlp.DecodeBytes(b[1:], &inner)
 		return &inner, err
-	case ETNTxType:
-		var inner ETNTx
+	case PriorityTxType:
+		var inner PriorityTx
 		err := rlp.DecodeBytes(b[1:], &inner)
 		return &inner, err
 	default:

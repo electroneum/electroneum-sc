@@ -234,7 +234,7 @@ func (c *BoundContract) Transfer(opts *TransactOpts) (*types.Transaction, error)
 	return c.transact(opts, &c.address, nil)
 }
 
-func (c *BoundContract) createETNTx(opts *TransactOpts, contract *common.Address, input []byte, head *types.Header) (*types.Transaction, error) {
+func (c *BoundContract) createPriorityTx(opts *TransactOpts, contract *common.Address, input []byte, head *types.Header) (*types.Transaction, error) {
 	// Normalize value
 	value := opts.Value
 	if value == nil {
@@ -274,7 +274,7 @@ func (c *BoundContract) createETNTx(opts *TransactOpts, contract *common.Address
 	if err != nil {
 		return nil, err
 	}
-	baseTx := &types.ETNTx{
+	baseTx := &types.PriorityTx{
 		To:        contract,
 		Nonce:     nonce,
 		GasFeeCap: gasFeeCap,
