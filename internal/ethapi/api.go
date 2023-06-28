@@ -18,10 +18,8 @@ package ethapi
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"strings"
 	"time"
@@ -447,7 +445,7 @@ func (s *PrivateAccountAPI) signTransaction(ctx context.Context, args *Transacti
 		return nil, err
 	}
 	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	tx := args.toTransaction()
 
 	return wallet.SignTxWithPassphrase(account, passwd, tx, s.b.ChainConfig().ChainID)
 }
@@ -461,29 +459,6 @@ func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args Transactio
 		// the same nonce to multiple accounts.
 		s.nonceLock.LockAddr(args.from())
 		defer s.nonceLock.UnlockAddr(args.from())
-	}
-
-	// If the user provided a flag to put a signature in the data field, push this to the start of the data bytes
-	if len(s.b.PrivateKeyforDataFieldSignature()) == 32 {
-		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
-		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
-		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-		sender := args.from().Bytes()
-		data := append(nonce, sender...)
-		//generate the keccak hash of the data for signing
-		digestHash := crypto.Keccak256(data)
-		//sign
-		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
-		if err != nil {
-			log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
-			return common.Hash{}, err
-		}
-		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose
-		//put the signature at the END of the preexisting tx data to avoid messing with any custom receive logic a third party might have for other data in the data field
-		if args.Data == nil { // check if it's empty first to avoid bad deref
-			args.Data = new(hexutil.Bytes)
-		}
-		*args.Data = append(*args.Data, signatureRSonly...)
 	}
 
 	signed, err := s.signTransaction(ctx, &args, passwd)
@@ -514,7 +489,7 @@ func (s *PrivateAccountAPI) SignTransaction(ctx context.Context, args Transactio
 		return nil, fmt.Errorf("nonce not specified")
 	}
 	// Before actually signing the transaction, ensure the transaction fee is reasonable.
-	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	tx := args.toTransaction()
 	if err := checkTxFee(tx.GasPrice(), tx.Gas(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
@@ -1449,7 +1424,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		}
 		res, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.Gas()))
 		if err != nil {
-			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.toTransaction(b.PrivateKeyforDataFieldSignature()).Hash(), err)
+			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.toTransaction().Hash(), err)
 		}
 		if tracer.Equal(prevTracer) {
 			return accessList, res.UsedGas, res.Err, nil
@@ -1707,30 +1682,9 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Tra
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
 	}
-	// If the user provided a flag to put a signature in the data field, push this to the start of the data bytes
-	if len(s.b.PrivateKeyforDataFieldSignature()) == 32 {
-		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
-		nonceHex := hexutil.EncodeUint64(uint64(*args.Nonce))
-		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-		sender := args.from().Bytes()
-		data := append(nonce, sender...)
-		//generate the keccak hash of the data for signing
-		digestHash := crypto.Keccak256(data)
-		//sign
-		signature, err := secp256k1.Sign(digestHash, s.b.PrivateKeyforDataFieldSignature())
-		if err != nil {
-			log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
-			return common.Hash{}, err
-		}
-		signatureRSonly := signature[:len(signature)-1] // trim the last byte (recovery id) as this is unnecessary for this purpose
-		//put the signature at the END of the preexisting tx data to avoid messing with any custom receive logic a third party might have for other data in the data field
-		if args.Data == nil { // check if it's empty first to avoid bad deref
-			args.Data = new(hexutil.Bytes)
-		}
-		*args.Data = append(*args.Data, signatureRSonly...)
-	}
+
 	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	tx := args.toTransaction()
 
 	signed, err := wallet.SignTx(account, tx, s.b.ChainConfig().ChainID)
 	if err != nil {
@@ -1748,7 +1702,7 @@ func (s *PublicTransactionPoolAPI) FillTransaction(ctx context.Context, args Tra
 		return nil, err
 	}
 	// Assemble the transaction and obtain rlp
-	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	tx := args.toTransaction()
 	data, err := tx.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1814,7 +1768,7 @@ func (s *PublicTransactionPoolAPI) SignTransaction(ctx context.Context, args Tra
 		return nil, err
 	}
 	// Before actually sign the transaction, ensure the transaction fee is reasonable.
-	tx := args.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	tx := args.toTransaction()
 	if err := checkTxFee(tx.GasPrice(), tx.Gas(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
@@ -1862,7 +1816,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs Transact
 	if err := sendArgs.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
 	}
-	matchTx := sendArgs.toTransaction(s.b.PrivateKeyforDataFieldSignature())
+	matchTx := sendArgs.toTransaction()
 
 	// Before replacing the old transaction, ensure the _new_ transaction fee is reasonable.
 	var price = matchTx.GasPrice()
@@ -1892,7 +1846,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs Transact
 			if gasLimit != nil && *gasLimit != 0 {
 				sendArgs.Gas = gasLimit
 			}
-			signedTx, err := s.sign(sendArgs.from(), sendArgs.toTransaction(s.b.PrivateKeyforDataFieldSignature()))
+			signedTx, err := s.sign(sendArgs.from(), sendArgs.toTransaction())
 			if err != nil {
 				return common.Hash{}, err
 			}

@@ -152,7 +152,6 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 			utils.RPCGlobalGasCapFlag,
 			utils.RPCGlobalEVMTimeoutFlag,
 			utils.RPCGlobalTxFeeCapFlag,
-			utils.RPCPrivateKeyForDataFieldSignature,
 			utils.AllowUnprotectedTxs,
 			utils.JSpathFlag,
 			utils.ExecFlag,

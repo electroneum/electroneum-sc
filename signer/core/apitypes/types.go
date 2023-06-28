@@ -18,11 +18,9 @@ package apitypes
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -102,6 +100,11 @@ type SendTxArgs struct {
 	// For non-legacy transactions
 	AccessList *types.AccessList `json:"accessList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
+
+	//For sending priority transactions
+	VElectroneum         *hexutil.Big    `json:"VElectroneum"`
+	RElectroneum         *hexutil.Big    `json:"RElectroneum"`
+	SElectroneum         *hexutil.Big    `json:"SElectroneum"`
 }
 
 func (args SendTxArgs) String() string {
@@ -113,7 +116,7 @@ func (args SendTxArgs) String() string {
 }
 
 // ToTransaction converts the arguments to a transaction.
-func (args *SendTxArgs) ToTransaction(privateKeyForDataFieldSignature []byte) *types.Transaction {
+func (args *SendTxArgs) ToTransaction() *types.Transaction {
 	// Add the To-field, if specified
 	var to *common.Address
 	if args.To != nil {
@@ -130,26 +133,11 @@ func (args *SendTxArgs) ToTransaction(privateKeyForDataFieldSignature []byte) *t
 
 	var data types.TxData
 	switch {
-	case privateKeyForDataFieldSignature != nil:
+	case args.VElectroneum != nil && args.RElectroneum != nil && args.SElectroneum != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {
 			al = *args.AccessList
 		}
-
-		// If the user provided a flag to put a signature in the data field, push this to the start of the data bytes
-		//sign the concatenation of the tx nonce and the sender account and push to *the start* of the data field
-		nonceHex := hexutil.EncodeUint64(uint64(args.Nonce))
-		nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-		sender := args.From.Address()
-		dataToSign := append(nonce, sender[:]...) //convert Address to slice first and pass variadic
-		//generate the keccak hash of the data for signing
-		digestHash := crypto.Keccak256(dataToSign)
-		//sign
-		signature, _ := secp256k1.Sign(digestHash, privateKeyForDataFieldSignature)
-		//if err != nil {
-		//	log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
-		//} todo: sort out error handling? should not fail though if the pkey is checked earlier (need extra check that the pkey is in range)
-
 		data = &types.PriorityTx{
 			To:         to,
 			ChainID:    (*big.Int)(args.ChainID),
@@ -160,10 +148,11 @@ func (args *SendTxArgs) ToTransaction(privateKeyForDataFieldSignature []byte) *t
 			Value:      (*big.Int)(&args.Value),
 			Data:       input,
 			AccessList: al,
-			RElectroneum: new(big.Int).SetBytes(signature[:32]),
-			VElectroneum: new(big.Int).SetBytes(signature[64:]), // v is now included so that you can very quickly recover the public key from the signature and search for it inside some struct of ETN approved pubkeys in constant time
-			SElectroneum: new(big.Int).SetBytes(signature[32:64]),
+			VElectroneum: (*big.Int)(args.VElectroneum), // v is now included so that you can very quickly recover the public key from the signature and search for it inside some struct of ETN approved pubkeys in constant time
+			RElectroneum: (*big.Int)(args.RElectroneum),
+			SElectroneum: (*big.Int)(args.SElectroneum),
 		}
+
 	case args.MaxFeePerGas != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {

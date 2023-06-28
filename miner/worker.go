@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -1094,43 +1093,49 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		//testing keys only
 		// private key : 8dd88ba44afa275e0dd9be1d633732242d84ea955e453b28719d17897035b4c2
 		//NB the 0x04 is to tell us that the key is uncompressed 64bytes +1 byte
-		etnSigningPubKey := "04" + "d6e7d6da18e8cfb9cf20bbb7182ac36deb9b77f2c617f3698fc12aebf22ee9b00060775349a2312813818a9c7a0a4b143fddfa36611129daf01c26bc9080d418"
+		etnSigningPubKey := "04" + "d6e7d6da18e8cfb9cf20bbb7182ac36deb9b77f2c617f3698fc12aebf22ee9b00060775349a2312813818a9c7a0a4b143fddfa36611129daf01c26bc9080d418" //todo before release - move this to central location/array of priority keys
 		byteStringETNKey, err := hex.DecodeString(etnSigningPubKey)
 		if err != nil {
 			fmt.Println("Error decoding hex string:", err)
 			panic("Error decoding etn signing key")
 		}
 
-		// If the first transaction for a given account has the Electroneum Ltd signature present, then all of the tx
-		// for that account do, so we can just pull that account out of pending without further thought
+		// Priority transactions sign the transation hash and put sig values into VElectroneum,RElectroneum,SElectroneum
+		// todo: move this verification logic lower down the call stack and have Electroneum and third party types like remote and local
 		for account, txs := range pending {
-			// Extract the nonce - it's a uint64, so we need to convert it to bytes
-			nonceHex := hexutil.EncodeUint64(txs[0].Nonce())
-			nonce, _ := hex.DecodeString(nonceHex[2:]) // [2:] to trim the '0x' prefix
-			sender := account.Bytes()
-			// Concatenate the nonce and sender
-			data := append(nonce, sender...)
-			// Generate the hash
-			digestHash := crypto.Keccak256(data)
-			//check the last 64 bytes of data to see if there is a myETN signature present.
-			//note that the signature txs[0].Data()[len(txs[0].Data())-64:] is just (r,s) not (r,s,v)
-			if len(txs) > 0 && len(txs[0].Data()) >= 64 { // conditional is >=64 in case we add more to the data field at a later stage for whatever reason
-				r := txs[0].Data()[len(txs[0].Data())-64 : len(txs[0].Data())-32]
-				s := txs[0].Data()[len(txs[0].Data())-32:]
-				if !crypto.ValidateSignatureValues(0, new(big.Int).SetBytes(r), new(big.Int).SetBytes(s), false) { // if r,s aren't suitable then just break and move onto the next tx rather than verifying
-					break
-				}
-				if crypto.VerifySignature(byteStringETNKey, digestHash, txs[0].Data()[len(txs[0].Data())-64:]) {
-					delete(pending, account)
-					electroneumTxs[account] = txs
-				} else {
-					log.Warn("Got a data field signature but couldn't verify: %v", txs[0].Hash())
+			var newPending []*types.Transaction
+			if len(txs) > 0 {
+				for _, tx := range txs {
+					if tx.Type() == types.PriorityTxType {
+						VElectroneum, RElectroneum, SElectroneum := tx.RawPrioritySignatureValues()
+						if !crypto.ValidateSignatureValues(VElectroneum.Bytes()[0], RElectroneum, SElectroneum, false) { // value check is cheap so do this before doing more expensive verification
+							log.Warn("Bad priority signature values for tx: %v", txs[0].Hash())
+							newPending = append(newPending, tx)
+							continue
+						}
+						RElectroneumSElectroneum := append(RElectroneum.Bytes(), SElectroneum.Bytes()...)
+						_, err = crypto.SigToPub(crypto.Keccak256(tx.Hash().Bytes()), append(RElectroneumSElectroneum, byte(VElectroneum.Uint64()))) //todo move byteStringETNKey and other priority keys into to a struct in a central location and have this code continue if the public key isn't in the map that we said
+						if err !=nil{
+							log.Warn("Couldn't retrieve pubkey from priority signature for transaction: %v", txs[0].Hash())
+							newPending = append(newPending, tx)
+							continue
+						}
+						if crypto.VerifySignature(byteStringETNKey, tx.Hash().Bytes(), RElectroneumSElectroneum) {
+							electroneumTxs[account] = append(electroneumTxs[account], tx)
+							continue
+						} else {
+							log.Warn("Got a priority signature but couldn't verify: %v", txs[0].Hash())
+							newPending = append(newPending, tx)
+							continue
+						}
+					}
+					newPending = append(newPending, tx) // if it's not priority, go straight to newPending
 				}
 			}
+			pending[account] = newPending
 		}
 	}
 
-	//
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
 		if txs := remoteTxs[account]; len(txs) > 0 {

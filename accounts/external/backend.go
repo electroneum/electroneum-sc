@@ -196,7 +196,7 @@ type signTransactionResult struct {
 // If chainID is nil, or tx.ChainID is zero, the chain ID will be assigned
 // by the external signer. For non-legacy transactions, the chain ID of the
 // transaction overrides the chainID parameter.
-func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
+func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) { //sort this (clef) out another time
 	data := hexutil.Bytes(tx.Data())
 	var to *common.MixedcaseAddress
 	if tx.To() != nil {

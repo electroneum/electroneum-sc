@@ -230,7 +230,10 @@ func mkTestTx(from common.MixedcaseAddress) apitypes.SendTxArgs {
 		GasPrice: &gasPrice,
 		Value:    value,
 		Data:     &data,
-		Nonce:    nonce}
+		Nonce:    nonce,
+		VElectroneum: nil,
+		RElectroneum: nil,
+		SElectroneum: nil}
 	return tx
 }
 

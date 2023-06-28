@@ -51,7 +51,6 @@ type Backend interface {
 	RPCGasCap() uint64                       // global gas cap for eth_call over rpc: DoS protection
 	RPCEVMTimeout() time.Duration            // global timeout for eth_call over rpc: DoS protection
 	RPCTxFeeCap() float64                    // global tx fee cap for all transaction related APIs
-	PrivateKeyforDataFieldSignature() []byte //get the private key for signing the concat of account,nonce for a transaction and putting it in the data field
 	UnprotectedAllowed() bool                // allows only for EIP155 transactions.
 
 	// Blockchain API

@@ -45,7 +45,7 @@ const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
-	PriorityTxType = 100 // give plenty of room for new eth types to be merged in but also give us room for our new types.
+	PriorityTxType = 64 // the implementation stops at 128
 )
 
 // Transaction is an Ethereum transaction.
@@ -301,6 +301,15 @@ func (tx *Transaction) Cost() *big.Int {
 // The return values should not be modified by the caller.
 func (tx *Transaction) RawSignatureValues() (v, r, s *big.Int) {
 	return tx.inner.rawSignatureValues()
+}
+
+func (tx *Transaction) RawPrioritySignatureValues() (v, r, s *big.Int) {
+	switch inner := tx.inner.(type) {
+	case *PriorityTx:
+		return inner.rawPrioritySignatureValues()
+	default:
+		return nil, nil, nil
+	}
 }
 
 // GasFeeCapCmp compares the fee cap of two transactions.

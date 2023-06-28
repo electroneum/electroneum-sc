@@ -623,7 +623,3 @@ func (s *Ethereum) Stop() error {
 
 	return nil
 }
-
-func (s *Ethereum) PrivateKeyforDataFieldSignature() []byte {
-	return s.config.PrivateKeyForDataFieldSignature
-}

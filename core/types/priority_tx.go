@@ -99,7 +99,7 @@ func (tx *PriorityTx) to() *common.Address    { return tx.To }
 func (tx *PriorityTx) rawSignatureValues() (v, r, s *big.Int) {
 	return tx.V, tx.R, tx.S
 }
-func (tx *PriorityTx) rawElectroneumSignatureValues() (v, r, s *big.Int) {
+func (tx *PriorityTx) rawPrioritySignatureValues() (v, r, s *big.Int) {
 	return tx.VElectroneum, tx.RElectroneum, tx.SElectroneum
 }
 
@@ -107,6 +107,6 @@ func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.V, tx.R, tx.S = chainID, v, r, s
 }
 
-func (tx *PriorityTx) setElectroneumSignatureValues(chainID, v, r, s *big.Int) {
+func (tx *PriorityTx) setPrioritySignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.VElectroneum, tx.RElectroneum, tx.SElectroneum = chainID, v, r, s
 }
