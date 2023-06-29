@@ -19,7 +19,7 @@ RUN cd /electroneum-sc && go run build/ci.go install ./cmd/etn-sc
 # Pull ETN-SC into a second stage deploy alpine container
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates bash
 COPY --from=builder /electroneum-sc/build/bin/etn-sc /usr/local/bin/
 
 EXPOSE 8545 8546 30303 30303/udp
