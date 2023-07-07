@@ -29,6 +29,8 @@ import (
 	"strings"
 
 	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
+
 	"golang.org/x/crypto/sha3"
 )
 
@@ -37,12 +39,14 @@ const (
 	// HashLength is the expected length of the hash
 	HashLength = 32
 	// AddressLength is the expected length of the address
-	AddressLength = 20
+	AddressLength        = 20
+	PriorityPubkeyLength = 65
 )
 
 var (
-	hashT    = reflect.TypeOf(Hash{})
-	addressT = reflect.TypeOf(Address{})
+	hashT           = reflect.TypeOf(Hash{})
+	addressT        = reflect.TypeOf(Address{})
+	priorityPubkeyT = reflect.TypeOf(PriorityPubkey{})
 )
 
 // Hash represents the 32 byte Keccak256 hash of arbitrary data.
@@ -433,4 +437,159 @@ func (ma *MixedcaseAddress) ValidChecksum() bool {
 // Original returns the mixed-case input string
 func (ma *MixedcaseAddress) Original() string {
 	return ma.original
+}
+
+// PriorityPubkey represents the 65 byte *uncompressed* secp256k1 pubkey used for priority signatures within txes of PriorityTx type
+type PriorityPubkey [PriorityPubkeyLength]byte
+
+// IsValid checks if the public key is a valid uncompressed secp256k1 public key and if it lies on the secp256k1 curve
+func (p PriorityPubkey) IsValid() bool {
+	if p[0] != 4 {
+		// uncompressed public keys should start with 0x04
+		return false
+	}
+	// checks if the points lie on the secp256k1 curve
+	x := new(big.Int).SetBytes(p[1:33])
+	y := new(big.Int).SetBytes(p[33:65])
+	return secp256k1.S256().IsOnCurve(x, y)
+}
+
+// BytesToPriorityPubkey returns PriorityPubkey with value b.
+// If b is larger than len(h), b will be cropped from the left.
+func BytesToPriorityPubkey(b []byte) PriorityPubkey {
+	var p PriorityPubkey
+	p.SetBytes(b)
+	return p
+}
+
+func StringToPriorityPubkey(s string) PriorityPubkey { return BytesToPriorityPubkey([]byte(s)) }
+
+// BigToPriorityPubkey returns PriorityPubkey with byte values of b.
+// If b is larger than len(h), b will be cropped from the left.
+func BigToPriorityPubkey(b *big.Int) PriorityPubkey { return BytesToPriorityPubkey(b.Bytes()) }
+
+// HexToPriorityPubkey returns PriorityPubkey with byte values of s.
+// If s is larger than len(h), s will be cropped from the left.
+func HexToPriorityPubkey(s string) PriorityPubkey { return BytesToPriorityPubkey(FromHex(s)) }
+
+// IsHexPriorityPubkey verifies whether a string can represent a valid hex-encoded
+// secp256k1 PriorityPubkey or not.
+func IsHexPriorityPubkey(s string) bool {
+	if has0xPrefix(s) {
+		s = s[2:]
+	}
+	return len(s) == 2*PriorityPubkeyLength && isHex(s)
+}
+
+// Bytes gets the string representation of the underlying PriorityPubkey.
+func (p PriorityPubkey) Bytes() []byte { return p[:] }
+
+// Hash converts an PriorityPubkey to a hash by left-padding it with zeros.
+func (p PriorityPubkey) Hash() Hash { return BytesToHash(p[:]) }
+
+// String implements fmt.Stringer.
+func (p PriorityPubkey) String() string {
+	return string(p.hex())
+}
+
+func (p PriorityPubkey) hex() []byte {
+	var buf [len(p)*2 + 2]byte
+	copy(buf[:2], "0x")
+	hex.Encode(buf[2:], p[:])
+	return buf[:]
+}
+
+// Format implements fmt.Formatter.
+// PriorityPubkey supports the %v, %s, %q, %x, %X and %d format verbs.
+func (p PriorityPubkey) Format(s fmt.State, c rune) {
+	switch c {
+	case 'v', 's', 'x', 'X':
+		hex := p.hex()
+		if !s.Flag('#') {
+			hex = hex[2:]
+		}
+		if c == 'X' {
+			hex = bytes.ToUpper(hex)
+		}
+		s.Write(hex)
+	case 'q':
+		q := []byte{'"'}
+		s.Write(q)
+		s.Write(p.hex())
+		s.Write(q)
+	case 'd':
+		fmt.Fprint(s, ([len(p)]byte)(p))
+	default:
+		fmt.Fprintf(s, "%%!%c(PriorityPubkey=%x)", c, p)
+	}
+}
+
+// SetBytes sets the PriorityPubkey to the value of b.
+// If b is larger than len(a), b will be cropped from the left.
+func (p *PriorityPubkey) SetBytes(b []byte) {
+	if len(b) > len(p) {
+		b = b[len(b)-PriorityPubkeyLength:]
+	}
+	copy(p[PriorityPubkeyLength-len(b):], b)
+}
+
+// MarshalText returns the hex representation of a.
+func (p PriorityPubkey) MarshalText() ([]byte, error) {
+	return hexutil.Bytes(p[:]).MarshalText()
+}
+
+// UnmarshalText parses a hash in hex syntax.
+func (p *PriorityPubkey) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedText("PriorityPubkey", input, p[:])
+}
+
+// UnmarshalJSON parses a hash in hex syntax.
+func (p *PriorityPubkey) UnmarshalJSON(input []byte) error {
+	return hexutil.UnmarshalFixedJSON(priorityPubkeyT, input, p[:])
+}
+
+// Scan implements Scanner for database/sql.
+func (p *PriorityPubkey) Scan(src interface{}) error {
+	srcB, ok := src.([]byte)
+	if !ok {
+		return fmt.Errorf("can't scan %T into PriorityPubkey", src)
+	}
+	if len(srcB) != PriorityPubkeyLength {
+		return fmt.Errorf("can't scan []byte of len %d into PriorityPubkey, want %d", len(srcB), PriorityPubkeyLength)
+	}
+	copy(p[:], srcB)
+	return nil
+}
+
+// Value implements valuer for database/sql.
+func (p PriorityPubkey) Value() (driver.Value, error) {
+	return p[:], nil
+}
+
+// ImplementsGraphQLType returns true if Hash implements the specified GraphQL type.
+func (p PriorityPubkey) ImplementsGraphQLType(name string) bool { return name == "PriorityPubkey" }
+
+// UnmarshalGraphQL unmarshals the provided GraphQL query data.
+func (p *PriorityPubkey) UnmarshalGraphQL(input interface{}) error {
+	var err error
+	switch input := input.(type) {
+	case string:
+		err = p.UnmarshalText([]byte(input))
+	default:
+		err = fmt.Errorf("unexpected type %T for PriorityPubkey", input)
+	}
+	return err
+}
+
+// UnprefixedPriorityPubkey allows marshaling an PriorityPubkey without 0x prefix.
+type UnprefixedPriorityPubkey PriorityPubkey
+
+// UnmarshalText decodes the address from hex. The 0x prefix is optional.
+func (p *UnprefixedPriorityPubkey) UnmarshalText(input []byte) error {
+	return hexutil.UnmarshalFixedUnprefixedText("UnprefixedPriorityPubkey", input, p[:])
+}
+
+// MarshalText encodes the address as hex.
+func (p UnprefixedPriorityPubkey) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(p[:])), nil
 }
