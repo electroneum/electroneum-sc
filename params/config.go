@@ -18,7 +18,9 @@ package params
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -40,6 +42,13 @@ var TrustedCheckpoints = map[common.Hash]*TrustedCheckpoint{}
 // CheckpointOracles associates each known checkpoint oracles with the genesis hash of
 // the chain it belongs to.
 var CheckpointOracles = map[common.Hash]*CheckpointOracleConfig{}
+
+type priorityKeyMeta struct {
+	GasPriceWaiver bool
+	EntityName     string
+	StartHeight    big.Int
+	EndHeight      big.Int
+}
 
 var (
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
@@ -66,6 +75,50 @@ var (
 			RequestTimeoutSeconds: 10,
 		},
 		GenesisETN: math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
+			hexPriorityPubkeys := []string{
+				"pubkey1",
+				"pubkey2",
+				//...
+			}
+
+			priorityMeta := []priorityKeyMeta{
+				{
+					GasPriceWaiver: true, // or false if no gas waiver
+					EntityName:     "entity name 1",
+					StartHeight:    *big.NewInt(0),
+					EndHeight:      *big.NewInt(100),
+				},
+				{
+					GasPriceWaiver: false,
+					EntityName:     "entity name 2",
+					StartHeight:    *big.NewInt(101),
+					EndHeight:      *big.NewInt(200),
+				},
+				// ...
+			}
+
+			if len(hexPriorityPubkeys) != len(priorityMeta) {
+				log.Fatalf("The length of public keys does not match the length of priority meta")
+			}
+
+			m := make(map[[65]byte]priorityKeyMeta)
+
+			for i, hexPriorityPubkey := range hexPriorityPubkeys {
+				decoded, err := hex.DecodeString(hexPriorityPubkey)
+				if err != nil {
+					log.Fatalf("Failed to decode hex priority pubkey: %v", err)
+				}
+				if len(decoded) != 65 {
+					log.Fatalf("Length of decoded priority pubkey is not 65 bytes: %v", len(decoded))
+				}
+				var PriorityPubkey common.PriorityPubkey
+				copy(PriorityPubkey[:], decoded)
+
+				m[PriorityPubkey] = priorityMeta[i]
+			}
+			return m
+		}(),
 	}
 
 	// StagenetChainConfig is the chain parameters to run a node on the test network.
@@ -92,6 +145,50 @@ var (
 			RequestTimeoutSeconds: 10,
 		},
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
+			hexPriorityPubkeys := []string{
+				"pubkey1",
+				"pubkey2",
+				//...
+			}
+
+			priorityMeta := []priorityKeyMeta{
+				{
+					GasPriceWaiver: true, // or false if no gas waiver
+					EntityName:     "entity name 1",
+					StartHeight:    *big.NewInt(0),
+					EndHeight:      *big.NewInt(100),
+				},
+				{
+					GasPriceWaiver: false,
+					EntityName:     "entity name 2",
+					StartHeight:    *big.NewInt(101),
+					EndHeight:      *big.NewInt(200),
+				},
+				// ...
+			}
+
+			if len(hexPriorityPubkeys) != len(priorityMeta) {
+				log.Fatalf("The length of public keys does not match the length of priority meta")
+			}
+
+			m := make(map[[65]byte]priorityKeyMeta)
+
+			for i, hexPriorityPubkey := range hexPriorityPubkeys {
+				decoded, err := hex.DecodeString(hexPriorityPubkey)
+				if err != nil {
+					log.Fatalf("Failed to decode hex priority pubkey: %v", err)
+				}
+				if len(decoded) != 65 {
+					log.Fatalf("Length of decoded priority pubkey is not 65 bytes: %v", len(decoded))
+				}
+				var PriorityPubkey common.PriorityPubkey
+				copy(PriorityPubkey[:], decoded)
+
+				m[PriorityPubkey] = priorityMeta[i]
+			}
+			return m
+		}(),
 	}
 
 	// TestnetChainConfig is the chain parameters to run a node on the test network.
@@ -118,6 +215,50 @@ var (
 			RequestTimeoutSeconds: 10,
 		},
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
+			hexPriorityPubkeys := []string{
+				"pubkey1",
+				"pubkey2",
+				//...
+			}
+
+			priorityMeta := []priorityKeyMeta{
+				{
+					GasPriceWaiver: true, // or false if no gas waiver
+					EntityName:     "entity name 1",
+					StartHeight:    *big.NewInt(0),
+					EndHeight:      *big.NewInt(100),
+				},
+				{
+					GasPriceWaiver: false,
+					EntityName:     "entity name 2",
+					StartHeight:    *big.NewInt(101),
+					EndHeight:      *big.NewInt(200),
+				},
+				// ...
+			}
+
+			if len(hexPriorityPubkeys) != len(priorityMeta) {
+				log.Fatalf("The length of public keys does not match the length of priority meta")
+			}
+
+			m := make(map[[65]byte]priorityKeyMeta)
+
+			for i, hexPriorityPubkey := range hexPriorityPubkeys {
+				decoded, err := hex.DecodeString(hexPriorityPubkey)
+				if err != nil {
+					log.Fatalf("Failed to decode hex priority pubkey: %v", err)
+				}
+				if len(decoded) != 65 {
+					log.Fatalf("Length of decoded priority pubkey is not 65 bytes: %v", len(decoded))
+				}
+				var PriorityPubkey common.PriorityPubkey
+				copy(PriorityPubkey[:], decoded)
+
+				m[PriorityPubkey] = priorityMeta[i]
+			}
+			return m
+		}(),
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -125,16 +266,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0)}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), map[[65]byte]priorityKeyMeta{}}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0)}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), map[[65]byte]priorityKeyMeta{}}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0)}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), map[[65]byte]priorityKeyMeta{}}
 	TestRules       = TestChainConfig.Rules(new(big.Int), false)
 )
 
@@ -225,7 +366,8 @@ type ChainConfig struct {
 	Clique *CliqueConfig `json:"clique,omitempty"`
 	IBFT   *IBFTConfig   `json:"ibft,omitempty"`
 
-	GenesisETN *big.Int `json:"genesisETN,omitempty"`
+	GenesisETN     *big.Int                     `json:"genesisETN,omitempty"`
+	PriorityKeyMap map[[65]byte]priorityKeyMeta `json:"priorityKeyMap,omitempty"` // maps uncompressed Priority ecdsa pub key (appended bytes of '0x04' 'X' and 'Y') against public key metadata
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
