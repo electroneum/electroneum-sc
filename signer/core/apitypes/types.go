@@ -100,11 +100,6 @@ type SendTxArgs struct {
 	// For non-legacy transactions
 	AccessList *types.AccessList `json:"accessList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
-
-	//For sending priority transactions
-	VElectroneum         *hexutil.Big    `json:"VElectroneum"`
-	RElectroneum         *hexutil.Big    `json:"RElectroneum"`
-	SElectroneum         *hexutil.Big    `json:"SElectroneum"`
 }
 
 func (args SendTxArgs) String() string {
@@ -133,26 +128,6 @@ func (args *SendTxArgs) ToTransaction() *types.Transaction {
 
 	var data types.TxData
 	switch {
-	case args.VElectroneum != nil && args.RElectroneum != nil && args.SElectroneum != nil:
-		al := types.AccessList{}
-		if args.AccessList != nil {
-			al = *args.AccessList
-		}
-		data = &types.PriorityTx{
-			To:         to,
-			ChainID:    (*big.Int)(args.ChainID),
-			Nonce:      uint64(args.Nonce),
-			Gas:        uint64(args.Gas),
-			GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
-			GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
-			Value:      (*big.Int)(&args.Value),
-			Data:       input,
-			AccessList: al,
-			VElectroneum: (*big.Int)(args.VElectroneum), // v is now included so that you can very quickly recover the public key from the signature and search for it inside some struct of ETN approved pubkeys in constant time
-			RElectroneum: (*big.Int)(args.RElectroneum),
-			SElectroneum: (*big.Int)(args.SElectroneum),
-		}
-
 	case args.MaxFeePerGas != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {

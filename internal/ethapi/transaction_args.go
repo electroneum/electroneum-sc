@@ -52,11 +52,6 @@ type TransactionArgs struct {
 	// Introduced by AccessListTxType transaction.
 	AccessList *types.AccessList `json:"accessList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
-
-	//Priority Tx fields
-	VElectroneum         *hexutil.Big    `json:"VElectroneum,omitempty"`
-	RElectroneum         *hexutil.Big    `json:"RElectroneum,omitempty"`
-	SElectroneum         *hexutil.Big    `json:"SElectroneum,omitempty"`
 }
 
 // from retrieves the transaction sender address.
@@ -253,26 +248,6 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 func (args *TransactionArgs) toTransaction() *types.Transaction {
 	var data types.TxData
 	switch {
-	case args.VElectroneum != nil && args.RElectroneum != nil && args.SElectroneum != nil:
-		al := types.AccessList{}
-		if args.AccessList != nil {
-			al = *args.AccessList
-		}
-
-		data = &types.PriorityTx{
-			To:         args.To,
-			ChainID:    (*big.Int)(args.ChainID),
-			Nonce:      uint64(*args.Nonce),
-			Gas:        uint64(*args.Gas),
-			GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
-			GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
-			Value:      (*big.Int)(args.Value),
-			Data:       args.data(),
-			AccessList: al,
-			VElectroneum: (*big.Int)(args.VElectroneum), // v is now included so that you can very quickly recover the public key from the signature and search for it inside some struct of ETN approved pubkeys in constant time
-			RElectroneum: (*big.Int)(args.RElectroneum),
-			SElectroneum: (*big.Int)(args.SElectroneum),
-		}
 	case args.MaxFeePerGas != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {
