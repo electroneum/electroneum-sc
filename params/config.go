@@ -77,8 +77,8 @@ var (
 		GenesisETN: math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
 		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
 			hexPriorityPubkeys := []string{
-				"pubkey1",
-				"pubkey2",
+				"04cd5c2e7e3d2a26290701dced3f3f4ad849bf021ae5706b7c3453d2f45b91cc6149be2f3a703f85e53be65452c491fa77b681c6e6ad07f77d9a741327a4b66acf",
+				"04d5138592276abbe7e8896d458efae9f8ce53d2eb279ab6544f41bcd66af3249a5e17daa0fc5ef22773300793c6b507e0f6a5d4b6922dabe1e79a9a23695a267f",
 				//...
 			}
 
@@ -147,8 +147,8 @@ var (
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
 			hexPriorityPubkeys := []string{
-				"pubkey1",
-				"pubkey2",
+				"04cd5c2e7e3d2a26290701dced3f3f4ad849bf021ae5706b7c3453d2f45b91cc6149be2f3a703f85e53be65452c491fa77b681c6e6ad07f77d9a741327a4b66acf",
+				"04d5138592276abbe7e8896d458efae9f8ce53d2eb279ab6544f41bcd66af3249a5e17daa0fc5ef22773300793c6b507e0f6a5d4b6922dabe1e79a9a23695a267f",
 				//...
 			}
 
@@ -217,8 +217,8 @@ var (
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 		PriorityKeyMap: func() map[[65]byte]priorityKeyMeta {
 			hexPriorityPubkeys := []string{
-				"pubkey1",
-				"pubkey2",
+				"04cd5c2e7e3d2a26290701dced3f3f4ad849bf021ae5706b7c3453d2f45b91cc6149be2f3a703f85e53be65452c491fa77b681c6e6ad07f77d9a741327a4b66acf",
+				"04d5138592276abbe7e8896d458efae9f8ce53d2eb279ab6544f41bcd66af3249a5e17daa0fc5ef22773300793c6b507e0f6a5d4b6922dabe1e79a9a23695a267f",
 				//...
 			}
 

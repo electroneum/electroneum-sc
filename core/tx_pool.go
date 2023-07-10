@@ -621,6 +621,24 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err != nil {
 		return ErrInvalidSender
 	}
+
+	// Make sure the priority signature checks out
+	if tx.Type() == types.PriorityTxType {
+		priorityPubkey, err := types.PrioritySenderPubkey(pool.signer, tx)
+		if err != nil {
+			return errBadPrioritySignature
+		}
+		priorityKeyMeta, exists := pool.chainconfig.PriorityKeyMap[priorityPubkey]
+		if !exists {
+			return errBadPriorityKey
+		}
+		if priorityKeyMeta.GasPriceWaiver == true && (tx.GasPrice().Cmp(common.Big0) != 0 || tx.GasFeeCap().Cmp(common.Big0) != 0 || tx.GasTipCap().Cmp(common.Big0) != 0) {
+			return errHasGasPriceWaiverButNonZeroGasPrice
+		} else if priorityKeyMeta.GasPriceWaiver == false && ((!(tx.GasFeeCap().Cmp(common.Big0) > 0)) || tx.GasPrice().Cmp(common.Big0) != 0) { // should be positive not just nonzero . do we need ot account for gasprice() here too?
+			return errNoGasPriceWaiver
+		}
+	}
+
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !local && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
 		return ErrUnderpriced

@@ -242,7 +242,7 @@ func (s *txSorter) Len() int { return len(s.txs) }
 func (s *txSorter) Swap(i, j int) {
 	s.txs[i], s.txs[j] = s.txs[j], s.txs[i]
 }
-func (s *txSorter) Less(i, j int) bool {
+func (s *txSorter) Less(i, j int) bool { //andre taking care of this w.r.t txpool logic. Priority tx are already prioritised at the block filling level regardless of gas price
 	// It's okay to discard the error because a tx would never be
 	// accepted into a block with an invalid effective tip.
 	tip1, _ := s.txs[i].EffectiveGasTip(s.baseFee)
@@ -271,7 +271,12 @@ func (oracle *Oracle) getBlockValues(ctx context.Context, signer types.Signer, b
 
 	var prices []*big.Int
 	for _, tx := range sorter.txs {
-		tip, _ := tx.EffectiveGasTip(block.BaseFee())
+		tip := new(big.Int)
+		if tx.Type() == types.PriorityTxType {
+			continue // do not include ANY priority tx in GPO fee suggestion calculations. For now, have the GPO cater more so for the average person, rather than a priority sender (who only competes with other priority senders). When we give priority keys out to third parties eventually, we can recode the GPO to give different suggestions dependng on priority status
+		} else {
+			tip, _ = tx.EffectiveGasTip(block.BaseFee())
+		}
 		if ignoreUnder != nil && tip.Cmp(ignoreUnder) == -1 {
 			continue
 		}

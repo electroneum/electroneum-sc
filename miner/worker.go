@@ -1115,7 +1115,7 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 						}
 						RElectroneumSElectroneum := append(RElectroneum.Bytes(), SElectroneum.Bytes()...)
 						_, err = crypto.SigToPub(crypto.Keccak256(tx.Hash().Bytes()), append(RElectroneumSElectroneum, byte(VElectroneum.Uint64()))) //todo move byteStringETNKey and other priority keys into to a struct in a central location and have this code continue if the public key isn't in the map that we said
-						if err !=nil{
+						if err != nil {
 							log.Warn("Couldn't retrieve pubkey from priority signature for transaction: %v", txs[0].Hash())
 							newPending = append(newPending, tx)
 							continue
@@ -1320,7 +1320,12 @@ func (w *worker) postSideBlock(event core.ChainSideEvent) {
 func totalFees(block *types.Block, receipts []*types.Receipt) *big.Float {
 	feesWei := new(big.Int)
 	for i, tx := range block.Transactions() {
-		minerFee, _ := tx.EffectiveGasTip(block.BaseFee())
+		minerFee := new(big.Int)
+		if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
+			minerFee, _ = tx.EffectiveGasTip(big.NewInt(0))
+		} else {
+			minerFee, _ = tx.EffectiveGasTip(block.BaseFee())
+		}
 		feesWei.Add(feesWei, new(big.Int).Mul(new(big.Int).SetUint64(receipts[i].GasUsed), minerFee))
 	}
 	return new(big.Float).Quo(new(big.Float).SetInt(feesWei), new(big.Float).SetInt(big.NewInt(params.Ether)))

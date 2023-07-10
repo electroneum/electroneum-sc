@@ -313,7 +313,7 @@ func (t *Transaction) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, e
 	}
 }
 
-func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) {
+func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) { //deprecated anyway
 	tx, err := t.resolve(ctx)
 	if err != nil || tx == nil {
 		return nil, err
@@ -329,8 +329,12 @@ func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) {
 	if header.BaseFee == nil {
 		return (*hexutil.Big)(tx.GasPrice()), nil
 	}
-
-	tip, err := tx.EffectiveGasTip(header.BaseFee)
+	tip, err := new(big.Int), error(nil)
+	if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
+		tip, _ = tx.EffectiveGasTip(big.NewInt(0))
+	} else {
+		tip, _ = tx.EffectiveGasTip(header.BaseFee)
+	}
 	if err != nil {
 		return nil, err
 	}

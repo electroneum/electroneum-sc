@@ -33,6 +33,14 @@ var (
 	ErrNoGenesis = errors.New("genesis not found in chain")
 
 	errSideChainReceipts = errors.New("side blocks can't be accepted as ancient chain data")
+
+	errBadPrioritySignature = errors.New("Priority transaction has an invalid signature")
+
+	errBadPriorityKey = errors.New("Priority transaction uses a pubkey that is not permitted for priority sending")
+
+	errNoGasPriceWaiver = errors.New("Priority sender does not have a gas price waiver but sent a tx with zero gas fee and tip")
+
+	errHasGasPriceWaiverButNonZeroGasPrice = errors.New("Priority sender with a gas price waiver erroneously added a gas fee and tip")
 )
 
 // List of evm-call-message pre-checking errors. All state transition messages will

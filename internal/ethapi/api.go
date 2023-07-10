@@ -1594,6 +1594,8 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	// Assign the effective gas price paid
 	if !s.b.ChainConfig().IsLondon(bigblock) {
 		fields["effectiveGasPrice"] = hexutil.Uint64(tx.GasPrice().Uint64())
+	} else if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) { // receipt generated only once tx is mined despite being a 'pool' api
+		fields["effectiveGasPrice"] = hexutil.Uint64(0)
 	} else {
 		header, err := s.b.HeaderByHash(ctx, blockHash)
 		if err != nil {
@@ -1808,7 +1810,7 @@ func (s *PublicTransactionPoolAPI) PendingTransactions() ([]*RPCTransaction, err
 }
 
 // Resend accepts an existing transaction and a new gas price and limit. It will remove
-// the given transaction from the pool and reinsert it with the new gas price and limit.
+// the given transaction from the pool and reinsert it with the new gas price and limit. No need to change because we will never resend a priority tx with a different gas price than 0 and for non waiver people the flow is the same as anyone else
 func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs TransactionArgs, gasPrice *hexutil.Big, gasLimit *hexutil.Uint64) (common.Hash, error) {
 	if sendArgs.Nonce == nil {
 		return common.Hash{}, fmt.Errorf("missing transaction nonce in transaction spec")
@@ -1818,7 +1820,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs Transact
 	}
 	matchTx := sendArgs.toTransaction()
 
-	// Before replacing the old transaction, ensure the _new_ transaction fee is reasonable.
+	// Before replacing the old transaction, ensure the _new_ transaction fee is reasonable going by the RPCTxFeeCap (not the base fee)
 	var price = matchTx.GasPrice()
 	if gasPrice != nil {
 		price = gasPrice.ToInt()
@@ -2001,7 +2003,7 @@ func (s *PublicNetAPI) Version() string {
 }
 
 // checkTxFee is an internal function used to check whether the fee of
-// the given transaction is _reasonable_(under the cap).
+// the given transaction is _reasonable_(under the cap). This check is unrelated to the network determined minimum price.
 func checkTxFee(gasPrice *big.Int, gas uint64, cap float64) error {
 	// Short circuit if there is no cap for transaction fee at all.
 	if cap == 0 {
