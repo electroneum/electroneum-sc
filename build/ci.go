@@ -36,7 +36,6 @@ Available commands are:
 	purge      [ -store blobstore ] [ -days threshold ]                                         -- purges old archives from the blobstore
 
 For all commands, -n prevents execution of external programs (dry run mode).
-
 */
 package main
 
@@ -149,7 +148,7 @@ var (
 	// This is the version of go that will be downloaded by
 	//
 	//     go run ci.go install -dlgo
-	dlgoVersion = "1.19.2"
+	dlgoVersion = "1.20.6"
 )
 
 var GOBIN, _ = filepath.Abs(filepath.Join("build", "bin"))
