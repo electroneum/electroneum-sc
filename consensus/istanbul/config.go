@@ -20,6 +20,8 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
+	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/naoina/toml"
 )
@@ -119,12 +121,14 @@ func (p *ProposerPolicy) ClearRegistry() {
 }
 
 type Config struct {
-	RequestTimeout         uint64          `toml:",omitempty"` // The timeout for each Istanbul round in milliseconds.
-	BlockPeriod            uint64          `toml:",omitempty"` // Default minimum difference between two consecutive block's timestamps in second
-	ProposerPolicy         *ProposerPolicy `toml:",omitempty"` // The policy for proposer selection
-	Epoch                  uint64          `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
-	AllowedFutureBlockTime uint64          `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
-	Transitions            []params.Transition
+	RequestTimeout                     uint64              `toml:",omitempty"` // The timeout for each Istanbul round in milliseconds.
+	BlockPeriod                        uint64              `toml:",omitempty"` // Default minimum difference between two consecutive block's timestamps in second
+	ProposerPolicy                     *ProposerPolicy     `toml:",omitempty"` // The policy for proposer selection
+	Epoch                              uint64              `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
+	AllowedFutureBlockTime             uint64              `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
+	Transitions                        []params.Transition // Transition data
+	PriorityTransactorsContractAddress common.Address      // PriorityTransactors contract address
+	Client                             bind.ContractCaller `toml:",omitempty"` // rpc client for contract calls
 }
 
 var DefaultConfig = &Config{
@@ -133,6 +137,16 @@ var DefaultConfig = &Config{
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	AllowedFutureBlockTime: 0,
+}
+
+func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {
+	priorityTransactorContractAddress := c.PriorityTransactorsContractAddress
+	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
+		if c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
+			priorityTransactorContractAddress = c.Transitions[i].PriorityTransactorsContractAddress
+		}
+	}
+	return priorityTransactorContractAddress
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {

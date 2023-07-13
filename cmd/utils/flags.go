@@ -48,6 +48,7 @@ import (
 	"github.com/electroneum/electroneum-sc/eth/ethconfig"
 	"github.com/electroneum/electroneum-sc/eth/gasprice"
 	"github.com/electroneum/electroneum-sc/eth/tracers"
+	"github.com/electroneum/electroneum-sc/ethclient"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/ethdb/remotedb"
 	"github.com/electroneum/electroneum-sc/ethstats"
@@ -1782,6 +1783,11 @@ func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (ethapi.Backend
 		}
 		return backend.ApiBackend, nil
 	}
+	client, err := stack.Attach()
+	if err != nil {
+		Fatalf("Failed to attach to self: %v", err)
+	}
+	cfg.Istanbul.Client = ethclient.NewClient(client)
 	backend, err := eth.New(stack, cfg)
 	if err != nil {
 		Fatalf("Failed to register the Ethereum service: %v", err)
@@ -1941,11 +1947,18 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	}
 
 	var engine consensus.Engine
-	ethashConf := ethconfig.Defaults.Ethash
+	defaultCfg := &ethconfig.Defaults
 	if ctx.GlobalBool(FakePoWFlag.Name) {
-		ethashConf.PowMode = ethash.ModeFake
+		defaultCfg.Ethash.PowMode = ethash.ModeFake
 	}
-	engine = ethconfig.CreateConsensusEngine(stack, config, &ethconfig.Defaults, nil, false, chainDb)
+	if config.IBFT != nil && config.IBFT.PriorityTransactorsContractAddress != (common.Address{}) {
+		client, err := stack.Attach()
+		if err != nil {
+			Fatalf("Failed to attach to self: %v", err)
+		}
+		defaultCfg.Istanbul.Client = ethclient.NewClient(client)
+	}
+	engine = ethconfig.CreateConsensusEngine(stack, config, defaultCfg, nil, false, chainDb)
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}

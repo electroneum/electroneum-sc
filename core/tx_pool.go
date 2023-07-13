@@ -61,6 +61,9 @@ var (
 	// ErrInvalidSender is returned if the transaction contains an invalid signature.
 	ErrInvalidSender = errors.New("invalid sender")
 
+	// ErrInvalidPrioritySender is returned if the priority transaction contains an invalid priority signature.
+	ErrInvalidPrioritySender = errors.New("invalid priority sender")
+
 	// ErrUnderpriced is returned if a transaction's gas price is below the minimum
 	// configured for the transaction pool.
 	ErrUnderpriced = errors.New("transaction underpriced")
@@ -68,6 +71,10 @@ var (
 	// ErrTxPoolOverflow is returned if the transaction pool is full and can't accpet
 	// another remote transaction.
 	ErrTxPoolOverflow = errors.New("txpool is full")
+
+	// ErrPriorityTxPoolOverflow is returned if the priority transaction pool is full and can't accpet
+	// another remote priority transaction.
+	ErrPriorityTxPoolOverflow = errors.New("priority tx pool is full")
 
 	// ErrReplaceUnderpriced is returned if a transaction is attempted to be replaced
 	// with a different one without the required price bump.
@@ -107,11 +114,12 @@ var (
 	queuedEvictionMeter  = metrics.NewRegisteredMeter("txpool/queued/eviction", nil)  // Dropped due to lifetime
 
 	// General tx metrics
-	knownTxMeter       = metrics.NewRegisteredMeter("txpool/known", nil)
-	validTxMeter       = metrics.NewRegisteredMeter("txpool/valid", nil)
-	invalidTxMeter     = metrics.NewRegisteredMeter("txpool/invalid", nil)
-	underpricedTxMeter = metrics.NewRegisteredMeter("txpool/underpriced", nil)
-	overflowedTxMeter  = metrics.NewRegisteredMeter("txpool/overflowed", nil)
+	knownTxMeter              = metrics.NewRegisteredMeter("txpool/known", nil)
+	validTxMeter              = metrics.NewRegisteredMeter("txpool/valid", nil)
+	invalidTxMeter            = metrics.NewRegisteredMeter("txpool/invalid", nil)
+	underpricedTxMeter        = metrics.NewRegisteredMeter("txpool/underpriced", nil)
+	overflowedTxMeter         = metrics.NewRegisteredMeter("txpool/overflowed", nil)
+	overflowedPriorityTxMeter = metrics.NewRegisteredMeter("txpool/priorityoverflowed", nil)
 	// throttleTxMeter counts how many transactions are rejected due to too-many-changes between
 	// txpool reorgs.
 	throttleTxMeter = metrics.NewRegisteredMeter("txpool/throttle", nil)
@@ -121,10 +129,12 @@ var (
 	// that this number is pretty low, since txpool reorgs happen very frequently.
 	dropBetweenReorgHistogram = metrics.NewRegisteredHistogram("txpool/dropbetweenreorg", nil, metrics.NewExpDecaySample(1028, 0.015))
 
-	pendingGauge = metrics.NewRegisteredGauge("txpool/pending", nil)
-	queuedGauge  = metrics.NewRegisteredGauge("txpool/queued", nil)
-	localGauge   = metrics.NewRegisteredGauge("txpool/local", nil)
-	slotsGauge   = metrics.NewRegisteredGauge("txpool/slots", nil)
+	pendingGauge       = metrics.NewRegisteredGauge("txpool/pending", nil)
+	queuedGauge        = metrics.NewRegisteredGauge("txpool/queued", nil)
+	localGauge         = metrics.NewRegisteredGauge("txpool/local", nil)
+	priorityGauge      = metrics.NewRegisteredGauge("txpool/priority", nil)
+	slotsGauge         = metrics.NewRegisteredGauge("txpool/slots", nil)
+	prioritySlotsGauge = metrics.NewRegisteredGauge("txpool/priorityslots", nil)
 
 	reheapTimer = metrics.NewRegisteredTimer("txpool/reheap", nil)
 )
@@ -147,6 +157,8 @@ type blockChain interface {
 	StateAt(root common.Hash) (*state.StateDB, error)
 
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
+
+	GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
@@ -159,10 +171,12 @@ type TxPoolConfig struct {
 	PriceLimit uint64 // Minimum gas price to enforce for acceptance into the pool
 	PriceBump  uint64 // Minimum price bump percentage to replace an already existing transaction (nonce)
 
-	AccountSlots uint64 // Number of executable transaction slots guaranteed per account
-	GlobalSlots  uint64 // Maximum number of executable transaction slots for all accounts
-	AccountQueue uint64 // Maximum number of non-executable transaction slots permitted per account
-	GlobalQueue  uint64 // Maximum number of non-executable transaction slots for all accounts
+	AccountSlots  uint64 // Number of executable transaction slots guaranteed per account
+	GlobalSlots   uint64 // Maximum number of executable transaction slots for all accounts
+	PrioritySlots uint64 // Maximum number of executable priority transaction slots for all accounts
+	AccountQueue  uint64 // Maximum number of non-executable transaction slots permitted per account
+	GlobalQueue   uint64 // Maximum number of non-executable transaction slots for all accounts
+	PriorityQueue uint64 // Maximum number of non-executable transaction slots for all accounts
 
 	Lifetime time.Duration // Maximum amount of time non-executable transaction are queued
 }
@@ -176,10 +190,12 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	PriceLimit: 1,
 	PriceBump:  10,
 
-	AccountSlots: 16,
-	GlobalSlots:  4096 + 1024, // urgent + floating queue capacity with 4:1 ratio
-	AccountQueue: 64,
-	GlobalQueue:  1024,
+	AccountSlots:  16,
+	GlobalSlots:   4096 + 1024, // urgent + floating queue capacity with 4:1 ratio
+	PrioritySlots: 4096 + 1024,
+	AccountQueue:  64,
+	GlobalQueue:   1024,
+	PriorityQueue: 1024,
 
 	Lifetime: 3 * time.Hour,
 }
@@ -451,10 +467,14 @@ func (pool *TxPool) SetGasPrice(price *big.Int) {
 	if price.Cmp(old) > 0 {
 		// pool.priced is sorted by GasFeeCap, so we have to iterate through pool.all instead
 		drop := pool.all.RemotesBelowTip(price)
+		prTxCount := 0
 		for _, tx := range drop {
 			pool.removeTx(tx.Hash(), false)
+			if IsPriorityTransaction(tx) {
+				prTxCount++
+			}
 		}
-		pool.priced.Removed(len(drop))
+		pool.priced.Removed(len(drop) - prTxCount)
 	}
 
 	log.Info("Transaction pool price threshold updated", "price", price)
@@ -544,7 +564,7 @@ func (pool *TxPool) Pending(enforceTips bool) map[common.Address]types.Transacti
 		// If the miner requests tip enforcement, cap the lists now
 		if enforceTips && !pool.locals.contains(addr) {
 			for i, tx := range txs {
-				if tx.EffectiveGasTipIntCmp(pool.gasPrice, pool.priced.urgent.baseFee) < 0 {
+				if !tx.HasZeroFee() && tx.EffectiveGasTipIntCmp(pool.gasPrice, pool.priced.urgent.baseFee) < 0 {
 					txs = txs[:i]
 					break
 				}
@@ -589,7 +609,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		return ErrTxTypeNotSupported
 	}
 	// Reject dynamic fee transactions until EIP-1559 activates.
-	if !pool.eip1559 && (tx.Type() == types.DynamicFeeTxType || tx.Type() == types.PriorityTxType) {
+	if !pool.eip1559 && (tx.Type() == types.DynamicFeeTxType || IsPriorityTransaction(tx)) {
 		return ErrTxTypeNotSupported
 	}
 	// Reject transactions over defined size to prevent DOS attacks
@@ -621,26 +641,30 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err != nil {
 		return ErrInvalidSender
 	}
-
-	// Make sure the priority signature checks out
+	isGasWaiver := false
 	if tx.Type() == types.PriorityTxType {
+		// Make sure the priority signature checks out
 		priorityPubkey, err := types.PrioritySenderPubkey(pool.signer, tx)
 		if err != nil {
 			return errBadPrioritySignature
 		}
-		priorityKeyMeta, exists := pool.chainconfig.PriorityKeyMap[priorityPubkey]
+		// Make sure the priority public key is an allowed one
+		transactor, exists := pool.chain.GetPriorityTransactorByKey(priorityPubkey)
 		if !exists {
 			return errBadPriorityKey
 		}
-		if priorityKeyMeta.GasPriceWaiver == true && (tx.GasPrice().Cmp(common.Big0) != 0 || tx.GasFeeCap().Cmp(common.Big0) != 0 || tx.GasTipCap().Cmp(common.Big0) != 0) {
+		isGasWaiver = transactor.IsGasPriceWaiver
+		// Assure transaction gasprice, fee and tip are 0 for gas waiver transactors
+		if isGasWaiver && !tx.HasZeroFee() {
 			return errHasGasPriceWaiverButNonZeroGasPrice
-		} else if priorityKeyMeta.GasPriceWaiver == false && ((!(tx.GasFeeCap().Cmp(common.Big0) > 0)) || tx.GasPrice().Cmp(common.Big0) != 0) { // should be positive not just nonzero . do we need ot account for gasprice() here too?
+		}
+		// Assure transaction gasprice, fee and tip are > 0 for non gas waiver transactors
+		if !isGasWaiver && tx.HasZeroFee() {
 			return errNoGasPriceWaiver
 		}
 	}
-
 	// Drop non-local transactions under our own minimal accepted gas price or tip
-	if !local && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
+	if !local && !isGasWaiver && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
 		return ErrUnderpriced
 	}
 	// Ensure the transaction adheres to nonce ordering
@@ -688,8 +712,17 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		invalidTxMeter.Mark(1)
 		return false, err
 	}
+
+	// If the priority transaction pool is full, reject new remote priority transaction
+	if IsPriorityTransaction(tx) && uint64(pool.all.PrioritySlots()+numSlots(tx)) > pool.config.PrioritySlots+pool.config.PriorityQueue {
+		if !isLocal {
+			overflowedPriorityTxMeter.Mark(1)
+			return false, ErrPriorityTxPoolOverflow
+		}
+	}
+
 	// If the transaction pool is full, discard underpriced transactions
-	if uint64(pool.all.Slots()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
+	if !IsPriorityTransaction(tx) && uint64(pool.all.Slots()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
 		// If the new transaction is underpriced, don't accept it
 		if !isLocal && pool.priced.Underpriced(tx) {
 			log.Trace("Discarding underpriced transaction", "hash", hash, "gasTipCap", tx.GasTipCap(), "gasFeeCap", tx.GasFeeCap())
@@ -737,7 +770,9 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		// New transaction is better, replace old one
 		if old != nil {
 			pool.all.Remove(old.Hash())
-			pool.priced.Removed(1)
+			if !IsPriorityTransaction(tx) {
+				pool.priced.Removed(1)
+			}
 			pendingReplaceMeter.Mark(1)
 		}
 		pool.all.Add(tx, isLocal)
@@ -764,6 +799,10 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	if isLocal {
 		localGauge.Inc(1)
 	}
+	if IsPriorityTransaction(tx) {
+		priorityGauge.Inc(1)
+	}
+
 	pool.journalTx(from, tx)
 
 	log.Trace("Pooled new future transaction", "hash", hash, "from", from, "to", tx.To())
@@ -777,7 +816,7 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	// Try to insert the transaction into the future queue
 	from, _ := types.Sender(pool.signer, tx) // already validated
 	if pool.queue[from] == nil {
-		pool.queue[from] = newTxList(false)
+		pool.queue[from] = newTxList(false, IsPriorityTransaction(tx))
 	}
 	inserted, old := pool.queue[from].Add(tx, pool.config.PriceBump)
 	if !inserted {
@@ -788,7 +827,9 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	// Discard any previous transaction and mark this
 	if old != nil {
 		pool.all.Remove(old.Hash())
-		pool.priced.Removed(1)
+		if !IsPriorityTransaction(tx) {
+			pool.priced.Removed(1)
+		}
 		queuedReplaceMeter.Mark(1)
 	} else {
 		// Nothing was replaced, bump the queued counter
@@ -829,7 +870,7 @@ func (pool *TxPool) journalTx(from common.Address, tx *types.Transaction) {
 func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.Transaction) bool {
 	// Try to insert the transaction into the pending queue
 	if pool.pending[addr] == nil {
-		pool.pending[addr] = newTxList(true)
+		pool.pending[addr] = newTxList(true, IsPriorityTransaction(tx))
 	}
 	list := pool.pending[addr]
 
@@ -837,14 +878,18 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	if !inserted {
 		// An older transaction was better, discard this
 		pool.all.Remove(hash)
-		pool.priced.Removed(1)
+		if !IsPriorityTransaction(tx) {
+			pool.priced.Removed(1)
+		}
 		pendingDiscardMeter.Mark(1)
 		return false
 	}
 	// Otherwise discard any previous transaction and mark this
 	if old != nil {
 		pool.all.Remove(old.Hash())
-		pool.priced.Removed(1)
+		if !IsPriorityTransaction(tx) {
+			pool.priced.Removed(1)
+		}
 		pendingReplaceMeter.Mark(1)
 	} else {
 		// Nothing was replaced, bump the pending counter
@@ -925,6 +970,16 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 			errs[i] = ErrInvalidSender
 			invalidTxMeter.Mark(1)
 			continue
+		}
+		if IsPriorityTransaction(tx) {
+			// Exclude priority transactions with invalid priority signature as soon
+			// as possible
+			_, err = types.PrioritySenderPubkey(pool.signer, tx)
+			if err != nil {
+				errs[i] = ErrInvalidPrioritySender
+				invalidTxMeter.Mark(1)
+				continue
+			}
 		}
 		// Accumulate all unknown transactions for deeper processing
 		news = append(news, tx)
@@ -1016,7 +1071,7 @@ func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
 
 	// Remove it from the list of known transactions
 	pool.all.Remove(hash)
-	if outofbound {
+	if outofbound && !IsPriorityTransaction(tx) {
 		pool.priced.Removed(1)
 	}
 	if pool.locals.contains(addr) {
@@ -1194,6 +1249,8 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	// If a new block appeared, validate the pool of pending transactions. This will
 	// remove any transaction that has been included in the block or was invalidated
 	// because of another transaction (e.g. higher gas price).
+
+	// TODO validate priority keys against block height
 	if reset != nil {
 		pool.demoteUnexecutables()
 		if reset.newHead != nil && pool.chainconfig.IsLondon(new(big.Int).Add(reset.newHead.Number, big.NewInt(1))) {
@@ -1210,7 +1267,9 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	}
 	// Ensure pool.queue and pool.pending sizes stay within the configured limits.
 	pool.truncatePending()
+	pool.truncatePriorityPending()
 	pool.truncateQueue()
+	pool.truncatePriorityQueue()
 
 	dropBetweenReorgHistogram.Update(int64(pool.changesSinceReorg))
 	pool.changesSinceReorg = 0 // Reset change counter
@@ -1376,7 +1435,9 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 			queuedRateLimitMeter.Mark(int64(len(caps)))
 		}
 		// Mark all the items dropped as removed
-		pool.priced.Removed(len(forwards) + len(drops) + len(caps))
+		if !list.isPriority {
+			pool.priced.Removed(len(forwards) + len(drops) + len(caps))
+		}
 		queuedGauge.Dec(int64(len(forwards) + len(drops) + len(caps)))
 		if pool.locals.contains(addr) {
 			localGauge.Dec(int64(len(forwards) + len(drops) + len(caps)))
@@ -1396,7 +1457,9 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 func (pool *TxPool) truncatePending() {
 	pending := uint64(0)
 	for _, list := range pool.pending {
-		pending += uint64(list.Len())
+		if !list.isPriority {
+			pending += uint64(list.Len())
+		}
 	}
 	if pending <= pool.config.GlobalSlots {
 		return
@@ -1407,7 +1470,7 @@ func (pool *TxPool) truncatePending() {
 	spammers := prque.New(nil)
 	for addr, list := range pool.pending {
 		// Only evict transactions from high rollers
-		if !pool.locals.contains(addr) && uint64(list.Len()) > pool.config.AccountSlots {
+		if !pool.locals.contains(addr) && !list.isPriority && uint64(list.Len()) > pool.config.AccountSlots {
 			spammers.Push(addr, int64(list.Len()))
 		}
 	}
@@ -1474,6 +1537,95 @@ func (pool *TxPool) truncatePending() {
 			}
 		}
 	}
+
+	pendingRateLimitMeter.Mark(int64(pendingBeforeCap - pending))
+}
+
+// truncatePriorityPending removes transactions from the pending queue if the pool is above the
+// pending limit. The algorithm tries to reduce transaction counts by an approximately
+// equal number for all for accounts with many pending transactions. <--
+func (pool *TxPool) truncatePriorityPending() {
+	pending := uint64(0)
+	for _, list := range pool.pending {
+		if list.isPriority {
+			pending += uint64(list.Len())
+		}
+	}
+	if pending <= pool.config.PrioritySlots {
+		return
+	}
+
+	pendingBeforeCap := pending
+	// Assemble a spam order to penalize large non-priority transactors first
+	spammers := prque.New(nil)
+	for addr, list := range pool.pending {
+		// Only evict transactions from high rollers
+		if !pool.locals.contains(addr) && list.isPriority && uint64(list.Len()) > pool.config.AccountSlots {
+			spammers.Push(addr, int64(list.Len()))
+		}
+	}
+	// Gradually drop transactions from offenders
+	offenders := []common.Address{}
+	for pending > pool.config.PrioritySlots && !spammers.Empty() {
+		// Retrieve the next offender if not local address
+		offender, _ := spammers.Pop()
+		offenders = append(offenders, offender.(common.Address))
+
+		// Equalize balances until all the same or below threshold
+		if len(offenders) > 1 {
+			// Calculate the equalization threshold for all current offenders
+			threshold := pool.pending[offender.(common.Address)].Len()
+
+			// Iteratively reduce all offenders until below limit or threshold reached
+			for pending > pool.config.PrioritySlots && pool.pending[offenders[len(offenders)-2]].Len() > threshold {
+				for i := 0; i < len(offenders)-1; i++ {
+					list := pool.pending[offenders[i]]
+
+					caps := list.Cap(list.Len() - 1)
+					for _, tx := range caps {
+						// Drop the transaction from the global pools too
+						hash := tx.Hash()
+						pool.all.Remove(hash)
+
+						// Update the account nonce to the dropped transaction
+						pool.pendingNonces.setIfLower(offenders[i], tx.Nonce())
+						log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
+					}
+					pendingGauge.Dec(int64(len(caps)))
+					if pool.locals.contains(offenders[i]) {
+						localGauge.Dec(int64(len(caps)))
+					}
+					pending--
+				}
+			}
+		}
+	}
+
+	// If still above threshold, reduce to limit or min allowance
+	if pending > pool.config.PrioritySlots && len(offenders) > 0 {
+		for pending > pool.config.PrioritySlots && uint64(pool.pending[offenders[len(offenders)-1]].Len()) > pool.config.AccountSlots {
+			for _, addr := range offenders {
+				list := pool.pending[addr]
+
+				caps := list.Cap(list.Len() - 1)
+				for _, tx := range caps {
+					// Drop the transaction from the global pools too
+					hash := tx.Hash()
+					pool.all.Remove(hash)
+
+					// Update the account nonce to the dropped transaction
+					pool.pendingNonces.setIfLower(addr, tx.Nonce())
+					log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
+				}
+				pendingGauge.Dec(int64(len(caps)))
+				if pool.locals.contains(addr) {
+					localGauge.Dec(int64(len(caps)))
+				}
+				pending--
+			}
+		}
+	}
+
 	pendingRateLimitMeter.Mark(int64(pendingBeforeCap - pending))
 }
 
@@ -1481,7 +1633,9 @@ func (pool *TxPool) truncatePending() {
 func (pool *TxPool) truncateQueue() {
 	queued := uint64(0)
 	for _, list := range pool.queue {
-		queued += uint64(list.Len())
+		if !list.isPriority {
+			queued += uint64(list.Len())
+		}
 	}
 	if queued <= pool.config.GlobalQueue {
 		return
@@ -1489,8 +1643,8 @@ func (pool *TxPool) truncateQueue() {
 
 	// Sort all accounts with queued transactions by heartbeat
 	addresses := make(addressesByHeartbeat, 0, len(pool.queue))
-	for addr := range pool.queue {
-		if !pool.locals.contains(addr) { // don't drop locals
+	for addr, list := range pool.queue {
+		if !pool.locals.contains(addr) && !list.isPriority {
 			addresses = append(addresses, addressByHeartbeat{addr, pool.beats[addr]})
 		}
 	}
@@ -1498,6 +1652,53 @@ func (pool *TxPool) truncateQueue() {
 
 	// Drop transactions until the total is below the limit or only locals remain
 	for drop := queued - pool.config.GlobalQueue; drop > 0 && len(addresses) > 0; {
+		addr := addresses[len(addresses)-1]
+		list := pool.queue[addr.address]
+
+		addresses = addresses[:len(addresses)-1]
+
+		// Drop all transactions if they are less than the overflow
+		if size := uint64(list.Len()); size <= drop {
+			for _, tx := range list.Flatten() {
+				pool.removeTx(tx.Hash(), true)
+			}
+			drop -= size
+			queuedRateLimitMeter.Mark(int64(size))
+			continue
+		}
+		// Otherwise drop only last few transactions
+		txs := list.Flatten()
+		for i := len(txs) - 1; i >= 0 && drop > 0; i-- {
+			pool.removeTx(txs[i].Hash(), true)
+			drop--
+			queuedRateLimitMeter.Mark(1)
+		}
+	}
+}
+
+// truncateQueue drops the oldes transactions in the queue if the pool is above the global queue limit.
+func (pool *TxPool) truncatePriorityQueue() {
+	queued := uint64(0)
+	for _, list := range pool.queue {
+		if list.isPriority {
+			queued += uint64(list.Len())
+		}
+	}
+	if queued <= pool.config.PriorityQueue {
+		return
+	}
+
+	// Sort all accounts with queued transactions by heartbeat
+	addresses := make(addressesByHeartbeat, 0, len(pool.queue))
+	for addr, list := range pool.queue {
+		if !pool.locals.contains(addr) && list.isPriority {
+			addresses = append(addresses, addressByHeartbeat{addr, pool.beats[addr]})
+		}
+	}
+	sort.Sort(sort.Reverse(addresses))
+
+	// Drop transactions until the total is below the limit or only locals remain
+	for drop := queued - pool.config.PriorityQueue; drop > 0 && len(addresses) > 0; {
 		addr := addresses[len(addresses)-1]
 		list := pool.queue[addr.address]
 
@@ -1580,6 +1781,10 @@ func (pool *TxPool) demoteUnexecutables() {
 			delete(pool.pending, addr)
 		}
 	}
+}
+
+func IsPriorityTransaction(tx *types.Transaction) bool {
+	return tx.Type() == types.PriorityTxType
 }
 
 // addressByHeartbeat is an account address tagged with its last activity timestamp.
@@ -1677,36 +1882,55 @@ func (as *accountSet) merge(other *accountSet) {
 // This lookup set combines the notion of "local transactions", which is useful
 // to build upper-level structure.
 type txLookup struct {
-	slots   int
-	lock    sync.RWMutex
-	locals  map[common.Hash]*types.Transaction
-	remotes map[common.Hash]*types.Transaction
+	slots           int
+	prioritySlots   int
+	lock            sync.RWMutex
+	locals          map[common.Hash]*types.Transaction
+	remotes         map[common.Hash]*types.Transaction
+	localsPriority  map[common.Hash]*types.Transaction
+	remotesPriority map[common.Hash]*types.Transaction
 }
 
 // newTxLookup returns a new txLookup structure.
 func newTxLookup() *txLookup {
 	return &txLookup{
-		locals:  make(map[common.Hash]*types.Transaction),
-		remotes: make(map[common.Hash]*types.Transaction),
+		locals:          make(map[common.Hash]*types.Transaction),
+		remotes:         make(map[common.Hash]*types.Transaction),
+		localsPriority:  make(map[common.Hash]*types.Transaction),
+		remotesPriority: make(map[common.Hash]*types.Transaction),
 	}
 }
 
 // Range calls f on each key and value present in the map. The callback passed
 // should return the indicator whether the iteration needs to be continued.
 // Callers need to specify which set (or both) to be iterated.
-func (t *txLookup) Range(f func(hash common.Hash, tx *types.Transaction, local bool) bool, local bool, remote bool) {
+func (t *txLookup) Range(f func(hash common.Hash, tx *types.Transaction, local bool) bool, local bool, remote bool, priority bool) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if local {
+	if local && !priority {
 		for key, value := range t.locals {
 			if !f(key, value, true) {
 				return
 			}
 		}
 	}
-	if remote {
+	if remote && !priority {
 		for key, value := range t.remotes {
+			if !f(key, value, false) {
+				return
+			}
+		}
+	}
+	if local && priority {
+		for key, value := range t.localsPriority {
+			if !f(key, value, false) {
+				return
+			}
+		}
+	}
+	if remote && priority {
+		for key, value := range t.remotesPriority {
 			if !f(key, value, false) {
 				return
 			}
@@ -1722,23 +1946,40 @@ func (t *txLookup) Get(hash common.Hash) *types.Transaction {
 	if tx := t.locals[hash]; tx != nil {
 		return tx
 	}
-	return t.remotes[hash]
+
+	if tx := t.localsPriority[hash]; tx != nil {
+		return tx
+	}
+
+	if tx := t.remotes[hash]; tx != nil {
+		return tx
+	}
+
+	return t.remotesPriority[hash]
 }
 
 // GetLocal returns a transaction if it exists in the lookup, or nil if not found.
-func (t *txLookup) GetLocal(hash common.Hash) *types.Transaction {
+func (t *txLookup) GetLocal(hash common.Hash, isPriority bool) *types.Transaction {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.locals[hash]
+	if isPriority {
+		return t.localsPriority[hash]
+	} else {
+		return t.locals[hash]
+	}
 }
 
 // GetRemote returns a transaction if it exists in the lookup, or nil if not found.
-func (t *txLookup) GetRemote(hash common.Hash) *types.Transaction {
+func (t *txLookup) GetRemote(hash common.Hash, isPriority bool) *types.Transaction {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.remotes[hash]
+	if isPriority {
+		return t.remotesPriority[hash]
+	} else {
+		return t.remotes[hash]
+	}
 }
 
 // Count returns the current number of transactions in the lookup.
@@ -1746,23 +1987,31 @@ func (t *txLookup) Count() int {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return len(t.locals) + len(t.remotes)
+	return len(t.locals) + len(t.remotes) + len(t.localsPriority) + len(t.remotesPriority)
 }
 
 // LocalCount returns the current number of local transactions in the lookup.
-func (t *txLookup) LocalCount() int {
+func (t *txLookup) LocalCount(isPriority bool) int {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return len(t.locals)
+	if isPriority {
+		return len(t.localsPriority)
+	} else {
+		return len(t.locals)
+	}
 }
 
 // RemoteCount returns the current number of remote transactions in the lookup.
-func (t *txLookup) RemoteCount() int {
+func (t *txLookup) RemoteCount(isPriority bool) int {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return len(t.remotes)
+	if isPriority {
+		return len(t.remotesPriority)
+	} else {
+		return len(t.remotes)
+	}
 }
 
 // Slots returns the current number of slots used in the lookup.
@@ -1773,18 +2022,38 @@ func (t *txLookup) Slots() int {
 	return t.slots
 }
 
+// PrioritySlots returns the current number of slots used in the lookup.
+func (t *txLookup) PrioritySlots() int {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.prioritySlots
+}
+
 // Add adds a transaction to the lookup.
 func (t *txLookup) Add(tx *types.Transaction, local bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	t.slots += numSlots(tx)
-	slotsGauge.Update(int64(t.slots))
+	if IsPriorityTransaction(tx) {
+		t.prioritySlots += numSlots(tx)
+		prioritySlotsGauge.Update(int64(t.prioritySlots))
 
-	if local {
-		t.locals[tx.Hash()] = tx
+		if local {
+			t.localsPriority[tx.Hash()] = tx
+		} else {
+			t.remotesPriority[tx.Hash()] = tx
+		}
+
 	} else {
-		t.remotes[tx.Hash()] = tx
+		t.slots += numSlots(tx)
+		slotsGauge.Update(int64(t.slots))
+
+		if local {
+			t.locals[tx.Hash()] = tx
+		} else {
+			t.remotes[tx.Hash()] = tx
+		}
 	}
 }
 
@@ -1798,14 +2067,28 @@ func (t *txLookup) Remove(hash common.Hash) {
 		tx, ok = t.remotes[hash]
 	}
 	if !ok {
+		tx, ok = t.localsPriority[hash]
+	}
+	if !ok {
+		tx, ok = t.remotesPriority[hash]
+	}
+	if !ok {
 		log.Error("No transaction found to be deleted", "hash", hash)
 		return
 	}
-	t.slots -= numSlots(tx)
-	slotsGauge.Update(int64(t.slots))
+
+	if IsPriorityTransaction(tx) {
+		t.prioritySlots -= numSlots(tx)
+		prioritySlotsGauge.Update(int64(t.prioritySlots))
+	} else {
+		t.slots -= numSlots(tx)
+		slotsGauge.Update(int64(t.slots))
+	}
 
 	delete(t.locals, hash)
 	delete(t.remotes, hash)
+	delete(t.localsPriority, hash)
+	delete(t.remotesPriority, hash)
 }
 
 // RemoteToLocals migrates the transactions belongs to the given locals to locals
@@ -1822,6 +2105,14 @@ func (t *txLookup) RemoteToLocals(locals *accountSet) int {
 			migrated += 1
 		}
 	}
+
+	for hash, tx := range t.remotesPriority {
+		if locals.containsTx(tx) {
+			t.localsPriority[hash] = tx
+			delete(t.remotesPriority, hash)
+			migrated += 1
+		}
+	}
 	return migrated
 }
 
@@ -1833,7 +2124,13 @@ func (t *txLookup) RemotesBelowTip(threshold *big.Int) types.Transactions {
 			found = append(found, tx)
 		}
 		return true
-	}, false, true) // Only iterate remotes
+	}, false, true, false) // Only iterate remotes
+	t.Range(func(hash common.Hash, tx *types.Transaction, local bool) bool {
+		if !tx.HasZeroFee() && tx.GasTipCapIntCmp(threshold) < 0 {
+			found = append(found, tx)
+		}
+		return true
+	}, false, true, true) // Only iterate priority remotes
 	return found
 }
 

@@ -83,6 +83,10 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent)
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
+func (bc *testBlockChain) GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	return common.PriorityTransactor{}, false
+}
+
 func TestMiner(t *testing.T) {
 	miner, mux, cleanup := createMiner(t)
 	defer cleanup(false)

@@ -367,6 +367,16 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
+// GetPriorityTransactorByKey retrieves the transactor if present in the
+// priority transactors contract and within block start/end height
+func (bc *BlockChain) GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	if istanbulEngine, ok := bc.Engine().(consensus.Istanbul); ok {
+		return istanbulEngine.GetPriorityTransactorByKey(pkey)
+	} else {
+		return common.PriorityTransactor{}, false
+	}
+}
+
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.
 func (bc *BlockChain) SubscribeRemovedLogsEvent(ch chan<- RemovedLogsEvent) event.Subscription {
 	return bc.scope.Track(bc.rmLogsFeed.Subscribe(ch))

@@ -80,6 +80,10 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) even
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
+func (bc *testBlockChain) GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	return common.PriorityTransactor{}, false
+}
+
 func transaction(nonce uint64, gaslimit uint64, key *ecdsa.PrivateKey) *types.Transaction {
 	return pricedTransaction(nonce, gaslimit, big.NewInt(1), key)
 }
@@ -139,7 +143,7 @@ func validateTxPoolInternals(pool *TxPool) error {
 		return fmt.Errorf("total transaction count %d != %d pending + %d queued", total, pending, queued)
 	}
 	pool.priced.Reheap()
-	priced, remote := pool.priced.urgent.Len()+pool.priced.floating.Len(), pool.all.RemoteCount()
+	priced, remote := pool.priced.urgent.Len()+pool.priced.floating.Len(), pool.all.RemoteCount(false)
 	if priced != remote {
 		return fmt.Errorf("total priced transaction count %d != %d", priced, remote)
 	}
@@ -1937,7 +1941,7 @@ func TestDualHeapEviction(t *testing.T) {
 	)
 
 	check := func(tx *types.Transaction, name string) {
-		if pool.all.GetRemote(tx.Hash()) == nil {
+		if pool.all.GetRemote(tx.Hash(), false) == nil {
 			t.Fatalf("highest %s transaction evicted from the pool", name)
 		}
 	}

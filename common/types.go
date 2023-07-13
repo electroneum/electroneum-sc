@@ -439,6 +439,12 @@ func (ma *MixedcaseAddress) Original() string {
 	return ma.original
 }
 
+// Priority Transactor info
+type PriorityTransactor struct {
+	IsGasPriceWaiver bool
+	EntityName       string
+}
+
 // PriorityPubkey represents the 65 byte *uncompressed* secp256k1 pubkey used for priority signatures within txes of PriorityTx type
 type PriorityPubkey [PriorityPubkeyLength]byte
 

@@ -38,9 +38,10 @@ type ChainContext interface {
 // NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	var (
-		beneficiary common.Address
-		baseFee     *big.Int
-		random      *common.Hash
+		beneficiary         common.Address
+		baseFee             *big.Int
+		random              *common.Hash
+		priorityTransactors map[common.PriorityPubkey]common.PriorityTransactor
 	)
 
 	// If we don't have an explicit author (i.e. not mining), extract from the header
@@ -55,17 +56,27 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 	if header.Difficulty.Cmp(common.Big0) == 0 {
 		random = &header.MixDigest
 	}
+
+	// Sanity check if Engine is instantiated (some tests fail without this check because they don't init the consensus engine)
+	if _, ok := chain.(consensus.Engine); ok {
+		// Try casting to istanbul engine to get priority transactors
+		if istanbulEngine, ok := chain.Engine().(consensus.Istanbul); ok {
+			priorityTransactors = istanbulEngine.GetPriorityTransactors(header.Number)
+		}
+	}
+
 	return vm.BlockContext{
-		CanTransfer: CanTransfer,
-		Transfer:    Transfer,
-		GetHash:     GetHashFn(header, chain),
-		Coinbase:    beneficiary,
-		BlockNumber: new(big.Int).Set(header.Number),
-		Time:        new(big.Int).SetUint64(header.Time),
-		Difficulty:  new(big.Int).Set(header.Difficulty),
-		BaseFee:     baseFee,
-		GasLimit:    header.GasLimit,
-		Random:      random,
+		CanTransfer:         CanTransfer,
+		Transfer:            Transfer,
+		GetHash:             GetHashFn(header, chain),
+		Coinbase:            beneficiary,
+		BlockNumber:         new(big.Int).Set(header.Number),
+		Time:                new(big.Int).SetUint64(header.Time),
+		Difficulty:          new(big.Int).Set(header.Difficulty),
+		BaseFee:             baseFee,
+		GasLimit:            header.GasLimit,
+		Random:              random,
+		PriorityTransactors: priorityTransactors,
 	}
 }
 

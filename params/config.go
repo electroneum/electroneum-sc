@@ -251,10 +251,11 @@ func (c *CliqueConfig) String() string {
 
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
-	EpochLength           uint64 `json:"epochlength"`           // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds    uint64 `json:"blockperiodseconds"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds uint64 `json:"requesttimeoutseconds"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy        uint64 `json:"policy"`                // The policy for proposer selection
+	EpochLength                        uint64         `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	ProposerPolicy                     uint64         `json:"policy"`                   // The policy for proposer selection
+	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"` // Smart contract address for priority transactors
 }
 
 func (c IBFTConfig) String() string {
@@ -262,10 +263,11 @@ func (c IBFTConfig) String() string {
 }
 
 type Transition struct {
-	Block                 *big.Int `json:"block"`
-	EpochLength           uint64   `json:"epochlength,omitempty"`           // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds    uint64   `json:"blockperiodseconds,omitempty"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds uint64   `json:"requesttimeoutseconds,omitempty"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	Block                              *big.Int       `json:"block"`
+	EpochLength                        uint64         `json:"epochlength,omitempty"`           // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"`        // Smart contract address for priority transactors
 }
 
 // String implements the fmt.Stringer interface.
@@ -583,6 +585,9 @@ func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int
 		}
 		if isSameBlock || c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
 			return head, head, ErrTransitionIncompatible("EpochLength")
+		}
+		if isSameBlock || c1.Transitions[i].PriorityTransactorsContractAddress != c2.Transitions[i].PriorityTransactorsContractAddress {
+			return head, head, ErrTransitionIncompatible("PriorityTransactorsContractAddress")
 		}
 	}
 

@@ -18,10 +18,12 @@ package backend
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
@@ -30,6 +32,7 @@ import (
 	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	priorityTransactorsContract "github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
@@ -116,6 +119,9 @@ type Backend struct {
 
 	recentMessages *lru.ARCCache // the cache of peer's messages
 	knownMessages  *lru.ARCCache // the cache of self messages
+
+	// Cache the priority transactors map
+	priorityTransactors map[common.PriorityPubkey]common.PriorityTransactor
 }
 
 func (sb *Backend) Engine() istanbul.Engine {
@@ -385,4 +391,55 @@ func (sb *Backend) StartQBFTConsensus() error {
 	}
 
 	return sb.startQBFT()
+}
+
+func (sb *Backend) GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	transactorsMap, exists := sb.GetPriorityTransactors(sb.chain.CurrentHeader().Number)[pkey]
+	return transactorsMap, exists
+}
+
+func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor {
+	if sb.config.PriorityTransactorsContractAddress != (common.Address{}) {
+
+		number := blockNumber.Uint64()
+		if sb.priorityTransactors != nil && number%sb.config.Epoch != 0 {
+			return sb.priorityTransactors
+		}
+
+		transactors, err := sb.GetPriorityTransactorsFromContract(blockNumber)
+		if err != nil {
+			return make(map[common.PriorityPubkey]common.PriorityTransactor)
+		}
+
+		sb.priorityTransactors = make(map[common.PriorityPubkey]common.PriorityTransactor)
+		for _, t := range transactors {
+			if t.StartHeight <= number && t.EndHeight >= number {
+				sb.priorityTransactors[common.StringToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
+					IsGasPriceWaiver: t.IsGasPriceWaiver,
+					EntityName:       t.Name,
+				}
+			}
+		}
+
+		return sb.priorityTransactors
+	}
+	return make(map[common.PriorityPubkey]common.PriorityTransactor)
+}
+
+func (sb *Backend) GetPriorityTransactorsFromContract(blockNumber *big.Int) ([]priorityTransactorsContract.ETNPriorityTransactorsInterfaceTransactorMeta, error) {
+	log.Trace("IBFT: Getting list of priority transactors from contract", "address", sb.config.PriorityTransactorsContractAddress, "client", sb.config.Client)
+	contractCaller, err := priorityTransactorsContract.NewETNPriorityTransactorsInterfaceCaller(sb.config.PriorityTransactorsContractAddress, sb.config.Client)
+	if err != nil {
+		return nil, fmt.Errorf("IBFT: invalid smart contract: %w", err)
+	}
+	opts := bind.CallOpts{
+		Pending:     false,
+		BlockNumber: blockNumber,
+	}
+	transactors, err := contractCaller.GetTransactors(&opts)
+	if err != nil {
+		log.Error("IBFT: invalid priority transactors smart contract", "err", err)
+		return nil, err
+	}
+	return transactors, nil
 }

@@ -231,9 +231,7 @@ func mkTestTx(from common.MixedcaseAddress) apitypes.SendTxArgs {
 		Value:    value,
 		Data:     &data,
 		Nonce:    nonce,
-		VElectroneum: nil,
-		RElectroneum: nil,
-		SElectroneum: nil}
+	}
 	return tx
 }
 

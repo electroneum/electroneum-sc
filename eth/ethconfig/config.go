@@ -195,7 +195,7 @@ type Config struct {
 	Istanbul istanbul.Config
 
 	// Miscellaneous options
-	DocRoot                         string `toml:"-"`
+	DocRoot string `toml:"-"`
 
 	// RPCGasCap is the global gas cap for eth-call variants.
 	RPCGasCap uint64
@@ -233,6 +233,7 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
 			AllowedFutureBlockTime: 0,
 			Transitions:            chainConfig.Transitions,
+			Client:                 config.Istanbul.Client,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)

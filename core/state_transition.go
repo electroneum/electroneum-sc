@@ -256,15 +256,17 @@ func (st *StateTransition) preCheck() error {
 			// Sanity check that the priority key exists in the priority key map and that the gas price fields are appropriate given the key's waiver status.
 			hasGasPriceWaiver := false
 			if st.msg.PrioritySenderPubkey() != (common.PriorityPubkey{}) {
-				value, foundInMap := st.evm.ChainConfig().PriorityKeyMap[st.msg.PrioritySenderPubkey()]
-				if !foundInMap {
+				transactor, found := st.evm.Context.PriorityTransactors[st.msg.PrioritySenderPubkey()]
+				if !found {
 					return fmt.Errorf("%w: Bad priority pubkey %v", errBadPriorityKey, st.msg.PrioritySenderPubkey())
-				} else if value.GasPriceWaiver == true && (st.msg.GasPrice().Cmp(common.Big0) != 0 || st.msg.GasFeeCap().Cmp(common.Big0) != 0 || st.msg.GasTipCap().Cmp(common.Big0) != 0) {
+				}
+				if transactor.IsGasPriceWaiver && (st.msg.GasPrice().Cmp(common.Big0) != 0 || st.msg.GasFeeCap().Cmp(common.Big0) != 0 || st.msg.GasTipCap().Cmp(common.Big0) != 0) {
 					return fmt.Errorf("%w: Priority Key transaction has incorrect gas price fields %v", errHasGasPriceWaiverButNonZeroGasPrice, st.msg.PrioritySenderPubkey())
-				} else if value.GasPriceWaiver == false && ((!(st.msg.GasFeeCap().Cmp(common.Big0) > 0)) || st.msg.GasPrice().Cmp(common.Big0) != 0) { //no need to check tip as this can be zero even without price waiver, however check feecap is positive and nonzero and gasprice is zero
+				}
+				if !transactor.IsGasPriceWaiver && ((!(st.msg.GasFeeCap().Cmp(common.Big0) > 0)) || st.msg.GasPrice().Cmp(common.Big0) != 0) { //no need to check tip as this can be zero even without price waiver, however check feecap is positive and nonzero and gasprice is zero
 					return fmt.Errorf("%w: Priority Key transaction has incorrect gas price fields %v", errNoGasPriceWaiver, st.msg.PrioritySenderPubkey())
 				}
-				hasGasPriceWaiver = value.GasPriceWaiver
+				hasGasPriceWaiver = transactor.IsGasPriceWaiver
 			}
 
 			// This will panic if baseFee is nil, but basefee presence is verified

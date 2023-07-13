@@ -155,4 +155,10 @@ type Istanbul interface {
 
 	// Stop stops the engine
 	Stop() error
+
+	// Get a map of available priority transactors
+	GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor
+
+	// Get transactor if given public key is found in the priority transactor contract
+	GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }

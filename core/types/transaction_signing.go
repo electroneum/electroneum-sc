@@ -20,10 +20,11 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"math/big"
+
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/params"
-	"math/big"
 )
 
 var ErrInvalidChainId = errors.New("invalid chain id for signer")
@@ -213,6 +214,13 @@ func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	V = new(big.Int).Add(V, big.NewInt(27))
 	if tx.ChainId().Cmp(s.chainId) != 0 {
 		return common.Address{}, ErrInvalidChainId
+	}
+	// Also sanity check the priority signature
+	if tx.Type() == PriorityTxType {
+		_, err := s.PrioritySenderPubkey(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
 	}
 	return recoverPlain(s.Hash(tx), R, S, V, true)
 }

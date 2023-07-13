@@ -74,19 +74,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee) // gets us tx in msg format
-
-		if tx.Type() == types.PriorityTxType {
-			value, presentInPriorityMap := p.config.PriorityKeyMap[msg.PrioritySenderPubkey()]
-			if !presentInPriorityMap {
-				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
-			} else if value.GasPriceWaiver == true && (tx.GasPrice().Cmp(common.Big0) != 0 || tx.GasFeeCap().Cmp(common.Big0) != 0 || tx.GasTipCap().Cmp(common.Big0) != 0) {
-				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errHasGasPriceWaiverButNonZeroGasPrice)
-			} else if value.GasPriceWaiver == false && ((!(tx.GasFeeCap().Cmp(common.Big0) > 0)) || tx.GasPrice().Cmp(common.Big0) != 0) { //no need to check tip as this can be zero even without price waiver, however check feecap is positive and nonzero and gasprice is zero
-				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errNoGasPriceWaiver)
-			}
-		}
-
+		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
@@ -158,22 +146,6 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	if err != nil {
 		return nil, err
 	}
-
-	if value, ok := config.PriorityKeyMap[msg.PrioritySenderPubkey()]; ok && value.GasPriceWaiver == true && tx.GasPrice() != nil && tx.GasPrice().Cmp(common.Big0) > 0 {
-		return nil, fmt.Errorf("could not apply tx %v: %w", tx.Hash().Hex(), err) //change error type
-	}
-
-	if tx.Type() == types.PriorityTxType {
-		value, presentInPriorityMap := config.PriorityKeyMap[msg.PrioritySenderPubkey()]
-		if !presentInPriorityMap {
-			return nil, fmt.Errorf("could not apply tx  [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
-		} else if value.GasPriceWaiver == true && (tx.GasPrice().Cmp(common.Big0) != 0 || tx.GasFeeCap().Cmp(common.Big0) != 0 || tx.GasTipCap().Cmp(common.Big0) != 0) {
-			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errHasGasPriceWaiverButNonZeroGasPrice)
-		} else if value.GasPriceWaiver == false && ((!(tx.GasFeeCap().Cmp(common.Big0) > 0)) || tx.GasPrice().Cmp(common.Big0) != 0) { //no need to check tip as this can be zero even without price waiver, however check feecap is positive and nonzero and gasprice is zero
-			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
-		}
-	}
-
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)

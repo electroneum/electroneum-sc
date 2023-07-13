@@ -254,6 +254,13 @@ func (tx *Transaction) Type() uint8 {
 	return tx.inner.txType()
 }
 
+func (tx *Transaction) HasZeroFee() bool {
+	if tx.Type() != PriorityTxType {
+		return false
+	}
+	return tx.GasPrice().Cmp(common.Big0) == 0 && tx.GasFeeCapIntCmp(common.Big0) == 0 && tx.GasTipCapIntCmp(common.Big0) == 0
+}
+
 // ChainId returns the EIP155 chain ID of the transaction. The return value will always be
 // non-nil. For legacy transactions which are not replay-protected, the return value is
 // zero.

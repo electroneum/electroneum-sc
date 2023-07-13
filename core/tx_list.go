@@ -255,15 +255,18 @@ type txList struct {
 
 	costcap *big.Int // Price of the highest costing transaction (reset only if exceeds balance)
 	gascap  uint64   // Gas limit of the highest spending transaction (reset only if exceeds block limit)
+
+	isPriority bool // Flag indicating whether this list should contain only priority transactions
 }
 
 // newTxList create a new transaction list for maintaining nonce-indexable fast,
 // gapped, sortable transaction lists.
-func newTxList(strict bool) *txList {
+func newTxList(strict bool, isPriority bool) *txList {
 	return &txList{
-		strict:  strict,
-		txs:     newTxSortedMap(),
-		costcap: new(big.Int),
+		strict:     strict,
+		txs:        newTxSortedMap(),
+		costcap:    new(big.Int),
+		isPriority: isPriority,
 	}
 }
 
@@ -279,9 +282,18 @@ func (l *txList) Overlaps(tx *types.Transaction) bool {
 // If the new transaction is accepted into the list, the lists' cost and gas
 // thresholds are also potentially updated.
 func (l *txList) Add(tx *types.Transaction, priceBump uint64) (bool, *types.Transaction) {
+	// Only accept transactions that are compatible with the list (only regular transactions or only priority transactions)
+	if l.isPriority && tx.Type() != types.PriorityTxType || !l.isPriority && tx.Type() == types.PriorityTxType {
+		return false, nil
+	}
+
 	// If there's an older better transaction, abort
 	old := l.txs.Get(tx.Nonce())
 	if old != nil {
+		// Don't replace a gas waiver priority tx
+		if tx.HasZeroFee() {
+			return false, nil
+		}
 		if old.GasFeeCapCmp(tx) >= 0 || old.GasTipCapCmp(tx) >= 0 {
 			return false, nil
 		}
@@ -506,7 +518,8 @@ func newTxPricedList(all *txLookup) *txPricedList {
 
 // Put inserts a new transaction into the heap.
 func (l *txPricedList) Put(tx *types.Transaction, local bool) {
-	if local {
+	// Ignore local and priority transactions
+	if local || tx.Type() == types.PriorityTxType {
 		return
 	}
 	// Insert every new transaction to the urgent heap first; Discard will balance the heaps
@@ -542,7 +555,7 @@ func (l *txPricedList) underpricedFor(h *priceHeap, tx *types.Transaction) bool 
 	// Discard stale price points if found at the heap start
 	for len(h.list) > 0 {
 		head := h.list[0]
-		if l.all.GetRemote(head.Hash()) == nil { // Removed or migrated
+		if l.all.GetRemote(head.Hash(), false) == nil { // Removed or migrated
 			atomic.AddInt64(&l.stales, -1)
 			heap.Pop(h)
 			continue
@@ -568,7 +581,7 @@ func (l *txPricedList) Discard(slots int, force bool) (types.Transactions, bool)
 		if len(l.urgent.list)*floatingRatio > len(l.floating.list)*urgentRatio || floatingRatio == 0 {
 			// Discard stale transactions if found during cleanup
 			tx := heap.Pop(&l.urgent).(*types.Transaction)
-			if l.all.GetRemote(tx.Hash()) == nil { // Removed or migrated
+			if l.all.GetRemote(tx.Hash(), false) == nil { // Removed or migrated
 				atomic.AddInt64(&l.stales, -1)
 				continue
 			}
@@ -581,7 +594,7 @@ func (l *txPricedList) Discard(slots int, force bool) (types.Transactions, bool)
 			}
 			// Discard stale transactions if found during cleanup
 			tx := heap.Pop(&l.floating).(*types.Transaction)
-			if l.all.GetRemote(tx.Hash()) == nil { // Removed or migrated
+			if l.all.GetRemote(tx.Hash(), false) == nil { // Removed or migrated
 				atomic.AddInt64(&l.stales, -1)
 				continue
 			}
@@ -606,11 +619,11 @@ func (l *txPricedList) Reheap() {
 	defer l.reheapMu.Unlock()
 	start := time.Now()
 	atomic.StoreInt64(&l.stales, 0)
-	l.urgent.list = make([]*types.Transaction, 0, l.all.RemoteCount())
+	l.urgent.list = make([]*types.Transaction, 0, l.all.RemoteCount(false))
 	l.all.Range(func(hash common.Hash, tx *types.Transaction, local bool) bool {
 		l.urgent.list = append(l.urgent.list, tx)
 		return true
-	}, false, true) // Only iterate remotes
+	}, false, true, false) // Only iterate remotes
 	heap.Init(&l.urgent)
 
 	// balance out the two heaps by moving the worse half of transactions into the
