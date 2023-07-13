@@ -136,7 +136,7 @@ var DefaultConfig = &Config{
 	BlockPeriod:            5,
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
-	AllowedFutureBlockTime: 0,
+	AllowedFutureBlockTime: 5,
 }
 
 func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {

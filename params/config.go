@@ -61,10 +61,11 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:    5,
-			EpochLength:           17280,
-			ProposerPolicy:        0,
-			RequestTimeoutSeconds: 10,
+			BlockPeriodSeconds:     5,
+			EpochLength:            17280,
+			ProposerPolicy:         0,
+			RequestTimeoutSeconds:  10,
+			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN: math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
 	}
@@ -87,10 +88,11 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:    5,
-			EpochLength:           17280,
-			ProposerPolicy:        0,
-			RequestTimeoutSeconds: 10,
+			BlockPeriodSeconds:     5,
+			EpochLength:            17280,
+			ProposerPolicy:         0,
+			RequestTimeoutSeconds:  10,
+			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 	}
@@ -113,10 +115,11 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:    5,
-			EpochLength:           17280,
-			ProposerPolicy:        0,
-			RequestTimeoutSeconds: 10,
+			BlockPeriodSeconds:     5,
+			EpochLength:            17280,
+			ProposerPolicy:         0,
+			RequestTimeoutSeconds:  10,
+			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 	}
@@ -255,6 +258,7 @@ type IBFTConfig struct {
 	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
 	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
 	ProposerPolicy                     uint64         `json:"policy"`                   // The policy for proposer selection
+  AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"` // Smart contract address for priority transactors
 }
 
