@@ -75,7 +75,7 @@ var Defaults = Config{
 		DatasetsLockMmap: false,
 	},
 	NetworkId:               52014,
-	TxLookupLimit:           2350000,
+	TxLookupLimit:           6307200, // Number of recent blocks to maintain transactions index for (default = about one year, 0 = entire chain). Updated to account for 5s blocks
 	LightPeers:              100,
 	UltraLightFraction:      75,
 	DatabaseCache:           512,
