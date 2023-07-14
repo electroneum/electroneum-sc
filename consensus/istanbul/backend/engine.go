@@ -182,7 +182,7 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 // consensus rules that happen at finalization (e.g. block rewards).
 func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
 	if header.Coinbase != (common.Address{}) {
-		blockReward := sb.GetBaseBlockReward(chain, header)
+		blockReward := sb.GetBaseBlockReward(chain, header, nil)
 		state.AddBalance(header.Coinbase, blockReward)
 	}
 	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
@@ -254,7 +254,7 @@ func (sb *Backend) Seal(chain consensus.ChainHeaderReader, block *types.Block, r
 	return nil
 }
 
-func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header) *big.Int {
+func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header, circulatingSupply *big.Int) *big.Int {
 	var legacyV9BlockHeight = big.NewInt(862866 * 24) // original 862866 height * 24 to make it compatible with 5-second block time
 	var halvingPeriod = big.NewInt(25228800)          // 4 years in 5-second block time
 	var baseReward = big.NewInt(4e+18)                // ~100ETN every 120 seconds
@@ -264,17 +264,21 @@ func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header 
 	var offsetBlockNumber = new(big.Int).Add(header.Number, offset)
 	var halvings = new(big.Int).Div(offsetBlockNumber, halvingPeriod) // (blockNumber + offset) / halvingPeriod
 
-	// Get current circulating supply
-	emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to get next base block reward: %v", err))
+	if circulatingSupply == nil {
+		// Get current circulating supply
+		emission, err := sb.emission(chain, header.Number.Uint64()-1, header.ParentHash, nil)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to get next base block reward: %v", err))
+		}
+
+		circulatingSupply = emission.CirculatingSupply
 	}
 
 	// 0 block reward once circulating supply = max supply & if circsupply+basereward > maxsupply, reduce the base reward accordingly
-	if emission.CirculatingSupply.Cmp(math.MustParseBig256(params.ETNMaxSupply)) >= 0 {
+	if circulatingSupply.Cmp(math.MustParseBig256(params.ETNMaxSupply)) >= 0 {
 		return big.NewInt(0)
-	} else if new(big.Int).Add(emission.CirculatingSupply, baseReward).Cmp(math.MustParseBig256(params.ETNMaxSupply)) > 0 {
-		baseReward = new(big.Int).Sub(math.MustParseBig256(params.ETNMaxSupply), emission.CirculatingSupply)
+	} else if new(big.Int).Add(circulatingSupply, baseReward).Cmp(math.MustParseBig256(params.ETNMaxSupply)) > 0 {
+		baseReward = new(big.Int).Sub(math.MustParseBig256(params.ETNMaxSupply), circulatingSupply)
 	}
 
 	// Shift the base reward "halvings" times
@@ -467,7 +471,7 @@ func (sb *Backend) emissionApply(chain consensus.ChainHeaderReader, emission *Em
 	emissionCpy := emission.copy()
 
 	for _, header := range headers {
-		emissionCpy.CirculatingSupply = new(big.Int).Add(emissionCpy.CirculatingSupply, sb.GetBaseBlockReward(chain, header))
+		emissionCpy.CirculatingSupply = new(big.Int).Add(emissionCpy.CirculatingSupply, sb.GetBaseBlockReward(chain, header, emissionCpy.CirculatingSupply))
 	}
 	emissionCpy.Number += uint64(len(headers))
 	emissionCpy.Hash = headers[len(headers)-1].Hash()

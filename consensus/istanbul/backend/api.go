@@ -292,7 +292,7 @@ func (api *API) GetBaseBlockReward(blockNum *rpc.BlockNumber) (*big.Int, error) 
 		header = api.chain.CurrentHeader()
 	}
 
-	return api.backend.GetBaseBlockReward(api.chain, header), nil
+	return api.backend.GetBaseBlockReward(api.chain, header, nil), nil
 }
 
 func (api *API) GetTotalEmission(blockNum *rpc.BlockNumber) (*big.Int, error) {
