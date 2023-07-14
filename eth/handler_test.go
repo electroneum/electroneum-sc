@@ -91,13 +91,35 @@ func (p *testTxPool) AddRemotes(txs []*types.Transaction) []error {
 	return make([]error, len(txs))
 }
 
-// Pending returns all the transactions known to the pool
+// Pending returns all the non-priority transactions known to the pool
 func (p *testTxPool) Pending(enforceTips bool) map[common.Address]types.Transactions {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	batches := make(map[common.Address]types.Transactions)
 	for _, tx := range p.pool {
+		if tx.Type() == types.PriorityTxType {
+			continue
+		}
+		from, _ := types.Sender(types.HomesteadSigner{}, tx)
+		batches[from] = append(batches[from], tx)
+	}
+	for _, batch := range batches {
+		sort.Sort(types.TxByNonce(batch))
+	}
+	return batches
+}
+
+// PendingPriority returns all the priority transactions known to the pool
+func (p *testTxPool) PendingPriority(enforceTips bool) map[common.Address]types.Transactions {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	batches := make(map[common.Address]types.Transactions)
+	for _, tx := range p.pool {
+		if tx.Type() != types.PriorityTxType {
+			continue
+		}
 		from, _ := types.Sender(types.HomesteadSigner{}, tx)
 		batches[from] = append(batches[from], tx)
 	}

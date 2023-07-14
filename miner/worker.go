@@ -17,7 +17,6 @@
 package miner
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -33,7 +32,6 @@ import (
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
-	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
@@ -1086,56 +1084,6 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 	// remoteTxs before processing them separately and avoid double counting.
 	pending := w.eth.TxPool().Pending(true)
 
-	electroneumTxs := make(map[common.Address]types.Transactions)
-	if w.config.PrioritiseElectroneum {
-
-		//todo: move this into worker or somewhere to save doing this every time we fill a block
-		//testing keys only
-		// private key : 8dd88ba44afa275e0dd9be1d633732242d84ea955e453b28719d17897035b4c2
-		//NB the 0x04 is to tell us that the key is uncompressed 64bytes +1 byte
-		etnSigningPubKey := "04" + "d6e7d6da18e8cfb9cf20bbb7182ac36deb9b77f2c617f3698fc12aebf22ee9b00060775349a2312813818a9c7a0a4b143fddfa36611129daf01c26bc9080d418" //todo before release - move this to central location/array of priority keys
-		byteStringETNKey, err := hex.DecodeString(etnSigningPubKey)
-		if err != nil {
-			fmt.Println("Error decoding hex string:", err)
-			panic("Error decoding etn signing key")
-		}
-
-		// Priority transactions sign the transation hash and put sig values into VElectroneum,RElectroneum,SElectroneum
-		// todo: move this verification logic lower down the call stack and have Electroneum and third party types like remote and local
-		for account, txs := range pending {
-			var newPending []*types.Transaction
-			if len(txs) > 0 {
-				for _, tx := range txs {
-					if tx.Type() == types.PriorityTxType {
-						VElectroneum, RElectroneum, SElectroneum := tx.RawPrioritySignatureValues()
-						if !crypto.ValidateSignatureValues(VElectroneum.Bytes()[0], RElectroneum, SElectroneum, false) { // value check is cheap so do this before doing more expensive verification
-							log.Warn("Bad priority signature values for tx: %v", txs[0].Hash())
-							newPending = append(newPending, tx)
-							continue
-						}
-						RElectroneumSElectroneum := append(RElectroneum.Bytes(), SElectroneum.Bytes()...)
-						_, err = crypto.SigToPub(crypto.Keccak256(tx.Hash().Bytes()), append(RElectroneumSElectroneum, byte(VElectroneum.Uint64()))) //todo move byteStringETNKey and other priority keys into to a struct in a central location and have this code continue if the public key isn't in the map that we said
-						if err != nil {
-							log.Warn("Couldn't retrieve pubkey from priority signature for transaction: %v", txs[0].Hash())
-							newPending = append(newPending, tx)
-							continue
-						}
-						if crypto.VerifySignature(byteStringETNKey, tx.Hash().Bytes(), RElectroneumSElectroneum) {
-							electroneumTxs[account] = append(electroneumTxs[account], tx)
-							continue
-						} else {
-							log.Warn("Got a priority signature but couldn't verify: %v", txs[0].Hash())
-							newPending = append(newPending, tx)
-							continue
-						}
-					}
-					newPending = append(newPending, tx) // if it's not priority, go straight to newPending
-				}
-			}
-			pending[account] = newPending
-		}
-	}
-
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
 		if txs := remoteTxs[account]; len(txs) > 0 {
@@ -1144,14 +1092,25 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		}
 	}
 
-	// By default the miner prioritises their own (local) transactions and then moves onto everyone else's (remote) tx
-	// if --miner.PrioritiseElectroneum flag is present, electroneumTxs take priority over both local & remote
-	if len(electroneumTxs) > 0 {
-		txs := types.NewTransactionsByPriceAndNonce(env.signer, electroneumTxs, env.header.BaseFee)
-		if err := w.commitTransactions(env, txs, interrupt); err != nil {
-			return err
+	if w.config.PrioritiseElectroneum {
+		priorityTxs := w.eth.TxPool().PendingPriority(true)
+		for _, account := range w.eth.TxPool().Locals() {
+			if txs := priorityTxs[account]; len(txs) > 0 {
+				delete(priorityTxs, account)
+				localTxs[account] = txs
+			}
+		}
+
+		// By default the miner prioritises their own (local) transactions and then moves onto everyone else's (remote) tx
+		// if --miner.PrioritiseElectroneum flag is present, electroneumTxs take priority over both local & remote
+		if len(priorityTxs) > 0 {
+			txs := types.NewTransactionsByPriceAndNonce(env.signer, priorityTxs, env.header.BaseFee)
+			if err := w.commitTransactions(env, txs, interrupt); err != nil {
+				return err
+			}
 		}
 	}
+
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
 		if err := w.commitTransactions(env, txs, interrupt); err != nil {

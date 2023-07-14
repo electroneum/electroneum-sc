@@ -546,7 +546,7 @@ func (pool *TxPool) ContentFrom(addr common.Address) (types.Transactions, types.
 	return pending, queued
 }
 
-// Pending retrieves all currently processable transactions, grouped by origin
+// Pending retrieves all currently processable non-priority transactions, grouped by origin
 // account and sorted by nonce. The returned transaction set is a copy and can be
 // freely modified by calling code.
 //
@@ -559,6 +559,43 @@ func (pool *TxPool) Pending(enforceTips bool) map[common.Address]types.Transacti
 
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
+		if list.isPriority {
+			continue
+		}
+		txs := list.Flatten()
+
+		// If the miner requests tip enforcement, cap the lists now
+		if enforceTips && !pool.locals.contains(addr) {
+			for i, tx := range txs {
+				if tx.EffectiveGasTipIntCmp(pool.gasPrice, pool.priced.urgent.baseFee) < 0 {
+					txs = txs[:i]
+					break
+				}
+			}
+		}
+		if len(txs) > 0 {
+			pending[addr] = txs
+		}
+	}
+	return pending
+}
+
+// PendingPriority retrieves all currently processable priority transactions, grouped by origin
+// account and sorted by nonce. The returned transaction set is a copy and can be
+// freely modified by calling code.
+//
+// The enforceTips parameter can be used to do an extra filtering on the pending
+// transactions and only return those whose **effective** tip is large enough in
+// the next pending execution environment.
+func (pool *TxPool) PendingPriority(enforceTips bool) map[common.Address]types.Transactions {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	pending := make(map[common.Address]types.Transactions)
+	for addr, list := range pool.pending {
+		if !list.isPriority {
+			continue
+		}
 		txs := list.Flatten()
 
 		// If the miner requests tip enforcement, cap the lists now

@@ -72,9 +72,13 @@ type txPool interface {
 	// AddRemotes should add the given transactions to the pool.
 	AddRemotes([]*types.Transaction) []error
 
-	// Pending should return pending transactions.
+	// Pending should return pending non-priority transactions.
 	// The slice should be modifiable by the caller.
 	Pending(enforceTips bool) map[common.Address]types.Transactions
+
+	// PendingPriority should return pending priority transactions.
+	// The slice should be modifiable by the caller.
+	PendingPriority(enforceTips bool) map[common.Address]types.Transactions
 
 	// SubscribeNewTxsEvent should return an event subscription of
 	// NewTxsEvent and send events to the given channel.

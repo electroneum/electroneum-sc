@@ -247,9 +247,12 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction)
 }
 
 func (b *EthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
-	pending := b.eth.txPool.Pending(false)
+	pending, pendingPriorities := b.eth.txPool.Pending(false), b.eth.txPool.PendingPriority(false)
 	var txs types.Transactions
 	for _, batch := range pending {
+		txs = append(txs, batch...)
+	}
+	for _, batch := range pendingPriorities {
 		txs = append(txs, batch...)
 	}
 	return txs, nil
