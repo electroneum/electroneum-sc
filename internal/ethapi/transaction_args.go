@@ -54,7 +54,7 @@ type TransactionArgs struct {
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 
 	// mock execution only for private transactions (eg eth_estimateGas eth_call)
-	priorityPubkey *common.PriorityPubkey `json:"chainId,omitempty"`
+	priorityPubkey *common.PriorityPubkey `json:"priorityPubkey,omitempty"`
 }
 
 // from retrieves the transaction sender address.
