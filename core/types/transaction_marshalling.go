@@ -40,9 +40,9 @@ type txJSON struct {
 	V                    *hexutil.Big    `json:"v"`
 	R                    *hexutil.Big    `json:"r"`
 	S                    *hexutil.Big    `json:"s"`
-	VElectroneum         *hexutil.Big    `json:"VElectroneum"`
-	RElectroneum         *hexutil.Big    `json:"RElectroneum"`
-	SElectroneum         *hexutil.Big    `json:"SElectroneum"`
+	PriorityV            *hexutil.Big    `json:"priorityV"`
+	PriorityR            *hexutil.Big    `json:"priorityR"`
+	PriorityS            *hexutil.Big    `json:"priorityS"`
 	To                   *common.Address `json:"to"`
 
 	// Access list transaction fields:
@@ -110,9 +110,9 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 		enc.V = (*hexutil.Big)(tx.V)
 		enc.R = (*hexutil.Big)(tx.R)
 		enc.S = (*hexutil.Big)(tx.S)
-		enc.VElectroneum = (*hexutil.Big)(tx.VElectroneum)
-		enc.RElectroneum = (*hexutil.Big)(tx.RElectroneum)
-		enc.SElectroneum = (*hexutil.Big)(tx.SElectroneum)
+		enc.PriorityV = (*hexutil.Big)(tx.PriorityV)
+		enc.PriorityR = (*hexutil.Big)(tx.PriorityR)
+		enc.PriorityS = (*hexutil.Big)(tx.PriorityS)
 	}
 	return json.Marshal(&enc)
 }
@@ -338,21 +338,21 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 				return err
 			}
 		}
-		if dec.VElectroneum == nil {
-			return errors.New("missing required field 'VElectroneum' in transaction")
+		if dec.PriorityV == nil {
+			return errors.New("missing required field 'priorityV' in transaction")
 		}
-		itx.VElectroneum = (*big.Int)(dec.VElectroneum)
-		if dec.RElectroneum == nil {
-			return errors.New("missing required field 'RElectroneum' in transaction")
+		itx.PriorityV = (*big.Int)(dec.PriorityV)
+		if dec.PriorityR == nil {
+			return errors.New("missing required field 'priorityR' in transaction")
 		}
-		itx.RElectroneum = (*big.Int)(dec.RElectroneum)
-		if dec.SElectroneum == nil {
-			return errors.New("missing required field 'SElectroneum' in transaction")
+		itx.PriorityR = (*big.Int)(dec.PriorityR)
+		if dec.PriorityS == nil {
+			return errors.New("missing required field 'priorityR' in transaction")
 		}
-		itx.SElectroneum = (*big.Int)(dec.SElectroneum)
-		withElectroneumSignature := itx.VElectroneum.Sign() != 0 || itx.RElectroneum.Sign() != 0 || itx.SElectroneum.Sign() != 0
+		itx.PriorityS = (*big.Int)(dec.PriorityS)
+		withElectroneumSignature := itx.PriorityV.Sign() != 0 || itx.PriorityR.Sign() != 0 || itx.PriorityS.Sign() != 0
 		if withElectroneumSignature {
-			if err := sanityCheckSignature(itx.VElectroneum, itx.RElectroneum, itx.SElectroneum, false); err != nil {
+			if err := sanityCheckSignature(itx.PriorityV, itx.PriorityR, itx.PriorityS, false); err != nil {
 				return err
 			}
 		}

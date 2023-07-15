@@ -24,9 +24,9 @@ type PriorityTx struct {
 	S *big.Int `json:"s" gencodec:"required"`
 
 	// Electroneum Signature values
-	VElectroneum *big.Int `json:"VElectroneum" gencodec:"required"`
-	RElectroneum *big.Int `json:"RElectroneum" gencodec:"required"`
-	SElectroneum *big.Int `json:"SElectroneum" gencodec:"required"`
+	PriorityV *big.Int `json:"priorityV" gencodec:"required"`
+	PriorityR *big.Int `json:"priorityR" gencodec:"required"`
+	PriorityS *big.Int `json:"priorityS" gencodec:"required"`
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
@@ -37,17 +37,17 @@ func (tx *PriorityTx) copy() TxData {
 		Data:  common.CopyBytes(tx.Data),
 		Gas:   tx.Gas,
 		// These are copied below.
-		AccessList:   make(AccessList, len(tx.AccessList)),
-		Value:        new(big.Int),
-		ChainID:      new(big.Int),
-		GasTipCap:    new(big.Int),
-		GasFeeCap:    new(big.Int),
-		V:            new(big.Int),
-		R:            new(big.Int),
-		S:            new(big.Int),
-		VElectroneum: new(big.Int),
-		RElectroneum: new(big.Int),
-		SElectroneum: new(big.Int),
+		AccessList: make(AccessList, len(tx.AccessList)),
+		Value:      new(big.Int),
+		ChainID:    new(big.Int),
+		GasTipCap:  new(big.Int),
+		GasFeeCap:  new(big.Int),
+		V:          new(big.Int),
+		R:          new(big.Int),
+		S:          new(big.Int),
+		PriorityV:  new(big.Int),
+		PriorityR:  new(big.Int),
+		PriorityS:  new(big.Int),
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {
@@ -71,14 +71,14 @@ func (tx *PriorityTx) copy() TxData {
 	if tx.S != nil {
 		cpy.S.Set(tx.S)
 	}
-	if tx.VElectroneum != nil {
-		cpy.VElectroneum.Set(tx.VElectroneum)
+	if tx.PriorityV != nil {
+		cpy.PriorityV.Set(tx.PriorityV)
 	}
-	if tx.RElectroneum != nil {
-		cpy.RElectroneum.Set(tx.RElectroneum)
+	if tx.PriorityR != nil {
+		cpy.PriorityR.Set(tx.PriorityR)
 	}
-	if tx.SElectroneum != nil {
-		cpy.SElectroneum.Set(tx.SElectroneum)
+	if tx.PriorityS != nil {
+		cpy.PriorityS.Set(tx.PriorityS)
 	}
 	return cpy
 }
@@ -100,7 +100,7 @@ func (tx *PriorityTx) rawSignatureValues() (v, r, s *big.Int) {
 	return tx.V, tx.R, tx.S
 }
 func (tx *PriorityTx) rawPrioritySignatureValues() (v, r, s *big.Int) {
-	return tx.VElectroneum, tx.RElectroneum, tx.SElectroneum
+	return tx.PriorityV, tx.PriorityR, tx.PriorityS
 }
 
 func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
@@ -108,5 +108,5 @@ func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
 }
 
 func (tx *PriorityTx) setPrioritySignatureValues(chainID, v, r, s *big.Int) {
-	tx.ChainID, tx.VElectroneum, tx.RElectroneum, tx.SElectroneum = chainID, v, r, s
+	tx.ChainID, tx.PriorityV, tx.PriorityR, tx.PriorityS = chainID, v, r, s
 }
