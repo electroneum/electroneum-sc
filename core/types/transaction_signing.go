@@ -580,7 +580,7 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	return addr, nil
 }
 
-func recoverSecp256k1Pubkey(sighash common.Hash, R, S, Vb *big.Int, homestead bool) ([]byte, error) {
+func recoverSecp256k1Pubkey(sighash common.Hash, Vb, R, S *big.Int, homestead bool) ([]byte, error) {
 	if Vb.BitLen() > 8 {
 		return nil, ErrInvalidSig
 	}
