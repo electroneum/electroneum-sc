@@ -160,5 +160,5 @@ type Istanbul interface {
 	GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor
 
 	// Get transactor if given public key is found in the priority transactor contract
-	GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
+	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }
