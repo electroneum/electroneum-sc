@@ -258,7 +258,7 @@ type IBFTConfig struct {
 	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
 	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
 	ProposerPolicy                     uint64         `json:"policy"`                   // The policy for proposer selection
-  AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
+	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"` // Smart contract address for priority transactors
 }
 
@@ -580,17 +580,22 @@ func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int
 
 	// validate that each past record is matching exactly. if not return error
 	for i := 0; i < c1RecsBelowHead; i++ {
-		isSameBlock := c1.Transitions[i].Block.Cmp(c2.Transitions[i].Block) != 0
-		if isSameBlock || c1.Transitions[i].BlockPeriodSeconds != c2.Transitions[i].BlockPeriodSeconds {
+		isDifferentBlock := c1.Transitions[i].Block.Cmp(c2.Transitions[i].Block) != 0
+
+		if isDifferentBlock {
+			return head, head, fmt.Errorf("Block mismatch for transition %d", i)
+		}
+
+		if c1.Transitions[i].BlockPeriodSeconds != c2.Transitions[i].BlockPeriodSeconds {
 			return head, head, ErrTransitionIncompatible("BlockPeriodSeconds")
 		}
-		if isSameBlock || c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
+		if c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
 			return head, head, ErrTransitionIncompatible("RequestTimeoutSeconds")
 		}
-		if isSameBlock || c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
+		if c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
 			return head, head, ErrTransitionIncompatible("EpochLength")
 		}
-		if isSameBlock || c1.Transitions[i].PriorityTransactorsContractAddress != c2.Transitions[i].PriorityTransactorsContractAddress {
+		if c1.Transitions[i].PriorityTransactorsContractAddress != c2.Transitions[i].PriorityTransactorsContractAddress {
 			return head, head, ErrTransitionIncompatible("PriorityTransactorsContractAddress")
 		}
 	}
