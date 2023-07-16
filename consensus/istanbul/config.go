@@ -140,13 +140,14 @@ var DefaultConfig = &Config{
 }
 
 func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {
-	priorityTransactorContractAddress := c.PriorityTransactorsContractAddress
-	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
-		if c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
-			priorityTransactorContractAddress = c.Transitions[i].PriorityTransactorsContractAddress
+	if c.Transitions != nil {
+		for i := len(c.Transitions) - 1; i >= 0; i-- {
+			if c.Transitions[i].Block.Cmp(blockNumber) <= 0 && c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
+				return c.Transitions[i].PriorityTransactorsContractAddress
+			}
 		}
 	}
-	return priorityTransactorContractAddress
+	return c.PriorityTransactorsContractAddress
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {

@@ -716,8 +716,8 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 }
 
 func (sb *Backend) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	transactorsMap, exists := sb.GetPriorityTransactors(blockNumber)[pkey]
-	return transactorsMap, exists
+	transactor, exists := sb.GetPriorityTransactors(blockNumber)[pkey]
+	return transactor, exists
 }
 
 func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor {

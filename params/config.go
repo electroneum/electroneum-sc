@@ -254,12 +254,12 @@ func (c *CliqueConfig) String() string {
 
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
-	EpochLength                        uint64         `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy                     uint64         `json:"policy"`                   // The policy for proposer selection
-	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
-	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"` // Smart contract address for priority transactors
+	EpochLength                        uint64         `json:"epochlength"`                        // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`                 // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`              // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	ProposerPolicy                     uint64         `json:"policy"`                             // The policy for proposer selection
+	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`             //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
+	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
 }
 
 func (c IBFTConfig) String() string {
@@ -268,10 +268,10 @@ func (c IBFTConfig) String() string {
 
 type Transition struct {
 	Block                              *big.Int       `json:"block"`
-	EpochLength                        uint64         `json:"epochlength,omitempty"`           // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`    // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"` // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	PriorityTransactorsContractAddress common.Address `json:"validatorcontractaddress"`        // Smart contract address for priority transactors
+	EpochLength                        uint64         `json:"epochlength,omitempty"`              // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
 }
 
 // String implements the fmt.Stringer interface.
