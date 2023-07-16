@@ -189,7 +189,6 @@ func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 	}
 
 	// Get the priority transactors from smart contract.
-	// This only runs at the begining of a new epoch or if cache is nil
 	sb.GetPriorityTransactors(header.Number)
 
 	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
@@ -724,16 +723,7 @@ func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) map[common.Prior
 	priorityContractAddr := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
 	if priorityContractAddr != (common.Address{}) {
 		number := blockNumber.Uint64()
-		epoch := sb.config.GetConfig(blockNumber).Epoch
-		// Get from cache if not on epoch start and chache is valid
-		if sb.priorityTransactors != nil && number%epoch != 0 {
-			return sb.priorityTransactors
-		}
-		// Set block number to the start of the epoch
-		delta := number % epoch
-		if number > epoch && delta != 0 {
-			number -= delta
-		}
+
 		// Get priority transactors from the start of the epoch
 		transactors, err := sb.getPriorityTransactorsFromContract(new(big.Int).SetUint64(number), priorityContractAddr)
 		if err != nil {
