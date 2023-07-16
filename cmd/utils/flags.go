@@ -1947,7 +1947,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	}
 
 	var engine consensus.Engine
-	defaultCfg := &ethconfig.Defaults
+	defaultCfg := ethconfig.Defaults
 	if ctx.GlobalBool(FakePoWFlag.Name) {
 		defaultCfg.Ethash.PowMode = ethash.ModeFake
 	}
@@ -1958,7 +1958,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 		}
 		defaultCfg.Istanbul.Client = ethclient.NewClient(client)
 	}
-	engine = ethconfig.CreateConsensusEngine(stack, config, defaultCfg, nil, false, chainDb)
+	engine = ethconfig.CreateConsensusEngine(stack, config, &defaultCfg, nil, false, chainDb)
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}
