@@ -275,7 +275,6 @@ func (st *StateTransition) preCheck() error {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
 			}
-
 		}
 	}
 	return st.buyGas()

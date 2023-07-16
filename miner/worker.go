@@ -1279,7 +1279,7 @@ func (w *worker) postSideBlock(event core.ChainSideEvent) {
 func totalFees(block *types.Block, receipts []*types.Receipt) *big.Float {
 	feesWei := new(big.Int)
 	for i, tx := range block.Transactions() {
-		minerFee := new(big.Int)
+		var minerFee *big.Int
 		if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
 			minerFee, _ = tx.EffectiveGasTip(big.NewInt(0))
 		} else {

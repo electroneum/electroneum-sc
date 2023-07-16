@@ -2081,7 +2081,6 @@ func (t *txLookup) Add(tx *types.Transaction, local bool) {
 		} else {
 			t.remotesPriority[tx.Hash()] = tx
 		}
-
 	} else {
 		t.slots += numSlots(tx)
 		slotsGauge.Update(int64(t.slots))

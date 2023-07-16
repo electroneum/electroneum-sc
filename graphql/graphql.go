@@ -329,11 +329,11 @@ func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) { 
 	if header.BaseFee == nil {
 		return (*hexutil.Big)(tx.GasPrice()), nil
 	}
-	tip, err := new(big.Int), error(nil)
+	var tip *big.Int
 	if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
-		tip, _ = tx.EffectiveGasTip(big.NewInt(0))
+		tip, err = tx.EffectiveGasTip(big.NewInt(0))
 	} else {
-		tip, _ = tx.EffectiveGasTip(header.BaseFee)
+		tip, err = tx.EffectiveGasTip(header.BaseFee)
 	}
 	if err != nil {
 		return nil, err

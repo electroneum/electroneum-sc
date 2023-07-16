@@ -54,7 +54,7 @@ type TransactionArgs struct {
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 
 	// mock execution only for private transactions (eg eth_estimateGas eth_call)
-	priorityPubkey *common.PriorityPubkey `json:"priorityPubkey,omitempty"`
+	PriorityPubkey *common.PriorityPubkey `json:"priorityPubkey,omitempty"`
 }
 
 // from retrieves the transaction sender address.
@@ -212,7 +212,7 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 		gasFeeCap, gasTipCap = gasPrice, gasPrice
 	} else {
 		// A basefee is provided, necessitating 1559-type execution
-		if args.priorityPubkey == nil && args.GasPrice != nil {
+		if args.PriorityPubkey == nil && args.GasPrice != nil {
 			// User specified the legacy gas field, convert to 1559 gas typing
 			gasPrice = args.GasPrice.ToInt()
 			gasFeeCap, gasTipCap = gasPrice, gasPrice
@@ -244,8 +244,8 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 	}
 
 	var priorityPubkey common.PriorityPubkey
-	if args.priorityPubkey != nil {
-		priorityPubkey = *args.priorityPubkey
+	if args.PriorityPubkey != nil {
+		priorityPubkey = *args.PriorityPubkey
 	}
 
 	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, true, priorityPubkey) // this is being called for mock-priority-tx calls only like estimate gas. the web3 flow for purely signing and sending priority tx will never actually hit this

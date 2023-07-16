@@ -114,7 +114,7 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 
 	sorter := make(sortGasAndReward, len(bf.block.Transactions()))
 	for i, tx := range bf.block.Transactions() { //this is post block confirmation
-		reward := new(big.Int)
+		var reward *big.Int
 		if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
 			reward, _ = tx.EffectiveGasTip(big.NewInt(0))
 		} else {
