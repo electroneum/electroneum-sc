@@ -190,7 +190,7 @@ func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 	}
 
 	prevBlockNumber := new(big.Int).Sub(header.Number, common.Big1)
-	transactors, err := sb.GetPriorityTransactors(prevBlockNumber)
+	transactors, err := sb.GetPriorityTransactorsMapAtHeight(prevBlockNumber)
 	if err != nil {
 		// This should never happen. It's in place so that we can catch a potential issue during testing.
 		panic("IBFT: Finalize(): cannot get priority transactors from smart contract")
@@ -770,7 +770,8 @@ func (sb *Backend) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.
 	return transactors, ok
 }
 
-func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) (common.PriorityTransactorMap, error) {
+// GetPriorityTransactorsMapAtHeight This does NOT filter the valid transactors for a given height, only retrieves the full list correct to a given height
+func (sb *Backend) GetPriorityTransactorsMapAtHeight(blockNumber *big.Int) (common.PriorityTransactorMap, error) {
 	priorityContractAddr, _ := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
 	priorityTransactors := make(common.PriorityTransactorMap)
 	if priorityContractAddr != (common.Address{}) {
@@ -781,9 +782,11 @@ func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) (common.Priority
 		}
 		// Convert contract call return to our priority transactors data structure
 		for _, t := range transactors {
-			priorityTransactors[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
-				IsGasPriceWaiver: t.IsGasPriceWaiver,
-				EntityName:       t.Name,
+				priorityTransactors[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
+					IsGasPriceWaiver: t.IsGasPriceWaiver,
+					EntityName:       t.Name,
+					StartHeight: new(big.Int).SetUint64(t.StartHeight),
+					EndHeight:  new(big.Int).SetUint64(t.EndHeight),
 			}
 		}
 	}

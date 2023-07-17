@@ -41,6 +41,8 @@ var (
 	errNoGasPriceWaiver = errors.New("Priority sender does not have a gas price waiver but sent a tx with zero gas fee and tip")
 
 	errHasGasPriceWaiverButNonZeroGasPrice = errors.New("Priority sender with a gas price waiver erroneously added a gas fee and tip")
+
+	errPriorityTransactorNotRegisteredForHeight = errors.New("Priority sender is not permitted to send priority tx in this height range")
 )
 
 // List of evm-call-message pre-checking errors. All state transition messages will
