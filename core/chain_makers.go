@@ -18,8 +18,9 @@ package core
 
 import (
 	"fmt"
-	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"math/big"
+
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"

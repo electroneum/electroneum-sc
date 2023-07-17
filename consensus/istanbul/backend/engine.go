@@ -399,7 +399,7 @@ func (sb *Backend) getBlockSnapshot(blockNumber *big.Int) (*BlockSnapshot, error
 	// Get block snapshot from db
 	bs, err := loadBlockSnapshot(sb.db, blockNumber)
 	if err != nil {
-		return nil, fmt.Errorf("IBFT: requested block snapshot not found", "err", err)
+		return nil, fmt.Errorf("IBFT: requested block snapshot not found: %v", err)
 	}
 	return bs, nil
 }

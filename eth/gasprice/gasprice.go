@@ -271,12 +271,10 @@ func (oracle *Oracle) getBlockValues(ctx context.Context, signer types.Signer, b
 
 	var prices []*big.Int
 	for _, tx := range sorter.txs {
-		tip := new(big.Int)
 		if tx.Type() == types.PriorityTxType {
 			continue // do not include ANY priority tx in GPO fee suggestion calculations. For now, have the GPO cater more so for the average person, rather than a priority sender (who only competes with other priority senders). When we give priority keys out to third parties eventually, we can recode the GPO to give different suggestions dependng on priority status
-		} else {
-			tip, _ = tx.EffectiveGasTip(block.BaseFee())
 		}
+		tip, _ := tx.EffectiveGasTip(block.BaseFee())
 		if ignoreUnder != nil && tip.Cmp(ignoreUnder) == -1 {
 			continue
 		}

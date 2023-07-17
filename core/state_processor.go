@@ -94,7 +94,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	if tx.Type() == types.PriorityTxType {
-		transactor, found := bc.Engine().GetPriorityTransactorByKey(blockNumber.Sub(blockNumber, common.Big1), msg.PrioritySenderPubkey())
+		transactor, found := bc.Engine().GetPriorityTransactorByKey(new(big.Int).Sub(blockNumber, common.Big1), msg.PrioritySenderPubkey())
 		if !found {
 			return nil, errBadPriorityKey
 		}
