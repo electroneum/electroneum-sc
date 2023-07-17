@@ -32,8 +32,14 @@ var ErrInvalidChainId = errors.New("invalid chain id for signer")
 // sigCache is used to cache the derived sender and contains
 // the signer used to derive it.
 type sigCache struct {
+	signer Signer
+	from   common.Address
+}
+
+// prioritySigCache is used to cache the derived sender and contains
+// the signer used to derive it.
+type prioritySigCache struct {
 	signer         Signer
-	from           common.Address
 	priorityPubkey common.PriorityPubkey
 }
 
@@ -150,12 +156,12 @@ func Sender(signer Signer, tx *Transaction) (common.Address, error) { //NB *** e
 
 func PrioritySenderPubkey(signer Signer, tx *Transaction) (common.PriorityPubkey, error) { //NB *** eth does not actually have a from field in the transaction. from is derived from the signature itself, hence sender is essentially a way of both verifying a signature and getting the sender all in one
 	if sc := tx.priorityPubkey.Load(); sc != nil {
-		sigCache := sc.(sigCache)
+		prioritySigCache := sc.(prioritySigCache)
 		// If the signer used to derive from in a previous
 		// call is not the same as used current, invalidate
 		// the cache.
-		if sigCache.signer.Equal(signer) {
-			return sigCache.priorityPubkey, nil
+		if prioritySigCache.signer.Equal(signer) {
+			return prioritySigCache.priorityPubkey, nil
 		}
 	}
 
@@ -163,7 +169,7 @@ func PrioritySenderPubkey(signer Signer, tx *Transaction) (common.PriorityPubkey
 	if err != nil {
 		return common.PriorityPubkey{}, err
 	}
-	tx.from.Store(sigCache{signer: signer, priorityPubkey: pub})
+	tx.priorityPubkey.Store(prioritySigCache{signer: signer, priorityPubkey: pub})
 	return pub, nil
 }
 
