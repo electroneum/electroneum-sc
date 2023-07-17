@@ -767,8 +767,8 @@ func (sb *Backend) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, p
 		return common.PriorityTransactor{}, false
 	}
 	//todo: bring transactor height check logic inside here
-	transactors, ok := blockSnapshot.Data.PriorityTransactors[pkey]
-	return transactors, ok
+	transactor, ok := blockSnapshot.Data.PriorityTransactors[pkey]
+	return transactor, ok
 }
 
 //todo: bring transactor height check logic inside here
