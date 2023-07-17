@@ -125,9 +125,6 @@ type Engine interface {
 	// Close terminates any background threads maintained by the consensus engine.
 	Close() error
 
-	// Get a map of available priority transactors
-	GetPriorityTransactors(blockNumber uint64) (map[common.PriorityPubkey]common.PriorityTransactor, error)
-
 	// Get transactor if given public key is found in the priority transactor contract
 	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }

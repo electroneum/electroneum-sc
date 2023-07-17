@@ -448,6 +448,8 @@ type PriorityTransactor struct {
 // PriorityPubkey represents the 65 byte *uncompressed* secp256k1 pubkey used for priority signatures within txes of PriorityTx type
 type PriorityPubkey [PriorityPubkeyLength]byte
 
+type PriorityTransactorMap map[PriorityPubkey]PriorityTransactor
+
 // IsValid checks if the public key is a valid uncompressed secp256k1 public key and if it lies on the secp256k1 curve
 func (p PriorityPubkey) IsValid() bool {
 	if p[0] != 4 {

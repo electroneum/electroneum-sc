@@ -686,8 +686,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPrioritySignature
 		}
 		// Make sure the priority public key is an allowed one
-		blockNumber := pool.chain.CurrentBlock().Number()
-		transactor, exists := pool.chain.GetPriorityTransactorByKey(blockNumber.Sub(blockNumber, common.Big1), priorityPubkey)
+		transactor, exists := pool.chain.GetPriorityTransactorByKey(new(big.Int).Sub(pool.chain.CurrentBlock().Number(), common.Big1), priorityPubkey)
 		if !exists {
 			return errBadPriorityKey
 		}

@@ -49,23 +49,25 @@ func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database
 	// Allocate the snapshot caches and create the engine
 	recents, _ := lru.NewARC(inmemorySnapshots)
 	recentsEmission, _ := lru.NewARC(inmemoryEmissions)
+	recentsBlockSnapshot, _ := lru.NewARC(inmemoryBlockSnapshots)
 	recentMessages, _ := lru.NewARC(inmemoryPeers)
 	knownMessages, _ := lru.NewARC(inmemoryMessages)
 
 	sb := &Backend{
-		config:           &config,
-		istanbulEventMux: new(event.TypeMux),
-		privateKey:       privateKey,
-		address:          crypto.PubkeyToAddress(privateKey.PublicKey),
-		logger:           log.New(),
-		db:               db,
-		commitCh:         make(chan *types.Block, 1),
-		recents:          recents,
-		recentsEmission:  recentsEmission,
-		candidates:       make(map[common.Address]bool),
-		coreStarted:      false,
-		recentMessages:   recentMessages,
-		knownMessages:    knownMessages,
+		config:               &config,
+		istanbulEventMux:     new(event.TypeMux),
+		privateKey:           privateKey,
+		address:              crypto.PubkeyToAddress(privateKey.PublicKey),
+		logger:               log.New(),
+		db:                   db,
+		commitCh:             make(chan *types.Block, 1),
+		recents:              recents,
+		recentsEmission:      recentsEmission,
+		recentsBlockSnapshot: recentsBlockSnapshot,
+		candidates:           make(map[common.Address]bool),
+		coreStarted:          false,
+		recentMessages:       recentMessages,
+		knownMessages:        knownMessages,
 	}
 
 	sb.qbftEngine = qbftengine.NewEngine(sb.config, sb.address, sb.Sign)
@@ -110,6 +112,8 @@ type Backend struct {
 	recents *lru.ARCCache
 	// Emission for recent blocks
 	recentsEmission *lru.ARCCache
+	// Block Snapshot for recent blocks
+	recentsBlockSnapshot *lru.ARCCache
 
 	// event subscription for ChainHeadEvent event
 	broadcaster consensus.Broadcaster

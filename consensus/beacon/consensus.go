@@ -377,10 +377,6 @@ func (c *Beacon) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
 
-func (c *Beacon) GetPriorityTransactors(blockNumber uint64) (map[common.PriorityPubkey]common.PriorityTransactor, error) {
-	return make(map[common.PriorityPubkey]common.PriorityTransactor), nil
-}
-
 func (c *Beacon) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }
