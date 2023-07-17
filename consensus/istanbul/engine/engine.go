@@ -382,7 +382,7 @@ func (e *Engine) SealHash(header *types.Header) common.Hash {
 }
 
 func (e *Engine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
-	return new(big.Int)
+	return istanbulcommon.DefaultDifficulty
 }
 
 func (e *Engine) Validators(header *types.Header) ([]common.Address, error) {

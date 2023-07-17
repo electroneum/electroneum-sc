@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -232,8 +233,13 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		// correct value.
 		if b.header.Difficulty == nil {
 			if config.TerminalTotalDifficulty == nil {
-				// Clique chain
-				b.header.Difficulty = big.NewInt(2)
+				if config.IBFT != nil {
+					// IBFT chain
+					b.header.Difficulty = istanbulcommon.DefaultDifficulty
+				} else {
+					// Clique chain
+					b.header.Difficulty = big.NewInt(2)
+				}
 			} else {
 				// Post-merge chain
 				b.header.Difficulty = big.NewInt(0)
