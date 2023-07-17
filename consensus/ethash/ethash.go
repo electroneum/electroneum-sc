@@ -703,6 +703,6 @@ func (ethash *Ethash) Protocol() consensus.Protocol {
 	return consensus.EthProtocol
 }
 
-func (ethash *Ethash) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (ethash *Ethash) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }

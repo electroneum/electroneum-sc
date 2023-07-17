@@ -158,7 +158,7 @@ type blockChain interface {
 
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
 
-	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
+	GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
@@ -686,7 +686,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPrioritySignature
 		}
 		// Make sure the priority public key is an allowed one
-		transactor, exists := pool.chain.GetPriorityTransactorByKey(new(big.Int).Sub(pool.chain.CurrentBlock().Number(), common.Big1), priorityPubkey)
+		transactor, exists := pool.chain.GetPriorityTransactorbyKeyForNewBlock(new(big.Int).Sub(pool.chain.CurrentBlock().Number(), common.Big1), priorityPubkey)
 		if !exists {
 			return errBadPriorityKey
 		}

@@ -81,7 +81,7 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) even
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *testBlockChain) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (bc *testBlockChain) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }
 

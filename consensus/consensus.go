@@ -126,7 +126,7 @@ type Engine interface {
 	Close() error
 
 	// Get transactor if given public key is found in the priority transactor contract
-	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
+	GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }
 
 // Handler should be implemented is the consensus needs to handle and send peer's message

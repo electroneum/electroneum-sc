@@ -749,6 +749,6 @@ func (c *Clique) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
 
-func (c *Clique) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (c *Clique) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }

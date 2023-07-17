@@ -761,16 +761,17 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 	return nil
 }
 
-func (sb *Backend) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	blockSnapshot, err := sb.getBlockSnapshot(blockNumber)
+func (sb *Backend) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	blockSnapshot, err := sb.getBlockSnapshot(new(big.Int).Sub(blockNumber, common.Big1))
 	if err != nil {
 		return common.PriorityTransactor{}, false
 	}
+	//todo: bring transactor height check logic inside here
 	transactors, ok := blockSnapshot.Data.PriorityTransactors[pkey]
 	return transactors, ok
 }
 
-// GetPriorityTransactorsMapAtHeight This does NOT filter the valid transactors for a given height, only retrieves the full list correct to a given height
+//todo: bring transactor height check logic inside here
 func (sb *Backend) GetPriorityTransactorsMapAtHeight(blockNumber *big.Int) (common.PriorityTransactorMap, error) {
 	priorityContractAddr, _ := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
 	priorityTransactors := make(common.PriorityTransactorMap)

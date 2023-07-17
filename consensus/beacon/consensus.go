@@ -377,6 +377,6 @@ func (c *Beacon) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
 
-func (c *Beacon) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (c *Beacon) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }

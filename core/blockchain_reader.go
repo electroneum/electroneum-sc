@@ -367,10 +367,10 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
-// GetPriorityTransactorByKey retrieves the transactor if present in the
+// GetPriorityTransactorbyKeyForNewBlock retrieves the transactor if present in the
 // priority transactors contract and within block start/end height
-func (bc *BlockChain) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	return bc.Engine().GetPriorityTransactorByKey(blockNumber, pkey)
+func (bc *BlockChain) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	return bc.Engine().GetPriorityTransactorbyKeyForNewBlock(blockNumber, pkey)
 }
 
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.
