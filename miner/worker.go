@@ -1092,15 +1092,15 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		}
 	}
 
-	if w.config.PrioritiseElectroneum {
-		priorityTxs := w.eth.TxPool().PendingPriority(true)
-		for _, account := range w.eth.TxPool().Locals() {
-			if txs := priorityTxs[account]; len(txs) > 0 {
-				delete(priorityTxs, account)
-				localTxs[account] = txs
-			}
+	priorityTxs := w.eth.TxPool().PendingPriority(true)
+	for _, account := range w.eth.TxPool().Locals() {
+		if txs := priorityTxs[account]; len(txs) > 0 {
+			delete(priorityTxs, account)
+			localTxs[account] = txs
 		}
+	}
 
+	if w.config.PrioritiseElectroneum {
 		// By default the miner prioritises their own (local) transactions and then moves onto everyone else's (remote) tx
 		// if --miner.PrioritiseElectroneum flag is present, electroneumTxs take priority over both local & remote
 		if len(priorityTxs) > 0 {
@@ -1108,6 +1108,12 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			if err := w.commitTransactions(env, txs, interrupt); err != nil {
 				return err
 			}
+		}
+	} else {
+		// If --miner.PrioritiseElectroneum flag is *NOT* present, put them in the remoteTxs list
+		for account, list := range priorityTxs {
+			delete(priorityTxs, account)
+			remoteTxs[account] = list
 		}
 	}
 
