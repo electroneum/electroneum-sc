@@ -690,9 +690,6 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		if !exists {
 			return errBadPriorityKey
 		}
-		if !(transactor.StartHeight.Cmp(pool.chain.CurrentBlock().Number()) <= 0 && transactor.EndHeight.Cmp(pool.chain.CurrentBlock().Number()) >= 0){
-			return errPriorityTransactorNotRegisteredForHeight
-		}
 		isGasWaiver = transactor.IsGasPriceWaiver
 		// Assure transaction gasprice, fee and tip are 0 for gas waiver transactors
 		if isGasWaiver && !tx.HasZeroFee() {

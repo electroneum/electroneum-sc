@@ -98,9 +98,6 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 		if !found {
 			return nil, errBadPriorityKey
 		}
-		if !(transactor.StartHeight.Cmp(blockNumber) <= 0 && transactor.EndHeight.Cmp(blockNumber) >= 0){
-			return nil, errPriorityTransactorNotRegisteredForHeight
-		}
 		if transactor.IsGasPriceWaiver && !tx.HasZeroFee() {
 			return nil, errHasGasPriceWaiverButNonZeroGasPrice
 		}

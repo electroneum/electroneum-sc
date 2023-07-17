@@ -443,8 +443,6 @@ func (ma *MixedcaseAddress) Original() string {
 type PriorityTransactor struct {
 	IsGasPriceWaiver bool
 	EntityName       string
-	StartHeight      *big.Int
-	EndHeight		 *big.Int
 }
 
 // PriorityPubkey represents the 65 byte *uncompressed* secp256k1 pubkey used for priority signatures within txes of PriorityTx type

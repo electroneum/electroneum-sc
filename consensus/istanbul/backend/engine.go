@@ -771,7 +771,7 @@ func (sb *Backend) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, p
 	return transactor, ok
 }
 
-//todo: bring transactor height check logic inside here
+// todo: bring transactor height check logic inside here
 func (sb *Backend) GetPriorityTransactorsMapAtHeight(blockNumber *big.Int) (common.PriorityTransactorMap, error) {
 	priorityContractAddr, _ := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
 	priorityTransactors := make(common.PriorityTransactorMap)
@@ -781,13 +781,14 @@ func (sb *Backend) GetPriorityTransactorsMapAtHeight(blockNumber *big.Int) (comm
 		if err != nil {
 			return nil, err
 		}
+		number := blockNumber.Uint64()
 		// Convert contract call return to our priority transactors data structure
 		for _, t := range transactors {
+			if t.StartHeight <= number && t.EndHeight >= number {
 				priorityTransactors[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
 					IsGasPriceWaiver: t.IsGasPriceWaiver,
 					EntityName:       t.Name,
-					StartHeight: new(big.Int).SetUint64(t.StartHeight),
-					EndHeight:  new(big.Int).SetUint64(t.EndHeight),
+				}
 			}
 		}
 	}
