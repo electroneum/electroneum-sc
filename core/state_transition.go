@@ -252,26 +252,11 @@ func (st *StateTransition) preCheck() error {
 				return fmt.Errorf("%w: address %v, maxPriorityFeePerGas: %s, maxFeePerGas: %s", ErrTipAboveFeeCap,
 					st.msg.From().Hex(), st.gasTipCap, st.gasFeeCap)
 			}
-
-			// Sanity check that the priority key exists in the priority key map and that the gas price fields are appropriate given the key's waiver status.
-			hasGasPriceWaiver := false
-			if st.msg.PrioritySenderPubkey() != (common.PriorityPubkey{}) {
-				transactor, found := st.evm.Context.PriorityTransactors[st.msg.PrioritySenderPubkey()]
-				if !found {
-					return fmt.Errorf("%w: Bad priority pubkey %v", errBadPriorityKey, st.msg.PrioritySenderPubkey())
-				}
-				if transactor.IsGasPriceWaiver && (st.msg.GasPrice().Cmp(common.Big0) != 0 || st.msg.GasFeeCap().Cmp(common.Big0) != 0 || st.msg.GasTipCap().Cmp(common.Big0) != 0) {
-					return fmt.Errorf("%w: Priority Key transaction has incorrect gas price fields %v", errHasGasPriceWaiverButNonZeroGasPrice, st.msg.PrioritySenderPubkey())
-				}
-				if !transactor.IsGasPriceWaiver && ((!(st.msg.GasFeeCap().Cmp(common.Big0) > 0)) || st.msg.GasPrice().Cmp(common.Big0) != 0) { //no need to check tip as this can be zero even without price waiver, however check feecap is positive and nonzero and gasprice is zero
-					return fmt.Errorf("%w: Priority Key transaction has incorrect gas price fields %v", errNoGasPriceWaiver, st.msg.PrioritySenderPubkey())
-				}
-				hasGasPriceWaiver = transactor.IsGasPriceWaiver
-			}
-
 			// This will panic if baseFee is nil, but basefee presence is verified
 			// as part of header validation.
-			if !hasGasPriceWaiver && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
+			//
+			// st.msg.PrioritySenderPubkey() is already validated at this point
+			if st.msg.PrioritySenderPubkey() == (common.PriorityPubkey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
 			}

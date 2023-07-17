@@ -93,6 +93,19 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 }
 
 func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
+	if tx.Type() == types.PriorityTxType {
+		transactor, found := bc.Engine().GetPriorityTransactorByKey(blockNumber.Sub(blockNumber, common.Big1), msg.PrioritySenderPubkey())
+		if !found {
+			return nil, errBadPriorityKey
+		}
+		if transactor.IsGasPriceWaiver && !tx.HasZeroFee() {
+			return nil, errHasGasPriceWaiverButNonZeroGasPrice
+		}
+		if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
+			return nil, errNoGasPriceWaiver
+		}
+	}
+
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
 	evm.Reset(txContext, statedb)

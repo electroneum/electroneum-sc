@@ -124,6 +124,12 @@ type Engine interface {
 
 	// Close terminates any background threads maintained by the consensus engine.
 	Close() error
+
+	// Get a map of available priority transactors
+	GetPriorityTransactors(blockNumber uint64) (map[common.PriorityPubkey]common.PriorityTransactor, error)
+
+	// Get transactor if given public key is found in the priority transactor contract
+	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }
 
 // Handler should be implemented is the consensus needs to handle and send peer's message
@@ -155,10 +161,4 @@ type Istanbul interface {
 
 	// Stop stops the engine
 	Stop() error
-
-	// Get a map of available priority transactors
-	GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor
-
-	// Get transactor if given public key is found in the priority transactor contract
-	GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
 }

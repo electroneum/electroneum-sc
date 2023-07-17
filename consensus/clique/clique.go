@@ -748,3 +748,11 @@ func encodeSigHeader(w io.Writer, header *types.Header) {
 func (c *Clique) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
+
+func (c *Clique) GetPriorityTransactors(blockNumber uint64) (map[common.PriorityPubkey]common.PriorityTransactor, error) {
+	return make(map[common.PriorityPubkey]common.PriorityTransactor), nil
+}
+
+func (c *Clique) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	return common.PriorityTransactor{}, false
+}

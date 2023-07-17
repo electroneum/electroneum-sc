@@ -116,9 +116,6 @@ type Backend struct {
 
 	recentMessages *lru.ARCCache // the cache of peer's messages
 	knownMessages  *lru.ARCCache // the cache of self messages
-
-	// Cache the priority transactors map
-	priorityTransactors map[common.PriorityPubkey]common.PriorityTransactor
 }
 
 func (sb *Backend) Engine() istanbul.Engine {

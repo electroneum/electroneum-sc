@@ -123,7 +123,7 @@ func TestGetPriorityTransactorsContractAddress(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c := config.GetPriorityTransactorsContractAddress(big.NewInt(test.blockNumber))
+		c, _ := config.GetPriorityTransactorsContractAddress(big.NewInt(test.blockNumber))
 		if !reflect.DeepEqual(c, test.expectedAddress) {
 			t.Errorf("error mismatch:\nexpected: %v\ngot: %v\n", test.expectedAddress, c)
 		}

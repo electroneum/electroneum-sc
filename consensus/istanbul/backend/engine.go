@@ -188,9 +188,6 @@ func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 		state.AddBalance(header.Coinbase, blockReward)
 	}
 
-	// Get the priority transactors from smart contract.
-	sb.GetPriorityTransactors(header.Number)
-
 	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
 }
 
@@ -715,41 +712,39 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 }
 
 func (sb *Backend) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	transactor, exists := sb.GetPriorityTransactors(blockNumber)[pkey]
-	return transactor, exists
+	transactors, err := sb.GetPriorityTransactors(blockNumber.Uint64())
+	if err != nil {
+		return common.PriorityTransactor{}, false
+	}
+	transactorsMap, exists := transactors[pkey]
+	return transactorsMap, exists
 }
 
-func (sb *Backend) GetPriorityTransactors(blockNumber *big.Int) map[common.PriorityPubkey]common.PriorityTransactor {
-	priorityContractAddr := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
+func (sb *Backend) GetPriorityTransactors(blockNumber uint64) (map[common.PriorityPubkey]common.PriorityTransactor, error) {
+	priorityContractAddr, _ := sb.config.GetPriorityTransactorsContractAddress(new(big.Int).SetUint64(blockNumber))
+	priorityTransactors := make(map[common.PriorityPubkey]common.PriorityTransactor)
 	if priorityContractAddr != (common.Address{}) {
-		number := blockNumber.Uint64()
-
 		// Get priority transactors from the start of the epoch
-		transactors, err := sb.getPriorityTransactorsFromContract(new(big.Int).SetUint64(number), priorityContractAddr)
+		transactors, err := sb.getPriorityTransactorsFromContract(new(big.Int).SetUint64(blockNumber), priorityContractAddr)
 		if err != nil {
-			return make(map[common.PriorityPubkey]common.PriorityTransactor)
+			return nil, err
 		}
-		// Clear cache
-		sb.priorityTransactors = make(map[common.PriorityPubkey]common.PriorityTransactor)
 		// Convert contract call return to our priority transactors data structure
 		for _, t := range transactors {
-			if t.StartHeight <= number && t.EndHeight >= number {
-				sb.priorityTransactors[common.StringToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
-					IsGasPriceWaiver: t.IsGasPriceWaiver,
-					EntityName:       t.Name,
-				}
+			priorityTransactors[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
+				IsGasPriceWaiver: t.IsGasPriceWaiver,
+				EntityName:       t.Name,
 			}
 		}
-		return sb.priorityTransactors
 	}
-	return make(map[common.PriorityPubkey]common.PriorityTransactor)
+	return priorityTransactors, nil
 }
 
 func (sb *Backend) getPriorityTransactorsFromContract(blockNumber *big.Int, contractAddress common.Address) ([]priorityTransactorsContract.ETNPriorityTransactorsInterfaceTransactorMeta, error) {
 	log.Trace("IBFT: Getting list of priority transactors from contract", "address", contractAddress, "client", sb.config.Client)
 	contractCaller, err := priorityTransactorsContract.NewETNPriorityTransactorsInterfaceCaller(contractAddress, sb.config.Client)
 	if err != nil {
-		return nil, fmt.Errorf("IBFT: invalid smart contract: %w", err)
+		return nil, fmt.Errorf("IBFT: invalid PriorityTransactors smart contract: %w", err)
 	}
 	opts := bind.CallOpts{
 		Pending:     false,
@@ -757,7 +752,7 @@ func (sb *Backend) getPriorityTransactorsFromContract(blockNumber *big.Int, cont
 	}
 	transactors, err := contractCaller.GetTransactors(&opts)
 	if err != nil {
-		log.Error("IBFT: invalid priority transactors smart contract", "err", err)
+		log.Error("IBFT: unnable to call PriorityTransactors smart contract", "address", contractAddress, "err", err)
 		return nil, err
 	}
 	return transactors, nil

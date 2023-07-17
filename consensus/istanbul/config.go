@@ -139,15 +139,15 @@ var DefaultConfig = &Config{
 	AllowedFutureBlockTime: 5,
 }
 
-func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {
+func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) (common.Address, *big.Int) {
 	if c.Transitions != nil {
 		for i := len(c.Transitions) - 1; i >= 0; i-- {
 			if c.Transitions[i].Block.Cmp(blockNumber) <= 0 && c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
-				return c.Transitions[i].PriorityTransactorsContractAddress
+				return c.Transitions[i].PriorityTransactorsContractAddress, big.NewInt(c.Transitions[i].Block.Int64())
 			}
 		}
 	}
-	return c.PriorityTransactorsContractAddress
+	return c.PriorityTransactorsContractAddress, big.NewInt(1)
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {

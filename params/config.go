@@ -121,7 +121,13 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
+		Transitions: []Transition{
+			{
+				Block:                              big.NewInt(2598419),
+				PriorityTransactorsContractAddress: common.HexToAddress("0x76A28f7D93dB786A8f72380F02f542e49dFFeFb7"),
+			},
+		},
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced

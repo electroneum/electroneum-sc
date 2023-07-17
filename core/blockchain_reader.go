@@ -369,12 +369,8 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 
 // GetPriorityTransactorByKey retrieves the transactor if present in the
 // priority transactors contract and within block start/end height
-func (bc *BlockChain) GetPriorityTransactorByKey(pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	if istanbulEngine, ok := bc.Engine().(consensus.Istanbul); ok {
-		return istanbulEngine.GetPriorityTransactorByKey(bc.CurrentBlock().Number(), pkey)
-	} else {
-		return common.PriorityTransactor{}, false
-	}
+func (bc *BlockChain) GetPriorityTransactorByKey(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	return bc.Engine().GetPriorityTransactorByKey(blockNumber, pkey)
 }
 
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.
