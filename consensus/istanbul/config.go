@@ -20,7 +20,6 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/naoina/toml"
@@ -128,7 +127,6 @@ type Config struct {
 	AllowedFutureBlockTime             uint64              `toml:",omitempty"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
 	Transitions                        []params.Transition // Transition data
 	PriorityTransactorsContractAddress common.Address      // PriorityTransactors contract address
-	Client                             bind.ContractCaller `toml:",omitempty"` // rpc client for contract calls
 }
 
 var DefaultConfig = &Config{
@@ -137,17 +135,6 @@ var DefaultConfig = &Config{
 	ProposerPolicy:         NewRoundRobinProposerPolicy(),
 	Epoch:                  30000,
 	AllowedFutureBlockTime: 5,
-}
-
-func (c Config) GetPriorityTransactorsContractAddress(blockNumber *big.Int) (common.Address, *big.Int) {
-	if c.Transitions != nil {
-		for i := len(c.Transitions) - 1; i >= 0; i-- {
-			if c.Transitions[i].Block.Cmp(blockNumber) <= 0 && c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
-				return c.Transitions[i].PriorityTransactorsContractAddress, big.NewInt(c.Transitions[i].Block.Int64())
-			}
-		}
-	}
-	return c.PriorityTransactorsContractAddress, big.NewInt(1)
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {

@@ -27,6 +27,7 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/event"
+	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
@@ -367,10 +368,22 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
-// GetPriorityTransactorbyKeyForNewBlock retrieves the transactor if present in the
+// GetPriorityTransactorByKeyForBlock retrieves the transactor if present in the
 // priority transactors contract and within block start/end height
-func (bc *BlockChain) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	return bc.Engine().GetPriorityTransactorbyKeyForNewBlock(blockNumber, pkey)
+func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+	// Create a new context to be used in the EVM environment
+	header := bc.GetHeaderByNumber(blockNumber.Uint64())
+	blockContext := NewEVMBlockContext(header, bc, nil)
+
+	statedb, err := bc.StateAt(header.Root)
+	if err != nil {
+		log.Warn("GetPriorityTransactorByKeyForBlock(): unable to get state", "blocknumbe", blockNumber, "err", err)
+		return common.PriorityTransactor{}, false
+	}
+
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, bc.chainConfig, bc.vmConfig)
+	transactor, found := getPriorityTransactorByKey(blockNumber, pkey, bc.chainConfig, vmenv)
+	return transactor, found
 }
 
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.

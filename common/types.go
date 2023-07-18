@@ -500,6 +500,14 @@ func (p PriorityPubkey) String() string {
 	return string(p.hex())
 }
 
+func (p PriorityPubkey) ToHexString() string {
+	return string(p.hex())
+}
+
+func (p PriorityPubkey) ToPaddedHexString() string {
+	return string(p.hex()[2:])
+}
+
 func (p PriorityPubkey) hex() []byte {
 	var buf [len(p)*2 + 2]byte
 	copy(buf[:2], "0x")

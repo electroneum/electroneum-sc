@@ -67,7 +67,8 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		PriorityTransactorsContractAddress: common.Address{},
 	}
 
 	// StagenetChainConfig is the chain parameters to run a node on the test network.
@@ -94,7 +95,8 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		PriorityTransactorsContractAddress: common.Address{},
 	}
 
 	// TestnetChainConfig is the chain parameters to run a node on the test network.
@@ -121,7 +123,8 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
+		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
+		PriorityTransactorsContractAddress: common.Address{},
 		Transitions: []Transition{
 			{
 				Block:                              big.NewInt(2598419),
@@ -135,16 +138,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), nil}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), nil}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), common.Address{}, nil}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int), false)
 )
 
@@ -235,7 +238,9 @@ type ChainConfig struct {
 	Clique *CliqueConfig `json:"clique,omitempty"`
 	IBFT   *IBFTConfig   `json:"ibft,omitempty"`
 
-	GenesisETN  *big.Int     `json:"genesisETN,omitempty"`
+	GenesisETN                         *big.Int       `json:"genesisETN,omitempty"`
+	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
+
 	Transitions []Transition `json:"transitions,omitempty"` // Transition config based on the block number
 }
 
@@ -260,12 +265,11 @@ func (c *CliqueConfig) String() string {
 
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
-	EpochLength                        uint64         `json:"epochlength"`                        // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds"`                 // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds"`              // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy                     uint64         `json:"policy"`                             // The policy for proposer selection
-	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime"`             //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
-	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
+	EpochLength            uint64 `json:"epochlength"`            // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds     uint64 `json:"blockperiodseconds"`     // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds  uint64 `json:"requesttimeoutseconds"`  // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	ProposerPolicy         uint64 `json:"policy"`                 // The policy for proposer selection
+	AllowedFutureBlockTime uint64 `json:"allowedfutureblocktime"` //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 }
 
 func (c IBFTConfig) String() string {
@@ -514,6 +518,17 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 		return newCompatError("Merge Start fork block", c.MergeForkBlock, newcfg.MergeForkBlock)
 	}
 	return nil
+}
+
+func (c *ChainConfig) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {
+	if c.Transitions != nil {
+		for i := len(c.Transitions) - 1; i >= 0; i-- {
+			if c.Transitions[i].Block.Cmp(blockNumber) <= 0 && c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
+				return c.Transitions[i].PriorityTransactorsContractAddress
+			}
+		}
+	}
+	return c.PriorityTransactorsContractAddress
 }
 
 // isForkIncompatible returns true if a fork scheduled at s1 cannot be rescheduled to

@@ -22,14 +22,12 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/electroneum/electroneum-sc/accounts/abi/bind"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/math"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
-	priorityTransactorsContract "github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/ethdb"
@@ -188,15 +186,6 @@ func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 		blockReward := sb.GetBaseBlockReward(chain, header, nil)
 		state.AddBalance(header.Coinbase, blockReward)
 	}
-
-	prevBlockNumber := new(big.Int).Sub(header.Number, common.Big1)
-	transactors, err := sb.GetPriorityTransactorsMapAtHeight(prevBlockNumber)
-	if err != nil {
-		// This should never happen. It's in place so that we can catch a potential issue during testing.
-		panic("IBFT: Finalize(): cannot get priority transactors from smart contract")
-	}
-	sb.storeBlockSnapshot(prevBlockNumber, BlockSnapshotData{PriorityTransactors: transactors})
-
 	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
 }
 
@@ -365,47 +354,6 @@ func addrsToString(addrs []common.Address) []string {
 		strs[i] = addr.String()
 	}
 	return strs
-}
-
-func (sb *Backend) blockSnapshotLogger(blockSnapshot *BlockSnapshot) log.Logger {
-	return sb.logger.New(
-		"blockSnapshot.number", blockSnapshot.Number,
-		"blockSnapshot.data.prioritytransactors", blockSnapshot.Data.PriorityTransactors,
-	)
-}
-
-func (sb *Backend) storeBlockSnapshot(blockNumber *big.Int, data BlockSnapshotData) (*BlockSnapshot, error) {
-	// Check if block snapshot exists in cache
-	if _, ok := sb.recentsBlockSnapshot.Get(blockNumber); ok {
-		return nil, fmt.Errorf("IBFT: block snapshot found in cache")
-	}
-	// Check if block snapshot exists in db
-	if _, err := loadBlockSnapshot(sb.db, blockNumber); err == nil {
-		return nil, fmt.Errorf("IBFT: block snapshot found in db")
-	}
-
-	// Create the block snapshot, add it to recents cache and store in db
-	blockSnapshot := newBlockSnapshot(blockNumber, data)
-	sb.recentsBlockSnapshot.Add(blockNumber, blockSnapshot)
-	sb.blockSnapshotLogger(blockSnapshot).Debug("IBFT: store block snapshot to database")
-	if err := blockSnapshot.store(sb.db); err != nil {
-		sb.blockSnapshotLogger(blockSnapshot).Error("IBFT: failed to store block snapshot to database", "err", err)
-		return nil, err
-	}
-	return blockSnapshot, nil
-}
-
-func (sb *Backend) getBlockSnapshot(blockNumber *big.Int) (*BlockSnapshot, error) {
-	// Get block snapshot from cache
-	if bs, ok := sb.recentsBlockSnapshot.Get(blockNumber); ok {
-		return bs.(*BlockSnapshot), nil
-	}
-	// Get block snapshot from db
-	bs, err := loadBlockSnapshot(sb.db, blockNumber)
-	if err != nil {
-		return nil, fmt.Errorf("IBFT: requested block snapshot not found: %v", err)
-	}
-	return bs, nil
 }
 
 func (sb *Backend) emissionLogger(emission *Emission) log.Logger {
@@ -763,56 +711,4 @@ func (sb *Backend) snapApplyHeader(snap *Snapshot, header *types.Header) error {
 		delete(snap.Tally, candidate)
 	}
 	return nil
-}
-
-func (sb *Backend) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	blockSnapshot, err := sb.getBlockSnapshot(new(big.Int).Sub(blockNumber, common.Big1))
-	if err != nil {
-		return common.PriorityTransactor{}, false
-	}
-	//todo: bring transactor height check logic inside here
-	transactor, ok := blockSnapshot.Data.PriorityTransactors[pkey]
-	return transactor, ok
-}
-
-// todo: bring transactor height check logic inside here
-func (sb *Backend) GetPriorityTransactorsMapAtHeight(blockNumber *big.Int) (common.PriorityTransactorMap, error) {
-	priorityContractAddr, _ := sb.config.GetPriorityTransactorsContractAddress(blockNumber)
-	priorityTransactors := make(common.PriorityTransactorMap)
-	if priorityContractAddr != (common.Address{}) {
-		// Get priority transactors from the start of the epoch
-		transactors, err := sb.getPriorityTransactorsFromContract(blockNumber, priorityContractAddr)
-		if err != nil {
-			return nil, err
-		}
-		number := blockNumber.Uint64()
-		// Convert contract call return to our priority transactors data structure
-		for _, t := range transactors {
-			if t.StartHeight <= number && t.EndHeight >= number {
-				priorityTransactors[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
-					IsGasPriceWaiver: t.IsGasPriceWaiver,
-					EntityName:       t.Name,
-				}
-			}
-		}
-	}
-	return priorityTransactors, nil
-}
-
-func (sb *Backend) getPriorityTransactorsFromContract(blockNumber *big.Int, contractAddress common.Address) ([]priorityTransactorsContract.ETNPriorityTransactorsInterfaceTransactorMeta, error) {
-	log.Trace("IBFT: Getting list of priority transactors from contract", "address", contractAddress, "client", sb.config.Client)
-	contractCaller, err := priorityTransactorsContract.NewETNPriorityTransactorsInterfaceCaller(contractAddress, sb.config.Client)
-	if err != nil {
-		return nil, fmt.Errorf("IBFT: invalid PriorityTransactors smart contract: %w", err)
-	}
-	opts := bind.CallOpts{
-		Pending:     false,
-		BlockNumber: blockNumber,
-	}
-	transactors, err := contractCaller.GetTransactors(&opts)
-	if err != nil {
-		log.Error("IBFT: unnable to call PriorityTransactors smart contract", "address", contractAddress, "err", err)
-		return nil, err
-	}
-	return transactors, nil
 }

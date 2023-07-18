@@ -39,7 +39,7 @@ type ETNPriorityTransactorsInterfaceTransactorMeta struct {
 
 // ETNPriorityTransactorsInterfaceMetaData contains all meta data concerning the ETNPriorityTransactorsInterface contract.
 var ETNPriorityTransactorsInterfaceMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"name\":\"getTransactors\",\"outputs\":[{\"components\":[{\"internalType\":\"uint64\",\"name\":\"startHeight\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"endHeight\",\"type\":\"uint64\"},{\"internalType\":\"bool\",\"name\":\"isGasPriceWaiver\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"}],\"internalType\":\"structETNPriorityTransactorsInterface.TransactorMeta[]\",\"name\":\"\",\"type\":\"tuple[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_publicKey\",\"type\":\"string\"}],\"name\":\"getTransactorByKey\",\"outputs\":[{\"components\":[{\"internalType\":\"uint64\",\"name\":\"startHeight\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"endHeight\",\"type\":\"uint64\"},{\"internalType\":\"bool\",\"name\":\"isGasPriceWaiver\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"}],\"internalType\":\"structETNPriorityTransactorsInterface.TransactorMeta\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getTransactors\",\"outputs\":[{\"components\":[{\"internalType\":\"uint64\",\"name\":\"startHeight\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"endHeight\",\"type\":\"uint64\"},{\"internalType\":\"bool\",\"name\":\"isGasPriceWaiver\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"}],\"internalType\":\"structETNPriorityTransactorsInterface.TransactorMeta[]\",\"name\":\"\",\"type\":\"tuple[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // ETNPriorityTransactorsInterfaceABI is the input ABI used to generate the binding from.
@@ -186,6 +186,37 @@ func (_ETNPriorityTransactorsInterface *ETNPriorityTransactorsInterfaceTransacto
 // Transact invokes the (paid) contract method with params as input values.
 func (_ETNPriorityTransactorsInterface *ETNPriorityTransactorsInterfaceTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _ETNPriorityTransactorsInterface.Contract.contract.Transact(opts, method, params...)
+}
+
+// GetTransactorByKey is a free data retrieval call binding the contract method 0x41e2829b.
+//
+// Solidity: function getTransactorByKey(string _publicKey) view returns((uint64,uint64,bool,string,string))
+func (_ETNPriorityTransactorsInterface *ETNPriorityTransactorsInterfaceCaller) GetTransactorByKey(opts *bind.CallOpts, _publicKey string) (ETNPriorityTransactorsInterfaceTransactorMeta, error) {
+	var out []interface{}
+	err := _ETNPriorityTransactorsInterface.contract.Call(opts, &out, "getTransactorByKey", _publicKey)
+
+	if err != nil {
+		return *new(ETNPriorityTransactorsInterfaceTransactorMeta), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ETNPriorityTransactorsInterfaceTransactorMeta)).(*ETNPriorityTransactorsInterfaceTransactorMeta)
+
+	return out0, err
+
+}
+
+// GetTransactorByKey is a free data retrieval call binding the contract method 0x41e2829b.
+//
+// Solidity: function getTransactorByKey(string _publicKey) view returns((uint64,uint64,bool,string,string))
+func (_ETNPriorityTransactorsInterface *ETNPriorityTransactorsInterfaceSession) GetTransactorByKey(_publicKey string) (ETNPriorityTransactorsInterfaceTransactorMeta, error) {
+	return _ETNPriorityTransactorsInterface.Contract.GetTransactorByKey(&_ETNPriorityTransactorsInterface.CallOpts, _publicKey)
+}
+
+// GetTransactorByKey is a free data retrieval call binding the contract method 0x41e2829b.
+//
+// Solidity: function getTransactorByKey(string _publicKey) view returns((uint64,uint64,bool,string,string))
+func (_ETNPriorityTransactorsInterface *ETNPriorityTransactorsInterfaceCallerSession) GetTransactorByKey(_publicKey string) (ETNPriorityTransactorsInterfaceTransactorMeta, error) {
+	return _ETNPriorityTransactorsInterface.Contract.GetTransactorByKey(&_ETNPriorityTransactorsInterface.CallOpts, _publicKey)
 }
 
 // GetTransactors is a free data retrieval call binding the contract method 0x2d26b309.

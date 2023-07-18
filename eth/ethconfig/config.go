@@ -233,7 +233,6 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
 			AllowedFutureBlockTime: 5,
 			Transitions:            chainConfig.Transitions,
-			Client:                 config.Istanbul.Client,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)

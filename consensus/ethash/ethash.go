@@ -34,7 +34,6 @@ import (
 	"unsafe"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
@@ -701,8 +700,4 @@ func SeedHash(block uint64) []byte {
 // Protocol implements consensus.Engine.Protocol
 func (ethash *Ethash) Protocol() consensus.Protocol {
 	return consensus.EthProtocol
-}
-
-func (ethash *Ethash) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	return common.PriorityTransactor{}, false
 }

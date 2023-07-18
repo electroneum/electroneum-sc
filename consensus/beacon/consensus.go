@@ -376,7 +376,3 @@ func IsTTDReached(chain consensus.ChainHeaderReader, parentHash common.Hash, num
 func (c *Beacon) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
-
-func (c *Beacon) GetPriorityTransactorbyKeyForNewBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	return common.PriorityTransactor{}, false
-}
