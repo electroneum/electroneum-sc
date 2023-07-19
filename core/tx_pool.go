@@ -224,6 +224,10 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 		log.Warn("Sanitizing invalid txpool global slots", "provided", conf.GlobalSlots, "updated", DefaultTxPoolConfig.GlobalSlots)
 		conf.GlobalSlots = DefaultTxPoolConfig.GlobalSlots
 	}
+	if conf.PrioritySlots < 1 {
+		log.Warn("Sanitizing invalid txpool priority slots", "provided", conf.PrioritySlots, "updated", DefaultTxPoolConfig.PrioritySlots)
+		conf.PrioritySlots = DefaultTxPoolConfig.PrioritySlots
+	}
 	if conf.AccountQueue < 1 {
 		log.Warn("Sanitizing invalid txpool account queue", "provided", conf.AccountQueue, "updated", DefaultTxPoolConfig.AccountQueue)
 		conf.AccountQueue = DefaultTxPoolConfig.AccountQueue
@@ -231,6 +235,10 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 	if conf.GlobalQueue < 1 {
 		log.Warn("Sanitizing invalid txpool global queue", "provided", conf.GlobalQueue, "updated", DefaultTxPoolConfig.GlobalQueue)
 		conf.GlobalQueue = DefaultTxPoolConfig.GlobalQueue
+	}
+	if conf.PriorityQueue < 1 {
+		log.Warn("Sanitizing invalid txpool priority queue", "provided", conf.PriorityQueue, "updated", DefaultTxPoolConfig.PriorityQueue)
+		conf.PriorityQueue = DefaultTxPoolConfig.PriorityQueue
 	}
 	if conf.Lifetime < 1 {
 		log.Warn("Sanitizing invalid txpool lifetime", "provided", conf.Lifetime, "updated", DefaultTxPoolConfig.Lifetime)

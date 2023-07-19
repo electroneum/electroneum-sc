@@ -373,6 +373,11 @@ var (
 		Usage: "Maximum number of executable transaction slots for all accounts",
 		Value: ethconfig.Defaults.TxPool.GlobalSlots,
 	}
+	TxPoolPrioritySlotsFlag = cli.Uint64Flag{
+		Name:  "txpool.priorityslots",
+		Usage: "Minimum number of executable priority transaction slots guaranteed per account",
+		Value: ethconfig.Defaults.TxPool.PrioritySlots,
+	}
 	TxPoolAccountQueueFlag = cli.Uint64Flag{
 		Name:  "txpool.accountqueue",
 		Usage: "Maximum number of non-executable transaction slots permitted per account",
@@ -382,6 +387,11 @@ var (
 		Name:  "txpool.globalqueue",
 		Usage: "Maximum number of non-executable transaction slots for all accounts",
 		Value: ethconfig.Defaults.TxPool.GlobalQueue,
+	}
+	TxPoolPriorityQueueFlag = cli.Uint64Flag{
+		Name:  "txpool.priorityqueue",
+		Usage: "Maximum number of non-executable priority transaction slots for all accounts",
+		Value: ethconfig.Defaults.TxPool.PriorityQueue,
 	}
 	TxPoolLifetimeFlag = cli.DurationFlag{
 		Name:  "txpool.lifetime",
@@ -1401,11 +1411,17 @@ func setTxPool(ctx *cli.Context, cfg *core.TxPoolConfig) {
 	if ctx.GlobalIsSet(TxPoolGlobalSlotsFlag.Name) {
 		cfg.GlobalSlots = ctx.GlobalUint64(TxPoolGlobalSlotsFlag.Name)
 	}
+	if ctx.GlobalIsSet(TxPoolPrioritySlotsFlag.Name) {
+		cfg.PrioritySlots = ctx.GlobalUint64(TxPoolPrioritySlotsFlag.Name)
+	}
 	if ctx.GlobalIsSet(TxPoolAccountQueueFlag.Name) {
 		cfg.AccountQueue = ctx.GlobalUint64(TxPoolAccountQueueFlag.Name)
 	}
 	if ctx.GlobalIsSet(TxPoolGlobalQueueFlag.Name) {
 		cfg.GlobalQueue = ctx.GlobalUint64(TxPoolGlobalQueueFlag.Name)
+	}
+	if ctx.GlobalIsSet(TxPoolPriorityQueueFlag.Name) {
+		cfg.PriorityQueue = ctx.GlobalUint64(TxPoolPriorityQueueFlag.Name)
 	}
 	if ctx.GlobalIsSet(TxPoolLifetimeFlag.Name) {
 		cfg.Lifetime = ctx.GlobalDuration(TxPoolLifetimeFlag.Name)
