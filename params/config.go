@@ -125,7 +125,7 @@ var (
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
 		PriorityTransactorsContractAddress: common.HexToAddress("0x1ef0959497375a7539e487749584aeb4947b7a90"),
-		Transitions: []Transition{},
+		Transitions:                        []Transition{},
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
