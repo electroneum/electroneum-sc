@@ -124,8 +124,11 @@ func getPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 		if err != nil {
 			return result
 		}
-		unpackResult, _ := contractABI.Unpack(method, output)
-		transactorsMeta, _ := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
+		unpackResult, err := contractABI.Unpack(method, output)
+		if err != nil {
+			return result
+		}
+		transactorsMeta := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
 		for _, t := range *transactorsMeta {
 			// Only add transactors that are within start/end height range
 			if t.StartHeight <= blockNumber.Uint64() && (t.EndHeight >= blockNumber.Uint64() || t.EndHeight == 0) {
@@ -153,8 +156,11 @@ func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PriorityP
 		if err != nil {
 			return common.PriorityTransactor{}, false
 		}
-		unpackResult, _ := contractABI.Unpack(method, output)
-		transactorMeta, _ := abi.ConvertType(unpackResult[0], new(prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
+		unpackResult, err := contractABI.Unpack(method, output)
+		if err != nil {
+			return common.PriorityTransactor{}, false
+		}
+		transactorMeta := abi.ConvertType(unpackResult[0], new(prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
 		// Only add transactors that are within start/end height range
 		if transactorMeta.StartHeight <= blockNumber.Uint64() && (transactorMeta.EndHeight >= blockNumber.Uint64() || transactorMeta.EndHeight == 0) {
 			return common.PriorityTransactor{
