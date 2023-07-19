@@ -39,8 +39,6 @@ var (
 	errBadPriorityKey = errors.New("priority transaction uses a pubkey that is not permitted for priority sending")
 
 	errNoGasPriceWaiver = errors.New("priority sender does not have a gas price waiver but sent a tx with zero gas fee and tip")
-
-	errHasGasPriceWaiverButNonZeroGasPrice = errors.New("priority sender with a gas price waiver erroneously added a gas fee and tip")
 )
 
 // List of evm-call-message pre-checking errors. All state transition messages will

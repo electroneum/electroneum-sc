@@ -691,10 +691,6 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPriorityKey
 		}
 		isGasWaiver = transactor.IsGasPriceWaiver
-		// Assure transaction gasprice, fee and tip are 0 for gas waiver transactors
-		if isGasWaiver && !tx.HasZeroFee() {
-			return errHasGasPriceWaiverButNonZeroGasPrice
-		}
 		// Assure transaction gasprice, fee and tip are > 0 for non gas waiver transactors
 		if !isGasWaiver && tx.HasZeroFee() {
 			return errNoGasPriceWaiver

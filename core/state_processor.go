@@ -88,9 +88,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if !found {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
-			if transactor.IsGasPriceWaiver && !tx.HasZeroFee() {
-				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errHasGasPriceWaiverButNonZeroGasPrice)
-			}
 			if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errNoGasPriceWaiver)
 			}
@@ -234,9 +231,6 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 		transactor, found := getPriorityTransactorByKey(header.Number, msg.PrioritySenderPubkey(), config, vmenv)
 		if !found {
 			return nil, errBadPriorityKey
-		}
-		if transactor.IsGasPriceWaiver && !tx.HasZeroFee() {
-			return nil, errHasGasPriceWaiverButNonZeroGasPrice
 		}
 		if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
 			return nil, errNoGasPriceWaiver
