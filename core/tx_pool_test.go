@@ -3567,7 +3567,7 @@ func TestTransactionReplacementDynamicFee(t *testing.T) {
 		// Since state is empty, 0 nonce txs are "executable" and can go
 		// into pending immediately. 2 nonce txs are "happed
 		nonce := uint64(0)
-		if stage == "queued" {
+		if stage == stages[1] {
 			nonce = 2
 		}
 
@@ -3588,7 +3588,7 @@ func TestTransactionReplacementDynamicFee(t *testing.T) {
 		}
 		// 4.  Check events match expected (2 new executable txs during pending, 0 during queue)
 		count := 2
-		if stage == "queued" {
+		if stage == stages[1] {
 			count = 0
 		}
 		if err := validateEvents(events, count); err != nil {
@@ -3626,7 +3626,7 @@ func TestTransactionReplacementDynamicFee(t *testing.T) {
 		}
 		// 11. Check events match expected (3 new executable txs during pending, 0 during queue)
 		count = 2
-		if stage == "queued" {
+		if stage == stages[1] {
 			count = 0
 		}
 		if err := validateEvents(events, count); err != nil {
@@ -3682,7 +3682,7 @@ func TestPriorityTransactionReplacement(t *testing.T) {
 		// Since state is empty, 0 nonce txs are "executable" and can go
 		// into pending immediately. 2 nonce txs are "happed
 		nonce := uint64(0)
-		if stage == "queued" {
+		if stage == stages[1] {
 			nonce = 2
 		}
 
@@ -3703,7 +3703,7 @@ func TestPriorityTransactionReplacement(t *testing.T) {
 		}
 		// 4.  Check events match expected (2 new executable txs during pending, 0 during queue)
 		count := 2
-		if stage == "queued" {
+		if stage == stages[1] {
 			count = 0
 		}
 		if err := validateEvents(events, count); err != nil {
@@ -3741,7 +3741,7 @@ func TestPriorityTransactionReplacement(t *testing.T) {
 		}
 		// 11. Check events match expected (3 new executable txs during pending, 0 during queue)
 		count = 2
-		if stage == "queued" {
+		if stage == stages[1] {
 			count = 0
 		}
 		if err := validateEvents(events, count); err != nil {
