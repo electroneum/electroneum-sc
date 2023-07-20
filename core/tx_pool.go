@@ -80,6 +80,10 @@ var (
 	// with a different one without the required price bump.
 	ErrReplaceUnderpriced = errors.New("replacement transaction underpriced")
 
+	// ErrReplaceTypeNotCompatible is return if a transaction is attempted to be replaces
+	// with a different typed one
+	ErrReplaceTypeNotCompatible = errors.New("replacement transaction not compatible")
+
 	// ErrGasLimit is returned if a transaction's requested gas limit exceeds the
 	// maximum allowance of the current block.
 	ErrGasLimit = errors.New("exceeds block gas limit")
@@ -806,12 +810,15 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		inserted, old := list.Add(tx, pool.config.PriceBump)
 		if !inserted {
 			pendingDiscardMeter.Mark(1)
+			if IsPriorityTransaction(tx) != list.isPriority {
+				return false, ErrReplaceTypeNotCompatible
+			}
 			return false, ErrReplaceUnderpriced
 		}
 		// New transaction is better, replace old one
 		if old != nil {
 			pool.all.Remove(old.Hash())
-			if !IsPriorityTransaction(tx) {
+			if !list.isPriority {
 				pool.priced.Removed(1)
 			}
 			pendingReplaceMeter.Mark(1)
@@ -863,12 +870,15 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	if !inserted {
 		// An older transaction was better, discard this
 		queuedDiscardMeter.Mark(1)
+		if IsPriorityTransaction(tx) != pool.queue[from].isPriority {
+			return false, ErrReplaceTypeNotCompatible
+		}
 		return false, ErrReplaceUnderpriced
 	}
 	// Discard any previous transaction and mark this
 	if old != nil {
 		pool.all.Remove(old.Hash())
-		if !IsPriorityTransaction(tx) {
+		if !pool.queue[from].isPriority {
 			pool.priced.Removed(1)
 		}
 		queuedReplaceMeter.Mark(1)
