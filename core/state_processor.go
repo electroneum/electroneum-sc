@@ -84,7 +84,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		// Validate priority transaction
 		if tx.Type() == types.PriorityTxType {
-			transactor, found := transactors[msg.PrioritySenderPubkey()]
+			transactor, found := transactors[msg.PrioritySender()]
 			if !found {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
@@ -228,7 +228,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)
 	// Validate priority transaction
 	if tx.Type() == types.PriorityTxType {
-		transactor, found := getPriorityTransactorByKey(header.Number, msg.PrioritySenderPubkey(), config, vmenv)
+		transactor, found := getPriorityTransactorByKey(header.Number, msg.PrioritySender(), config, vmenv)
 		if !found {
 			return nil, errBadPriorityKey
 		}
