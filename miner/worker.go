@@ -1286,7 +1286,7 @@ func totalFees(block *types.Block, receipts []*types.Receipt) *big.Float {
 	feesWei := new(big.Int)
 	for i, tx := range block.Transactions() {
 		var minerFee *big.Int
-		if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
+		if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
 			minerFee, _ = tx.EffectiveGasTip(big.NewInt(0))
 		} else {
 			minerFee, _ = tx.EffectiveGasTip(block.BaseFee())

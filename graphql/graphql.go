@@ -242,7 +242,7 @@ func (t *Transaction) GasPrice(ctx context.Context) (hexutil.Big, error) {
 	case types.DynamicFeeTxType:
 		if t.block != nil {
 			if baseFee, _ := t.block.BaseFeePerGas(ctx); baseFee != nil {
-				// price = min(tip, gasFeeCap - baseFee) + baseFee
+				// price = min(gasTipCap + baseFee, gasFeeCap)
 				return (hexutil.Big)(*math.BigMin(new(big.Int).Add(tx.GasTipCap(), baseFee.ToInt()), tx.GasFeeCap())), nil
 			}
 		}
@@ -250,7 +250,7 @@ func (t *Transaction) GasPrice(ctx context.Context) (hexutil.Big, error) {
 	case types.PriorityTxType:
 		if t.block != nil {
 			if baseFee, _ := t.block.BaseFeePerGas(ctx); baseFee != nil {
-				// price = min(tip, gasFeeCap - baseFee) + baseFee
+				// price = min(gasTipCap + baseFee, gasFeeCap)
 				return (hexutil.Big)(*math.BigMin(new(big.Int).Add(tx.GasTipCap(), baseFee.ToInt()), tx.GasFeeCap())), nil
 			}
 		}
@@ -330,7 +330,7 @@ func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) { 
 		return (*hexutil.Big)(tx.GasPrice()), nil
 	}
 	var tip *big.Int
-	if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
+	if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
 		tip, err = tx.EffectiveGasTip(big.NewInt(0))
 	} else {
 		tip, err = tx.EffectiveGasTip(header.BaseFee)

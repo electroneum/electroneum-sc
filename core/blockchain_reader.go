@@ -377,7 +377,7 @@ func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, p
 
 	statedb, err := bc.StateAt(header.Root)
 	if err != nil {
-		log.Warn("GetPriorityTransactorByKeyForBlock(): unable to get state", "blocknumbe", blockNumber, "err", err)
+		log.Warn("GetPriorityTransactorByKeyForBlock(): unable to get state", "blocknumber", blockNumber, "err", err)
 		return common.PriorityTransactor{}, false
 	}
 
