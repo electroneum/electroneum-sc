@@ -68,6 +68,8 @@ var (
 			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		LegacyV9ForkHeight:                 big.NewInt(0),
+		LegacyToSmartchainMigrationHeight:  big.NewInt(0),
 		PriorityTransactorsContractAddress: common.Address{},
 	}
 
@@ -96,6 +98,8 @@ var (
 			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		LegacyV9ForkHeight:                 big.NewInt(862866),
+		LegacyToSmartchainMigrationHeight:  big.NewInt(0),
 		PriorityTransactorsContractAddress: common.HexToAddress("0x92cdf1fc0e54d3150f100265ae2717b0689660ee"),
 	}
 
@@ -124,6 +128,8 @@ var (
 			AllowedFutureBlockTime: 5,
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
+		LegacyV9ForkHeight:                 big.NewInt(0),
+		LegacyToSmartchainMigrationHeight:  big.NewInt(0),
 		PriorityTransactorsContractAddress: common.HexToAddress("0x1ef0959497375a7539e487749584aeb4947b7a90"),
 		Transitions:                        []Transition{},
 	}
@@ -133,16 +139,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), big.NewInt(0), big.NewInt(0), common.Address{}, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), common.Address{}, nil}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), big.NewInt(0), big.NewInt(0), common.Address{}, nil}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), big.NewInt(0), big.NewInt(0), common.Address{}, nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int), false)
 )
 
@@ -234,9 +240,10 @@ type ChainConfig struct {
 	IBFT   *IBFTConfig   `json:"ibft,omitempty"`
 
 	GenesisETN                         *big.Int       `json:"genesisETN,omitempty"`
+	LegacyV9ForkHeight                 *big.Int       `json:"legacyv9forkheight,omitempty"`
+	LegacyToSmartchainMigrationHeight  *big.Int       `json:"legacytosmartchainmigrationheight,omitempty"`
 	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
-
-	Transitions []Transition `json:"transitions,omitempty"` // Transition config based on the block number
+	Transitions                        []Transition   `json:"transitions,omitempty"`              // Transition config based on the block number
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
