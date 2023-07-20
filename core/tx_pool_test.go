@@ -81,7 +81,7 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) even
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
 	return common.PriorityTransactor{}, false
 }
 
@@ -104,6 +104,21 @@ func pricedDataTransaction(nonce uint64, gaslimit uint64, gasprice *big.Int, key
 
 func dynamicFeeTx(nonce uint64, gaslimit uint64, gasFee *big.Int, tip *big.Int, key *ecdsa.PrivateKey) *types.Transaction {
 	tx, _ := types.SignNewTx(key, types.LatestSignerForChainID(params.TestChainConfig.ChainID), &types.DynamicFeeTx{
+		ChainID:    params.TestChainConfig.ChainID,
+		Nonce:      nonce,
+		GasTipCap:  tip,
+		GasFeeCap:  gasFee,
+		Gas:        gaslimit,
+		To:         &common.Address{},
+		Value:      big.NewInt(100),
+		Data:       nil,
+		AccessList: nil,
+	})
+	return tx
+}
+
+func priorityTx(nonce uint64, gaslimit uint64, gasFee *big.Int, tip *big.Int, key *ecdsa.PrivateKey, priorityKey *ecdsa.PrivateKey) *types.Transaction {
+	tx, _ := types.SignNewPriorityTx(key, priorityKey, types.LatestSignerForChainID(params.TestChainConfig.ChainID), &types.PriorityTx{
 		ChainID:    params.TestChainConfig.ChainID,
 		Nonce:      nonce,
 		GasTipCap:  tip,

@@ -129,7 +129,7 @@ func getPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 		for _, t := range *transactorsMeta {
 			// Only add transactors that are within start/end height range
 			if t.StartHeight <= blockNumber.Uint64() && (t.EndHeight >= blockNumber.Uint64() || t.EndHeight == 0) {
-				result[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
+				result[common.HexToPublicKey(t.PublicKey)] = common.PriorityTransactor{
 					IsGasPriceWaiver: t.IsGasPriceWaiver,
 					EntityName:       t.Name,
 				}
@@ -139,7 +139,7 @@ func getPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 	return result
 }
 
-func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PriorityPubkey, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactor, bool) {
+func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PublicKey, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactor, bool) {
 	var (
 		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
 		contract = vm.AccountRef(address)
@@ -148,7 +148,7 @@ func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PriorityP
 
 	if address != (common.Address{}) {
 		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceABI))
-		input, _ := contractABI.Pack(method, publicKey.ToPaddedHexString())
+		input, _ := contractABI.Pack(method, publicKey.ToUnprefixedHexString())
 		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
 		if err != nil {
 			return common.PriorityTransactor{}, false

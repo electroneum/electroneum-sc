@@ -28,6 +28,7 @@ import (
 )
 
 var ErrInvalidChainId = errors.New("invalid chain id for signer")
+var ErrTxIsNotPriorityType = errors.New("tx is not priority transaction")
 
 // sigCache is used to cache the derived sender and contains
 // the signer used to derive it.
@@ -40,7 +41,7 @@ type sigCache struct {
 // the signer used to derive it.
 type prioritySigCache struct {
 	signer         Signer
-	priorityPubkey common.PriorityPubkey
+	priorityPubkey common.PublicKey
 }
 
 // MakeSigner returns a Signer based on the given chain config and block number.
@@ -107,6 +108,27 @@ func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, err
 	return tx.WithSignature(s, sig)
 }
 
+// SignTx signs the transaction using the given signer and private key.
+func SignPriorityTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey, priorityPrv *ecdsa.PrivateKey) (*Transaction, error) {
+	if tx.Type() != PriorityTxType {
+		return nil, ErrTxIsNotPriorityType
+	}
+	h := s.Hash(tx)
+	sig, err := crypto.Sign(h[:], prv)
+	if err != nil {
+		return nil, err
+	}
+	prioritySig, err := crypto.Sign(h[:], priorityPrv)
+	if err != nil {
+		return nil, err
+	}
+	txCpy, err := tx.WithSignature(s, sig)
+	if err != nil {
+		return nil, err
+	}
+	return txCpy.WithPrioritySignature(s, prioritySig)
+}
+
 // SignNewTx creates a transaction and signs it.
 func SignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, error) {
 	tx := NewTx(txdata)
@@ -116,6 +138,28 @@ func SignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, er
 		return nil, err
 	}
 	return tx.WithSignature(s, sig)
+}
+
+// SignNewPriorityTx creates a transaction and signs it.
+func SignNewPriorityTx(prv *ecdsa.PrivateKey, priorityPrv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, error) {
+	tx := NewTx(txdata)
+	if tx.Type() != PriorityTxType {
+		return nil, ErrTxIsNotPriorityType
+	}
+	h := s.Hash(tx)
+	sig, err := crypto.Sign(h[:], prv)
+	if err != nil {
+		return nil, err
+	}
+	prioritySig, err := crypto.Sign(h[:], priorityPrv)
+	if err != nil {
+		return nil, err
+	}
+	txCpy, err := tx.WithSignature(s, sig)
+	if err != nil {
+		return nil, err
+	}
+	return txCpy.WithPrioritySignature(s, prioritySig)
 }
 
 // MustSignNewTx creates a transaction and signs it.
@@ -154,7 +198,7 @@ func Sender(signer Signer, tx *Transaction) (common.Address, error) { //NB *** e
 	return addr, nil
 }
 
-func PrioritySenderPubkey(signer Signer, tx *Transaction) (common.PriorityPubkey, error) { //NB *** eth does not actually have a from field in the transaction. from is derived from the signature itself, hence sender is essentially a way of both verifying a signature and getting the sender all in one
+func PrioritySender(signer Signer, tx *Transaction) (common.PublicKey, error) { //NB *** eth does not actually have a from field in the transaction. from is derived from the signature itself, hence sender is essentially a way of both verifying a signature and getting the sender all in one
 	if sc := tx.priorityPubkey.Load(); sc != nil {
 		prioritySigCache := sc.(prioritySigCache)
 		// If the signer used to derive from in a previous
@@ -165,9 +209,9 @@ func PrioritySenderPubkey(signer Signer, tx *Transaction) (common.PriorityPubkey
 		}
 	}
 
-	pub, err := signer.PrioritySenderPubkey(tx)
+	pub, err := signer.PrioritySender(tx)
 	if err != nil {
-		return common.PriorityPubkey{}, err
+		return common.PublicKey{}, err
 	}
 	tx.priorityPubkey.Store(prioritySigCache{signer: signer, priorityPubkey: pub})
 	return pub, nil
@@ -183,8 +227,8 @@ type Signer interface {
 	// Sender returns the sender address of the transaction.
 	Sender(tx *Transaction) (common.Address, error)
 
-	// PrioritySenderPubkey returns the secp256k1 pubkey of a priority sender
-	PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error)
+	// PrioritySender returns the secp256k1 pubkey of a priority sender
+	PrioritySender(tx *Transaction) (common.PublicKey, error)
 
 	// SignatureValues returns the raw R, S, V values corresponding to the
 	// given signature.
@@ -223,7 +267,7 @@ func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	}
 	// Also sanity check the priority signature
 	if tx.Type() == PriorityTxType {
-		_, err := s.PrioritySenderPubkey(tx)
+		_, err := s.PrioritySender(tx)
 		if err != nil {
 			return common.Address{}, err
 		}
@@ -231,7 +275,7 @@ func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	return recoverPlain(s.Hash(tx), R, S, V, true)
 }
 
-func (s londonSigner) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error) { //this will actually verify the sig too, as the sender() function does for the regular tx sigs
+func (s londonSigner) PrioritySender(tx *Transaction) (common.PublicKey, error) { //this will actually verify the sig too, as the sender() function does for the regular tx sigs
 	switch inner := tx.inner.(type) {
 	case *PriorityTx:
 		V, R, S := inner.rawPrioritySignatureValues()
@@ -239,17 +283,11 @@ func (s londonSigner) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubk
 		// id, add 27 to become equivalent to unprotected Homestead signatures.
 		V = new(big.Int).Add(V, big.NewInt(27))
 		if tx.ChainId().Cmp(s.chainId) != 0 {
-			return common.PriorityPubkey{}, ErrInvalidChainId
+			return common.PublicKey{}, ErrInvalidChainId
 		}
-		pub, err := recoverSecp256k1Pubkey(s.Hash(tx), V, R, S, true)
-		if err != nil {
-			return common.PriorityPubkey{}, err
-		}
-		var pubkey common.PriorityPubkey
-		copy(pubkey[:], pub[:65])
-		return pubkey, err
+		return recoverPublicKey(s.Hash(tx), V, R, S, true)
 	default:
-		return common.PriorityPubkey{}, ErrTxTypeNotSupported
+		return common.PublicKey{}, ErrTxTypeNotSupported
 	}
 }
 
@@ -339,8 +377,8 @@ func (s eip2930Signer) Sender(tx *Transaction) (common.Address, error) {
 	return recoverPlain(s.Hash(tx), R, S, V, true)
 }
 
-func (s eip2930Signer) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error) {
-	return common.PriorityPubkey{}, ErrTxTypeNotSupported
+func (s eip2930Signer) PrioritySender(tx *Transaction) (common.PublicKey, error) {
+	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
 func (s eip2930Signer) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
@@ -440,8 +478,8 @@ func (s EIP155Signer) Sender(tx *Transaction) (common.Address, error) {
 	return recoverPlain(s.Hash(tx), R, S, V, true)
 }
 
-func (s EIP155Signer) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error) {
-	return common.PriorityPubkey{}, ErrTxTypeNotSupported
+func (s EIP155Signer) PrioritySender(tx *Transaction) (common.PublicKey, error) {
+	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
 // SignatureValues returns signature values. This signature
@@ -499,8 +537,8 @@ func (hs HomesteadSigner) Sender(tx *Transaction) (common.Address, error) {
 	return recoverPlain(hs.Hash(tx), r, s, v, true)
 }
 
-func (s HomesteadSigner) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error) {
-	return common.PriorityPubkey{}, ErrTxTypeNotSupported
+func (s HomesteadSigner) PrioritySender(tx *Transaction) (common.PublicKey, error) {
+	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
 type FrontierSigner struct{}
@@ -522,8 +560,8 @@ func (fs FrontierSigner) Sender(tx *Transaction) (common.Address, error) {
 	return recoverPlain(fs.Hash(tx), r, s, v, false)
 }
 
-func (s FrontierSigner) PrioritySenderPubkey(tx *Transaction) (common.PriorityPubkey, error) {
-	return common.PriorityPubkey{}, ErrTxTypeNotSupported
+func (s FrontierSigner) PrioritySender(tx *Transaction) (common.PublicKey, error) {
+	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
 // SignatureValues returns signature values. This signature
@@ -586,13 +624,13 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	return addr, nil
 }
 
-func recoverSecp256k1Pubkey(sighash common.Hash, Vb, R, S *big.Int, homestead bool) ([]byte, error) {
+func recoverPublicKey(sighash common.Hash, Vb, R, S *big.Int, homestead bool) (common.PublicKey, error) {
 	if Vb.BitLen() > 8 {
-		return nil, ErrInvalidSig
+		return common.PublicKey{}, ErrInvalidSig
 	}
 	V := byte(Vb.Uint64() - 27)
 	if !crypto.ValidateSignatureValues(V, R, S, homestead) {
-		return nil, ErrInvalidSig
+		return common.PublicKey{}, ErrInvalidSig
 	}
 	// encode the signature in uncompressed format
 	r, s := R.Bytes(), S.Bytes()
@@ -603,12 +641,14 @@ func recoverSecp256k1Pubkey(sighash common.Hash, Vb, R, S *big.Int, homestead bo
 	// recover the public key from the signature
 	pub, err := crypto.Ecrecover(sighash[:], sig)
 	if err != nil {
-		return nil, err
+		return common.PublicKey{}, err
 	}
 	if len(pub) == 0 || pub[0] != 4 {
-		return nil, errors.New("invalid public key")
+		return common.PublicKey{}, errors.New("invalid public key")
 	}
-	return pub, nil
+	var pubkey common.PublicKey
+	copy(pubkey[:], pub[:65])
+	return pubkey, nil
 }
 
 // deriveChainId derives the chain id from the given v parameter

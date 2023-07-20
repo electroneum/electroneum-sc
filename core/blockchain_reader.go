@@ -370,7 +370,7 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 
 // GetPriorityTransactorByKeyForBlock retrieves the transactor if present in the
 // priority transactors contract and within block start/end height
-func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
+func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
 	// Create a new context to be used in the EVM environment
 	header := bc.GetHeaderByNumber(blockNumber.Uint64())
 	blockContext := NewEVMBlockContext(header, bc, nil)

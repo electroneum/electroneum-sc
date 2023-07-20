@@ -158,7 +158,7 @@ type blockChain interface {
 
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
 
-	GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
+	GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool)
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
@@ -689,7 +689,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	isGasWaiver := false
 	if tx.Type() == types.PriorityTxType {
 		// Make sure the priority signature checks out
-		priorityPubkey, err := types.PrioritySenderPubkey(pool.signer, tx)
+		priorityPubkey, err := types.PrioritySender(pool.signer, tx)
 		if err != nil {
 			return errBadPrioritySignature
 		}
@@ -1015,7 +1015,7 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		if IsPriorityTransaction(tx) {
 			// Exclude priority transactions with invalid priority signature as soon
 			// as possible
-			_, err = types.PrioritySenderPubkey(pool.signer, tx)
+			_, err = types.PrioritySender(pool.signer, tx)
 			if err != nil {
 				errs[i] = ErrInvalidPrioritySender
 				invalidTxMeter.Mark(1)

@@ -70,6 +70,25 @@ var (
 		NewEIP2930Signer(big.NewInt(1)),
 		common.Hex2Bytes("c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b266032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d3752101"),
 	)
+
+	emptyEtnip1Tx = NewTx(&PriorityTx{
+		ChainID: big.NewInt(1),
+		Nonce:   3,
+		To:      &testAddr,
+		Value:   big.NewInt(10),
+		Gas:     25000,
+		Data:    common.FromHex("5544"),
+	})
+
+	signedEtnip1Tx, _ = emptyEtnip1Tx.WithSignature(
+		NewLondonSigner(big.NewInt(1)),
+		common.Hex2Bytes("c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b266032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d3752101"),
+	)
+
+	prioritySignedEtnip1Tx, _ = signedEtnip1Tx.WithPrioritySignature(
+		NewLondonSigner(big.NewInt(1)),
+		common.Hex2Bytes("c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b266032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d3752101"),
+	)
 )
 
 func TestDecodeEmptyTypedTx(t *testing.T) {
@@ -109,6 +128,16 @@ func TestEIP2718TransactionSigHash(t *testing.T) {
 	}
 	if s.Hash(signedEip2718Tx) != common.HexToHash("49b486f0ec0a60dfbbca2d30cb07c9e8ffb2a2ff41f29a1ab6737475f6ff69f3") {
 		t.Errorf("signed EIP-2718 transaction hash mismatch, got %x", s.Hash(signedEip2718Tx))
+	}
+}
+
+func TestETNIP1TransactionSigHash(t *testing.T) {
+	s := NewLondonSigner(big.NewInt(1))
+	if s.Hash(emptyEtnip1Tx) != common.HexToHash("05f634bc406581d6e9f0d374a047995ecd1adb1a55bb0ecae6058547e3530d6a") {
+		t.Errorf("empty ETNIP-1 transaction hash mismatch, got %x", s.Hash(emptyEtnip1Tx))
+	}
+	if s.Hash(signedEtnip1Tx) != common.HexToHash("05f634bc406581d6e9f0d374a047995ecd1adb1a55bb0ecae6058547e3530d6a") {
+		t.Errorf("signed ETNIP-1 transaction hash mismatch, got %x", s.Hash(signedEtnip1Tx))
 	}
 }
 
@@ -188,6 +217,92 @@ func TestEIP2930Signer(t *testing.T) {
 	}
 }
 
+// This test checks signature operations on priority transactions.
+func TestETNIP1Signer(t *testing.T) {
+	var (
+		key, _            = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		keyAddr           = crypto.PubkeyToAddress(key.PublicKey)
+		priorityKey, _    = crypto.HexToECDSA("f672360baf37be77cc8d6a3986781b6b01c35d4e360078c2af374055dcb2005b")
+		priorityPublicKey = crypto.ECDSAPubkeyToPublicKey(key.PublicKey)
+		signer1           = NewLondonSigner(big.NewInt(1))
+		signer2           = NewLondonSigner(big.NewInt(2))
+		tx0               = NewTx(&PriorityTx{Nonce: 1})
+		tx1               = NewTx(&PriorityTx{ChainID: big.NewInt(1), Nonce: 1})
+		tx2, _            = SignNewPriorityTx(key, key, signer2, &PriorityTx{ChainID: big.NewInt(2), Nonce: 1})
+	)
+
+	tests := []struct {
+		tx             *Transaction
+		signer         Signer
+		wantSignerHash common.Hash
+		wantSenderErr  error
+		wantSignErr    error
+		wantHash       common.Hash // after signing
+	}{
+		{
+			tx:             tx0,
+			signer:         signer1,
+			wantSignerHash: common.HexToHash("a568418cbb251d455a96113d5d790be3a5ec880ab017d5805b8c4631f04ef6d4"),
+			wantSenderErr:  ErrInvalidChainId,
+			wantHash:       common.HexToHash("a2b7621eb700938525ee3cf70e0662d9be4d965743faedf822c5b201bd4adffa"),
+		},
+		{
+			tx:             tx1,
+			signer:         signer1,
+			wantSenderErr:  ErrInvalidSig,
+			wantSignerHash: common.HexToHash("a568418cbb251d455a96113d5d790be3a5ec880ab017d5805b8c4631f04ef6d4"),
+			wantHash:       common.HexToHash("a2b7621eb700938525ee3cf70e0662d9be4d965743faedf822c5b201bd4adffa"),
+		},
+		{
+			// This checks what happens when trying to sign an unsigned tx for the wrong chain.
+			tx:             tx1,
+			signer:         signer2,
+			wantSenderErr:  ErrInvalidChainId,
+			wantSignerHash: common.HexToHash("f0f5859540b580d68c15c93a6769a0fe6536627c17acaa781c648900530303b9"),
+			wantSignErr:    ErrInvalidChainId,
+		},
+		{
+			// This checks what happens when trying to re-sign a signed tx for the wrong chain.
+			tx:             tx2,
+			signer:         signer1,
+			wantSenderErr:  ErrInvalidChainId,
+			wantSignerHash: common.HexToHash("a568418cbb251d455a96113d5d790be3a5ec880ab017d5805b8c4631f04ef6d4"),
+			wantSignErr:    ErrInvalidChainId,
+		},
+	}
+
+	for i, test := range tests {
+		sigHash := test.signer.Hash(test.tx)
+		if sigHash != test.wantSignerHash {
+			t.Errorf("test %d: wrong sig hash: got %x, want %x", i, sigHash, test.wantSignerHash)
+		}
+		sender, err := Sender(test.signer, test.tx)
+		if err != test.wantSenderErr {
+			t.Errorf("test %d: wrong Sender error %q", i, err)
+		}
+		if err == nil && sender != keyAddr {
+			t.Errorf("test %d: wrong sender address %x", i, sender)
+		}
+		prioritySender, err := PrioritySender(test.signer, test.tx)
+		if err != test.wantSenderErr {
+			t.Errorf("test %d: wrong Sender error %q", i, err)
+		}
+		if err == nil && prioritySender != priorityPublicKey {
+			t.Errorf("test %d: wrong sender address %x", i, sender)
+		}
+		signedPriorityTx, err := SignPriorityTx(test.tx, test.signer, key, priorityKey)
+		if err != test.wantSignErr {
+			t.Fatalf("test %d: wrong SignPriorityTx error %q", i, err)
+		}
+		if signedPriorityTx != nil {
+			if signedPriorityTx.Hash() != test.wantHash {
+				t.Errorf("test %d: wrong tx hash after signing: got %x, want %x", i, signedPriorityTx.Hash(), test.wantHash)
+			}
+		}
+
+	}
+}
+
 func TestEIP2718TransactionEncode(t *testing.T) {
 	// RLP representation
 	{
@@ -207,6 +322,31 @@ func TestEIP2718TransactionEncode(t *testing.T) {
 			t.Fatalf("encode error: %v", err)
 		}
 		want := common.FromHex("01f8630103018261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521")
+		if !bytes.Equal(have, want) {
+			t.Errorf("encoded RLP mismatch, got %x", have)
+		}
+	}
+}
+
+func TestETNIP1TransactionEncode(t *testing.T) {
+	// RLP representation
+	{
+		have, err := rlp.EncodeToBytes(signedEtnip1Tx)
+		if err != nil {
+			t.Fatalf("encode error: %v", err)
+		}
+		want := common.FromHex("b86a40f867010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521808080")
+		if !bytes.Equal(have, want) {
+			t.Errorf("encoded RLP mismatch, got %x", have)
+		}
+	}
+	// Binary representation
+	{
+		have, err := signedEtnip1Tx.MarshalBinary()
+		if err != nil {
+			t.Fatalf("encode error: %v", err)
+		}
+		want := common.FromHex("40f867010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521808080")
 		if !bytes.Equal(have, want) {
 			t.Errorf("encoded RLP mismatch, got %x", have)
 		}
@@ -259,19 +399,23 @@ func TestRecipientNormal(t *testing.T) {
 }
 
 func TestTransactionPriceNonceSortLegacy(t *testing.T) {
-	testTransactionPriceNonceSort(t, nil)
+	testTransactionPriceNonceSort(t, nil, false)
 }
 
 func TestTransactionPriceNonceSort1559(t *testing.T) {
-	testTransactionPriceNonceSort(t, big.NewInt(0))
-	testTransactionPriceNonceSort(t, big.NewInt(5))
-	testTransactionPriceNonceSort(t, big.NewInt(50))
+	testTransactionPriceNonceSort(t, big.NewInt(0), false)
+	testTransactionPriceNonceSort(t, big.NewInt(5), false)
+	testTransactionPriceNonceSort(t, big.NewInt(50), false)
+
+	testTransactionPriceNonceSort(t, big.NewInt(0), true)
+	testTransactionPriceNonceSort(t, big.NewInt(5), true)
+	testTransactionPriceNonceSort(t, big.NewInt(50), true)
 }
 
 // Tests that transactions can be correctly sorted according to their price in
 // decreasing order, but at the same time with increasing nonces when issued by
 // the same account.
-func testTransactionPriceNonceSort(t *testing.T, baseFee *big.Int) {
+func testTransactionPriceNonceSort(t *testing.T, baseFee *big.Int, priorityTx bool) {
 	// Generate a batch of accounts to start with
 	keys := make([]*ecdsa.PrivateKey, 25)
 	for i := 0; i < len(keys); i++ {
@@ -288,34 +432,63 @@ func testTransactionPriceNonceSort(t *testing.T, baseFee *big.Int) {
 		for i := 0; i < 25; i++ {
 			var tx *Transaction
 			gasFeeCap := rand.Intn(50)
-			if baseFee == nil {
-				tx = NewTx(&LegacyTx{
-					Nonce:    uint64(start + i),
-					To:       &common.Address{},
-					Value:    big.NewInt(100),
-					Gas:      100,
-					GasPrice: big.NewInt(int64(gasFeeCap)),
-					Data:     nil,
-				})
+			var gasTipCap int
+
+			if gasFeeCap == 0 {
+				gasTipCap = 0
 			} else {
-				tx = NewTx(&DynamicFeeTx{
+				gasTipCap = rand.Intn(gasFeeCap + 1)
+			}
+
+			if priorityTx {
+				tx = NewTx(&PriorityTx{
 					Nonce:     uint64(start + i),
 					To:        &common.Address{},
 					Value:     big.NewInt(100),
 					Gas:       100,
 					GasFeeCap: big.NewInt(int64(gasFeeCap)),
-					GasTipCap: big.NewInt(int64(rand.Intn(gasFeeCap + 1))),
+					GasTipCap: big.NewInt(int64(gasTipCap)),
 					Data:      nil,
 				})
-				if count == 25 && int64(gasFeeCap) < baseFee.Int64() {
+				if count == 25 && int64(gasFeeCap) < baseFee.Int64() && !tx.HasZeroFee() {
 					count = i
 				}
+				tx, err := SignPriorityTx(tx, signer, key, key)
+				if err != nil {
+					t.Fatalf("failed to sign tx: %s", err)
+				}
+				groups[addr] = append(groups[addr], tx)
+			} else {
+				if baseFee == nil {
+					tx = NewTx(&LegacyTx{
+						Nonce:    uint64(start + i),
+						To:       &common.Address{},
+						Value:    big.NewInt(100),
+						Gas:      100,
+						GasPrice: big.NewInt(int64(gasFeeCap)),
+						Data:     nil,
+					})
+				} else {
+					tx = NewTx(&DynamicFeeTx{
+						Nonce:     uint64(start + i),
+						To:        &common.Address{},
+						Value:     big.NewInt(100),
+						Gas:       100,
+						GasFeeCap: big.NewInt(int64(gasFeeCap)),
+						GasTipCap: big.NewInt(int64(rand.Intn(gasFeeCap + 1))),
+						Data:      nil,
+					})
+					if count == 25 && int64(gasFeeCap) < baseFee.Int64() {
+						count = i
+					}
+				}
+				tx, err := SignTx(tx, signer, key)
+				if err != nil {
+					t.Fatalf("failed to sign tx: %s", err)
+				}
+				groups[addr] = append(groups[addr], tx)
 			}
-			tx, err := SignTx(tx, signer, key)
-			if err != nil {
-				t.Fatalf("failed to sign tx: %s", err)
-			}
-			groups[addr] = append(groups[addr], tx)
+
 		}
 		expectedCount += count
 	}
@@ -411,14 +584,14 @@ func TestTransactionCoding(t *testing.T) {
 		t.Fatalf("could not generate key: %v", err)
 	}
 	var (
-		signer    = NewEIP2930Signer(common.Big1)
+		signer    = NewLondonSigner(common.Big1)
 		addr      = common.HexToAddress("0x0000000000000000000000000000000000000001")
 		recipient = common.HexToAddress("095e7baea6a6c7c4c2dfeb977efac326af552d87")
 		accesses  = AccessList{{Address: addr, StorageKeys: []common.Hash{{0}}}}
 	)
-	for i := uint64(0); i < 500; i++ {
+	for i := uint64(0); i < 1000; i++ {
 		var txdata TxData
-		switch i % 5 {
+		switch i % 14 {
 		case 0:
 			// Legacy tx.
 			txdata = &LegacyTx{
@@ -466,8 +639,117 @@ func TestTransactionCoding(t *testing.T) {
 				GasPrice:   big.NewInt(10),
 				AccessList: accesses,
 			}
+		case 5:
+			// Tx with non-zero access list.
+			txdata = &DynamicFeeTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				To:         &recipient,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(10),
+				GasFeeCap:  big.NewInt(10),
+				AccessList: accesses,
+				Data:       []byte("abcdef"),
+			}
+		case 6:
+			// Tx with empty access list.
+			txdata = &DynamicFeeTx{
+				ChainID:   big.NewInt(1),
+				Nonce:     i,
+				To:        &recipient,
+				Gas:       123457,
+				GasTipCap: big.NewInt(10),
+				GasFeeCap: big.NewInt(10),
+				Data:      []byte("abcdef"),
+			}
+		case 7:
+			// Contract creation with access list.
+			txdata = &DynamicFeeTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(10),
+				GasFeeCap:  big.NewInt(10),
+				AccessList: accesses,
+			}
+		case 8:
+			// Tx with non-zero access list.
+			txdata = &PriorityTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				To:         &recipient,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(10),
+				GasFeeCap:  big.NewInt(10),
+				AccessList: accesses,
+				Data:       []byte("abcdef"),
+			}
+		case 9:
+			// Tx with empty access list.
+			txdata = &PriorityTx{
+				ChainID:   big.NewInt(1),
+				Nonce:     i,
+				To:        &recipient,
+				Gas:       123457,
+				GasTipCap: big.NewInt(10),
+				GasFeeCap: big.NewInt(10),
+				Data:      []byte("abcdef"),
+			}
+		case 10:
+			// Contract creation with access list.
+			txdata = &PriorityTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(10),
+				GasFeeCap:  big.NewInt(10),
+				AccessList: accesses,
+			}
+		case 11:
+			// Tx with non-zero access list.
+			txdata = &PriorityTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				To:         &recipient,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(0),
+				GasFeeCap:  big.NewInt(0),
+				AccessList: accesses,
+				Data:       []byte("abcdef"),
+			}
+		case 12:
+			// Tx with empty access list.
+			txdata = &PriorityTx{
+				ChainID:   big.NewInt(1),
+				Nonce:     i,
+				To:        &recipient,
+				Gas:       123457,
+				GasTipCap: big.NewInt(0),
+				GasFeeCap: big.NewInt(0),
+				Data:      []byte("abcdef"),
+			}
+		case 13:
+			// Contract creation with access list.
+			txdata = &PriorityTx{
+				ChainID:    big.NewInt(1),
+				Nonce:      i,
+				Gas:        123457,
+				GasTipCap:  big.NewInt(0),
+				GasFeeCap:  big.NewInt(0),
+				AccessList: accesses,
+			}
+
 		}
-		tx, err := SignNewTx(key, signer, txdata)
+		var (
+			tx  *Transaction
+			err error
+		)
+
+		if txdata.txType() == PriorityTxType {
+			tx, err = SignNewPriorityTx(key, key, signer, txdata)
+		} else {
+			tx, err = SignNewTx(key, signer, txdata)
+		}
 		if err != nil {
 			t.Fatalf("could not sign transaction: %v", err)
 		}

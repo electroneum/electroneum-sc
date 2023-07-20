@@ -421,6 +421,21 @@ func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, e
 	return &Transaction{inner: cpy, time: tx.time}, nil
 }
 
+// WithSignature returns a new transaction with the given signature.
+// This signature needs to be in the [R || S || V] format where V is 0 or 1.
+func (tx *Transaction) WithPrioritySignature(signer Signer, sig []byte) (*Transaction, error) {
+	if tx.Type() != PriorityTxType {
+		return nil, ErrTxTypeNotSupported
+	}
+	r, s, v, err := signer.SignatureValues(tx, sig)
+	if err != nil {
+		return nil, err
+	}
+	cpy := tx.inner.copy().(*PriorityTx)
+	cpy.setPrioritySignatureValues(signer.ChainID(), v, r, s)
+	return &Transaction{inner: cpy, time: tx.time}, nil
+}
+
 // Transactions implements DerivableList for transactions.
 type Transactions []*Transaction
 
@@ -594,14 +609,14 @@ type Message struct {
 	gasPrice             *big.Int
 	gasFeeCap            *big.Int
 	gasTipCap            *big.Int
-	prioritySenderPubkey common.PriorityPubkey
+	prioritySenderPubkey common.PublicKey
 	data                 []byte
 	accessList           AccessList
 	isFake               bool
 }
 
 // Priority txes will only be hitting this function in the event of mock-calls, in which case the VRS & Priority pubkey will be included in the API params. Priority tx will always sign with web3. then call sendsignedtransaction. NewMessage is used for sendtransaction only.
-func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap *big.Int, data []byte, accessList AccessList, isFake bool, prioritySenderPubkey common.PriorityPubkey) Message { //add args
+func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap *big.Int, data []byte, accessList AccessList, isFake bool, prioritySenderPubkey common.PublicKey) Message { //add args
 	return Message{ //what about this?
 		from:                 from,
 		to:                   to,
@@ -640,7 +655,7 @@ func (tx *Transaction) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
 	var err error
 
 	if tx.Type() == PriorityTxType {
-		msg.prioritySenderPubkey, err = PrioritySenderPubkey(s, tx)
+		msg.prioritySenderPubkey, err = PrioritySender(s, tx)
 		if err != nil {
 			return msg, err //is this ok?
 		}
@@ -650,18 +665,18 @@ func (tx *Transaction) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
 	return msg, err               // is this ok?
 }
 
-func (m Message) From() common.Address                        { return m.from }
-func (m Message) To() *common.Address                         { return m.to }
-func (m Message) GasPrice() *big.Int                          { return m.gasPrice }
-func (m Message) GasFeeCap() *big.Int                         { return m.gasFeeCap }
-func (m Message) GasTipCap() *big.Int                         { return m.gasTipCap }
-func (m Message) PrioritySenderPubkey() common.PriorityPubkey { return m.prioritySenderPubkey }
-func (m Message) Value() *big.Int                             { return m.amount }
-func (m Message) Gas() uint64                                 { return m.gasLimit }
-func (m Message) Nonce() uint64                               { return m.nonce }
-func (m Message) Data() []byte                                { return m.data }
-func (m Message) AccessList() AccessList                      { return m.accessList }
-func (m Message) IsFake() bool                                { return m.isFake }
+func (m Message) From() common.Address                   { return m.from }
+func (m Message) To() *common.Address                    { return m.to }
+func (m Message) GasPrice() *big.Int                     { return m.gasPrice }
+func (m Message) GasFeeCap() *big.Int                    { return m.gasFeeCap }
+func (m Message) GasTipCap() *big.Int                    { return m.gasTipCap }
+func (m Message) PrioritySenderPubkey() common.PublicKey { return m.prioritySenderPubkey }
+func (m Message) Value() *big.Int                        { return m.amount }
+func (m Message) Gas() uint64                            { return m.gasLimit }
+func (m Message) Nonce() uint64                          { return m.nonce }
+func (m Message) Data() []byte                           { return m.data }
+func (m Message) AccessList() AccessList                 { return m.accessList }
+func (m Message) IsFake() bool                           { return m.isFake }
 
 // copyAddressPtr copies an address.
 func copyAddressPtr(a *common.Address) *common.Address {

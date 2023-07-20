@@ -73,7 +73,7 @@ type Message interface {
 	GasPrice() *big.Int
 	GasFeeCap() *big.Int
 	GasTipCap() *big.Int
-	PrioritySenderPubkey() common.PriorityPubkey
+	PrioritySenderPubkey() common.PublicKey
 	Gas() uint64
 	Value() *big.Int
 
@@ -256,7 +256,7 @@ func (st *StateTransition) preCheck() error {
 			// as part of header validation.
 			//
 			// st.msg.PrioritySenderPubkey() is already validated at this point
-			if st.msg.PrioritySenderPubkey() == (common.PriorityPubkey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
+			if st.msg.PrioritySenderPubkey() == (common.PublicKey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
 			}
