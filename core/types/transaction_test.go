@@ -136,8 +136,8 @@ func TestETNIP1TransactionSigHash(t *testing.T) {
 	if s.Hash(emptyEtnip1Tx) != common.HexToHash("05f634bc406581d6e9f0d374a047995ecd1adb1a55bb0ecae6058547e3530d6a") {
 		t.Errorf("empty ETNIP-1 transaction hash mismatch, got %x", s.Hash(emptyEtnip1Tx))
 	}
-	if s.Hash(signedEtnip1Tx) != common.HexToHash("05f634bc406581d6e9f0d374a047995ecd1adb1a55bb0ecae6058547e3530d6a") {
-		t.Errorf("signed ETNIP-1 transaction hash mismatch, got %x", s.Hash(signedEtnip1Tx))
+	if s.Hash(prioritySignedEtnip1Tx) != common.HexToHash("05f634bc406581d6e9f0d374a047995ecd1adb1a55bb0ecae6058547e3530d6a") {
+		t.Errorf("signed ETNIP-1 transaction hash mismatch, got %x", s.Hash(prioritySignedEtnip1Tx))
 	}
 }
 
@@ -299,7 +299,6 @@ func TestETNIP1Signer(t *testing.T) {
 				t.Errorf("test %d: wrong tx hash after signing: got %x, want %x", i, signedPriorityTx.Hash(), test.wantHash)
 			}
 		}
-
 	}
 }
 
@@ -331,22 +330,22 @@ func TestEIP2718TransactionEncode(t *testing.T) {
 func TestETNIP1TransactionEncode(t *testing.T) {
 	// RLP representation
 	{
-		have, err := rlp.EncodeToBytes(signedEtnip1Tx)
+		have, err := rlp.EncodeToBytes(prioritySignedEtnip1Tx)
 		if err != nil {
 			t.Fatalf("encode error: %v", err)
 		}
-		want := common.FromHex("b86a40f867010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521808080")
+		want := common.FromHex("b8aa40f8a7010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d3752101a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521")
 		if !bytes.Equal(have, want) {
 			t.Errorf("encoded RLP mismatch, got %x", have)
 		}
 	}
 	// Binary representation
 	{
-		have, err := signedEtnip1Tx.MarshalBinary()
+		have, err := prioritySignedEtnip1Tx.MarshalBinary()
 		if err != nil {
 			t.Fatalf("encode error: %v", err)
 		}
-		want := common.FromHex("40f867010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521808080")
+		want := common.FromHex("40f8a7010380808261a894b94f5374fce5edbc8e2a8697c15331677e6ebf0b0a825544c001a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d3752101a0c9519f4f2b30335884581971573fadf60c6204f59a911df35ee8a540456b2660a032f1e8e2c5dd761f9e4f88f41c8310aeaba26a8bfcdacfedfa12ec3862d37521")
 		if !bytes.Equal(have, want) {
 			t.Errorf("encoded RLP mismatch, got %x", have)
 		}
@@ -488,7 +487,6 @@ func testTransactionPriceNonceSort(t *testing.T, baseFee *big.Int, priorityTx bo
 				}
 				groups[addr] = append(groups[addr], tx)
 			}
-
 		}
 		expectedCount += count
 	}
@@ -738,7 +736,6 @@ func TestTransactionCoding(t *testing.T) {
 				GasFeeCap:  big.NewInt(0),
 				AccessList: accesses,
 			}
-
 		}
 		var (
 			tx  *Transaction

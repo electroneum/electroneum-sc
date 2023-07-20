@@ -117,6 +117,7 @@ func dynamicFeeTx(nonce uint64, gaslimit uint64, gasFee *big.Int, tip *big.Int, 
 	return tx
 }
 
+/*
 func priorityTx(nonce uint64, gaslimit uint64, gasFee *big.Int, tip *big.Int, key *ecdsa.PrivateKey, priorityKey *ecdsa.PrivateKey) *types.Transaction {
 	tx, _ := types.SignNewPriorityTx(key, priorityKey, types.LatestSignerForChainID(params.TestChainConfig.ChainID), &types.PriorityTx{
 		ChainID:    params.TestChainConfig.ChainID,
@@ -131,6 +132,7 @@ func priorityTx(nonce uint64, gaslimit uint64, gasFee *big.Int, tip *big.Int, ke
 	})
 	return tx
 }
+*/
 
 func setupTxPool() (*TxPool, *ecdsa.PrivateKey) {
 	return setupTxPoolWithConfig(params.TestChainConfig)
