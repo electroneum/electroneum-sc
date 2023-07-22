@@ -71,7 +71,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
-	transactors := GetPriorityTransactors(blockNumber, p.config, vmenv)
+	transactors, err := GetPriorityTransactors(blockNumber, p.config, vmenv)
+	if err != nil{ // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
+		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
+	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
