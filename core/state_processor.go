@@ -230,10 +230,10 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	if tx.Type() == types.PriorityTxType {
 		transactor, found := getPriorityTransactorByKey(header.Number, msg.PrioritySender(), config, vmenv)
 		if !found {
-			return nil, errBadPriorityKey
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
 		}
 		if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
-			return nil, errNoGasPriceWaiver
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
 		}
 	}
 	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
