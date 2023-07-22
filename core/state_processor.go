@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/misc"

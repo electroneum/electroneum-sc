@@ -1,13 +1,14 @@
 package core
 
 import (
+	"math/big"
+	"strings"
+
 	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/params"
-	"math/big"
-	"strings"
 )
 
 func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactorMap, error) {

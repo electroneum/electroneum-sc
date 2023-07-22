@@ -18,6 +18,8 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"github.com/electroneum/electroneum-sc/core/vm"
 	"math"
 	"math/big"
 	"sort"
@@ -296,6 +298,7 @@ type TxPool struct {
 	initDoneCh      chan struct{}  // is closed once the pool is initialized (for tests)
 
 	changesSinceReorg int // A counter for how many drops we've performed in-between reorg.
+	priorityTransactorMap common.PriorityTransactorMap
 }
 
 type txpoolResetRequest struct {
@@ -307,7 +310,6 @@ type txpoolResetRequest struct {
 func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain blockChain) *TxPool {
 	// Sanitize the input to ensure no vulnerable gas prices are set
 	config = (&config).sanitize()
-
 	// Create the transaction pool with its initial settings
 	pool := &TxPool{
 		config:          config,
@@ -326,6 +328,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		reorgShutdownCh: make(chan struct{}),
 		initDoneCh:      make(chan struct{}),
 		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
+		priorityTransactorMap: common.PriorityTransactorMap{},
 	}
 	pool.locals = newAccountSet(pool.signer)
 	for _, addr := range config.Locals {
@@ -333,7 +336,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		pool.locals.add(addr)
 	}
 	pool.priced = newTxPricedList(pool.all)
-	pool.reset(nil, chain.CurrentBlock().Header())
+	pool.reset(nil, chain.CurrentBlock().Header()) //this ensures that the priority tx map in the txpool gets updated before validatetx() ever gets called when the node is first switched on
 
 	// Start the reorg loop early so it can handle requests generated during journal loading.
 	pool.wg.Add(1)
@@ -698,7 +701,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPrioritySignature
 		}
 		// Make sure the priority public key is an allowed one
-		transactor, exists := pool.chain.GetPriorityTransactorByKeyForBlock(pool.chain.CurrentBlock().Number(), priorityPubkey)
+		transactor, exists := pool.priorityTransactorMap[priorityPubkey]
 		if !exists {
 			return errBadPriorityKey
 		}
@@ -1419,6 +1422,11 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 		return
 	}
 	pool.currentState = statedb
+	vmenv := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, pool.currentState, pool.chainconfig, vm.Config{})
+	pool.priorityTransactorMap, err = GetPriorityTransactors(pool.chain.CurrentBlock().Number(), pool.chainconfig, vmenv) // called upon pool reset which is called per new block added to the chain
+	if err != nil{
+		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
+	}
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
 
@@ -1426,6 +1434,28 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	senderCacher.recover(pool.signer, reinject)
 	pool.addTxsLocked(reinject, false)
+
+	// kick was-priority transactions that don't abide by the new state rather than dealing with them in
+	// demoteExecutables and demoting to queue because the odds of such a tx becoming valid
+	// again (priority reestablished in the next few hours) is pretty much zero and we dont want to waste resources
+	// pushing to queue, populate the queue unnecessarily and waste an account slot that could be used
+	// for another priority sender
+	for _, txList := range pool.pending {
+		for _, tx := range txList.Flatten() {
+			priorityPubkey, _ := types.PrioritySender(pool.signer, tx)    // no need to deal with error because this has already been validated once before
+			if _, ok := pool.priorityTransactorMap[priorityPubkey]; !ok {
+				pool.removeTx(tx.Hash(), true)
+			}
+		}
+	}
+	for _, txList := range pool.queue {
+		for _, tx := range txList.Flatten() {
+			priorityPubkey, _ := types.PrioritySender(pool.signer, tx)    // no need to deal with error because this has already been validated once before
+			if _, ok := pool.priorityTransactorMap[priorityPubkey]; !ok {
+				pool.removeTx(tx.Hash(), true)
+			}
+		}
+	}
 
 	// Update all fork indicator by next pending block number.
 	next := new(big.Int).Add(newHead.Number, big.NewInt(1))
