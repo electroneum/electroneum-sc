@@ -20,10 +20,9 @@ import (
 	"fmt"
 	"math/big"
 
-	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
-
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/misc"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -108,10 +107,10 @@ func (b *BlockGen) AddTxWithChain(bc *BlockChain, tx *types.Transaction) {
 	blockContext := NewEVMBlockContext(b.header, bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, b.statedb, b.config, *bc.GetVMConfig())
 	transactors, err := GetPriorityTransactors(b.header.Number, b.config, vmenv)
-	if err != nil{ // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
+	if err != nil { // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
 		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
 	}
-	receipt, err := ApplyTransaction(b.config, bc, &b.header.Coinbase, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed, vm.Config{} ,transactors)
+	receipt, err := ApplyTransaction(b.config, bc, &b.header.Coinbase, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed, vm.Config{}, transactors)
 	if err != nil {
 		panic(err)
 	}

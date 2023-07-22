@@ -877,7 +877,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	blockContext := core.NewEVMBlockContext(env.header, w.chain, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, env.state, w.chainConfig, *w.chain.GetVMConfig())
 	transactors, err := core.GetPriorityTransactors(env.header.Number, w.chainConfig, vmenv)
-	if err != nil{ // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
+	if err != nil { // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
 		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
 	}
 	for {

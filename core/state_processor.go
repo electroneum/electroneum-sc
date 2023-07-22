@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
@@ -27,7 +28,6 @@ import (
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/params"
-	"math/big"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -73,7 +73,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
 	transactors, err := GetPriorityTransactors(blockNumber, p.config, vmenv)
-	if err != nil{ // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
+	// if there is an issue pulling the contract panic as something must be very
+	// wrong, and we don't want an accidental fork or potentially try again and have
+	// an incorrect flow
+	if err != nil {
 		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
 	}
 	// Iterate over and process the individual transactions
