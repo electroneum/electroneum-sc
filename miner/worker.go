@@ -19,6 +19,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"github.com/electroneum/electroneum-sc/core/vm"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -852,10 +853,10 @@ func (w *worker) updateSnapshot(env *environment) {
 	w.snapshotState = env.state.Copy()
 }
 
-func (w *worker) commitTransaction(env *environment, tx *types.Transaction) ([]*types.Log, error) {
+func (w *worker) commitTransaction(env *environment, tx *types.Transaction, transactors common.PriorityTransactorMap) ([]*types.Log, error) {
 	snap := env.state.Snapshot()
 
-	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &env.coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *w.chain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &env.coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *w.chain.GetVMConfig(), transactors)
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
 		return nil, err
@@ -872,6 +873,10 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		env.gasPool = new(core.GasPool).AddGas(gasLimit)
 	}
 	var coalescedLogs []*types.Log
+
+	blockContext := core.NewEVMBlockContext(env.header, w.chain, nil)
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, env.state, w.chainConfig, *w.chain.GetVMConfig())
+	transactors := core.GetPriorityTransactors(env.header.Number, w.chainConfig, vmenv)
 
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
@@ -921,7 +926,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
 
-		logs, err := w.commitTransaction(env, tx)
+		logs, err := w.commitTransaction(env, tx, transactors)
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account

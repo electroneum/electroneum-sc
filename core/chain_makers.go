@@ -105,7 +105,10 @@ func (b *BlockGen) AddTxWithChain(bc *BlockChain, tx *types.Transaction) {
 		b.SetCoinbase(common.Address{})
 	}
 	b.statedb.Prepare(tx.Hash(), len(b.txs))
-	receipt, err := ApplyTransaction(b.config, bc, &b.header.Coinbase, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed, vm.Config{})
+	blockContext := NewEVMBlockContext(b.header, bc, nil)
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, b.statedb, b.config, *bc.GetVMConfig())
+	transactors := GetPriorityTransactors(b.header.Number, b.config, vmenv)
+	receipt, err := ApplyTransaction(b.config, bc, &b.header.Coinbase, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed, vm.Config{} ,transactors)
 	if err != nil {
 		panic(err)
 	}
