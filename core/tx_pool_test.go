@@ -18,9 +18,12 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	crand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"math/rand"
 	"os"
@@ -59,12 +62,35 @@ func init() {
 	testTxPoolConfig = DefaultTxPoolConfig
 	testTxPoolConfig.Journal = ""
 
-	for i := 0; i < 10; i++ {
-		privateKey, err := crypto.GenerateKey()
-		if err != nil {
-			fmt.Printf("Failed to generate private key: %v\n", err)
+	hexKeys := []string{
+		"3a1076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe266",
+		"4a2076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe277",
+		"5a3076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe288",
+		"6a4076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe299",
+		"7a5076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2aa",
+		"8a6076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2bb",
+		"9a7076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2cc",
+		"aa8076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2dd",
+		"ba9076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2ee",
+		"caA076bf45ab87712ad64ccb3b10217737f7faacbf2872e88fdd9a537d8fe2ff",
+	}
+
+	for i, hexKey := range hexKeys {
+		keyInt, success := new(big.Int).SetString(hexKey, 16)
+		if !success {
+			fmt.Println("Failed to parse hex key into big.Int")
 			return
 		}
+
+		privateKey := &ecdsa.PrivateKey{
+			PublicKey: ecdsa.PublicKey{
+				Curve: secp256k1.S256(),
+				X:     nil,
+				Y:     nil,
+			},
+			D: keyInt,
+		}
+		privateKey.PublicKey.X, privateKey.PublicKey.Y = privateKey.PublicKey.Curve.ScalarBaseMult(keyInt.Bytes())
 
 		priorityPrivateKeys[i] = privateKey
 	}
@@ -109,25 +135,42 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) even
 }
 
 func (bc *testBlockChain) GetPriorityTransactors() common.PriorityTransactorMap {
-	hexString := "04efb99d9860f4dec4cb548a5722c27e9ef58e37fbab9719c5b33d55c216db49311221a01f638ce5f255875b194e0acaa58b19a89d2e56a864427298f826a7f887"
-	bytes, err := hex.DecodeString(hexString)
-	if err != nil {
-		panic("failed to decode priority public key hex string")
+	priorityPubkeys := []string{
+		"04efb99d9860f4dec4cb548a5722c27e9ef58e37fbab9719c5b33d55c216db49311221a01f638ce5f255875b194e0acaa58b19a89d2e56a864427298f826a7f887",
+		"047409b5751867a7a4ac4b3b4358c3f87d97a339b2ab0943217e5dec9aebc10938de4bb7447c26f2eaf4e39417976480b30d2b5c60baccaeb08971840f3bbc282f",
+		"04d043a6e03dc0c70bedfb790451502096589cf9c9ecaca2b8d40f7e27091bfcef928f15cdb51a385b4e254cb783e1056d25672bac4dce18f855600d0a6e8720eb",
+		"044925e5848b977e91a1c797cf3603919d7a0ad00b5e41a79233db53d953e2d78dcfd95a96f7767b41ba907da6892e4bd0f50146b9d4741ea0328e5e378e8573c9",
+		"04ac7df61af75c6ee0f937e6dfbb570fccb219186a36c4c4727276f737272f2394c6132ad2cdc927930c8b264aea505fa7e420929d8e8f068098a1d821ca162c88",
+		"0469278e0ad14e2fe1215903b7fd734ec91abfd7c4770827371876dddff899991fa3493f8b64844b50d975d0024facf273dd9af52acd8860344743397bb12faa26",
+		"04b2613fc01c8d39c6d219e245b2416bde0201ec99d4f63b612e170599bafccbf70c3e9df3c19d2f01e3525b802f71ab4a43cca55c59e696b5c59461877ee70440",
+		"04b4cfcaca58e8007f10b87be58e412bb6e4b3390de9a4ba4e351ab1d77ec0f1f85db541aee766aa04066d209d9c7fc359a5f5c3344d1560f2b28b3fa24e38023f",
+		"047b8e3f6bfe2c2bf37cc241cd87a10fa983a46c7b01de781b6adec0cfa04234e9339d53b715342a4caf90365330679758124f6ef410e9a0909a4bfbd1b5f78426",
+		"0433dcd2d7fa4a1f14908db9e94fa545c50b8353f8fce58c19fbc160facd1eef521d3b47b3059a2d5b8016d7cfa88306b1b8d39fae141bbdcfe42a569d192c0525",
 	}
-	var publicKey common.PublicKey
-	copy(publicKey[:], bytes)
-	switch bc.prirorityType {
-	case NonWaiverPriorityTx:
-		return common.PriorityTransactorMap{
-			publicKey: common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: false},
+
+	priorityTransactorMap := make(common.PriorityTransactorMap)
+
+	for _, hexString := range priorityPubkeys {
+		bytes, err := hex.DecodeString(hexString)
+		if err != nil {
+			panic("failed to decode priority public key hex string")
 		}
-	case WaiverPriorityTx:
-		return common.PriorityTransactorMap{
-			publicKey: common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: true},
+		var publicKey common.PublicKey
+		copy(publicKey[:], bytes)
+
+		switch bc.prirorityType {
+		case NonWaiverPriorityTx:
+			priorityTransactorMap[publicKey] = common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: false}
+		case WaiverPriorityTx:
+			priorityTransactorMap[publicKey] = common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: true}
 		}
-	default:
+	}
+
+	if len(priorityTransactorMap) == 0 {
 		return common.PriorityTransactorMap{}
 	}
+
+	return priorityTransactorMap
 }
 
 func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
@@ -371,8 +414,8 @@ func TestStateChangeDuringPriorityTransactionPoolReset(t *testing.T) {
 	statedb.SetBalance(address, new(big.Int).SetUint64(params.Ether))
 	blockchain := &testChain{&testBlockChain{1000000000, statedb, new(event.Feed), WaiverPriorityTx, common.PriorityTransactorMap{}}, address, &trigger}
 
-	tx0 := priorityTx(0, 100000, big.NewInt(0), big.NewInt(0), key, key)
-	tx1 := priorityTx(1, 100000, big.NewInt(100000), big.NewInt(100000), key, key)
+	tx0 := priorityTx(0, 100000, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0])
+	tx1 := priorityTx(1, 100000, big.NewInt(100000), big.NewInt(100000), key, priorityPrivateKeys[0])
 
 	pool := NewTxPool(testTxPoolConfig, params.TestChainConfig, blockchain)
 	defer pool.Stop()
@@ -447,7 +490,7 @@ func TestInvalidTransactions(t *testing.T) {
 		t.Error("expected", nil, "got", err)
 	}
 
-	tx = priorityTx(2, 100, big.NewInt(0), big.NewInt(0), key, key)
+	tx = priorityTx(2, 100, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0])
 	if err := pool.AddRemote(tx); err != errNoGasPriceWaiver {
 		t.Error("expected", errNoGasPriceWaiver, "got", err)
 	}
@@ -493,7 +536,7 @@ func TestPriorityTransactionQueue(t *testing.T) {
 	pool, key := setupTxPool()
 	defer pool.Stop()
 
-	tx := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, key)
+	tx := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	from, _ := deriveSender(tx)
 	testAddBalance(pool, from, big.NewInt(1000))
 	<-pool.requestReset(nil, nil)
@@ -504,7 +547,7 @@ func TestPriorityTransactionQueue(t *testing.T) {
 		t.Error("expected valid txs to be 1 is", len(pool.pending))
 	}
 
-	tx = priorityTx(1, 100, big.NewInt(1), big.NewInt(1), key, key)
+	tx = priorityTx(1, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	from, _ = deriveSender(tx)
 	testSetNonce(pool, from, 2)
 	pool.enqueueTx(tx.Hash(), tx, false, true)
@@ -550,9 +593,9 @@ func TestPriorityTransactionQueue2(t *testing.T) {
 	pool, key := setupTxPool()
 	defer pool.Stop()
 
-	tx1 := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, key)
-	tx2 := priorityTx(10, 100, big.NewInt(1), big.NewInt(1), key, key)
-	tx3 := priorityTx(11, 100, big.NewInt(1), big.NewInt(1), key, key)
+	tx1 := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+	tx2 := priorityTx(10, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+	tx3 := priorityTx(11, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	from, _ := deriveSender(tx1)
 	testAddBalance(pool, from, big.NewInt(1000))
 	pool.reset(nil, nil)
@@ -576,7 +619,7 @@ func TestPriorityTransactionQueueMixed(t *testing.T) {
 	pool, key := setupTxPool()
 	defer pool.Stop()
 
-	tx1 := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, key)
+	tx1 := priorityTx(0, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	tx2 := transaction(1, 100, key)
 	from, _ := deriveSender(tx1)
 	testAddBalance(pool, from, big.NewInt(1000))
@@ -605,7 +648,7 @@ func TestPriorityTransactionQueueMixed2(t *testing.T) {
 	defer pool.Stop()
 
 	tx1 := transaction(0, 100, key)
-	tx2 := priorityTx(1, 100, big.NewInt(1), big.NewInt(1), key, key)
+	tx2 := priorityTx(1, 100, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 
 	from, _ := deriveSender(tx1)
 	testAddBalance(pool, from, big.NewInt(1000))
@@ -653,7 +696,7 @@ func TestTransactionTipAboveFeeCap(t *testing.T) {
 		t.Error("expected", ErrTipAboveFeeCap, "got", err)
 	}
 
-	tx2 := priorityTx(0, 100, big.NewInt(1), big.NewInt(2), key, key)
+	tx2 := priorityTx(0, 100, big.NewInt(1), big.NewInt(2), key, priorityPrivateKeys[0])
 
 	if err := pool.AddRemote(tx2); err != ErrTipAboveFeeCap {
 		t.Error("expected", ErrTipAboveFeeCap, "got", err)
@@ -782,10 +825,10 @@ func TestPriorityTransactionDoubleNonce(t *testing.T) {
 	resetState()
 
 	signer := types.LatestSignerForChainID(big.NewInt(1))
-	tx1 := priorityTx(0, 21000, big.NewInt(0), big.NewInt(0), key, key)
-	tx2 := priorityTx(0, 21000, big.NewInt(10), big.NewInt(10), key, key)
-	tx3 := priorityTx(0, 21000, big.NewInt(20), big.NewInt(20), key, key)
-	tx4 := priorityTx(0, 21000, big.NewInt(10), big.NewInt(10), key, key)
+	tx1 := priorityTx(0, 21000, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0])
+	tx2 := priorityTx(0, 21000, big.NewInt(10), big.NewInt(10), key, priorityPrivateKeys[0])
+	tx3 := priorityTx(0, 21000, big.NewInt(20), big.NewInt(20), key, priorityPrivateKeys[0])
+	tx4 := priorityTx(0, 21000, big.NewInt(10), big.NewInt(10), key, priorityPrivateKeys[0])
 
 	// Add the first two transaction, ensure higher priced stays only
 	if replace, err := pool.add(tx1, false); err != nil || replace {
@@ -860,7 +903,7 @@ func TestPriorityTransactionMissingNonce(t *testing.T) {
 
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	testAddBalance(pool, addr, big.NewInt(100000000000000))
-	tx := priorityTx(1, 21000, big.NewInt(10), big.NewInt(10), key, key)
+	tx := priorityTx(1, 21000, big.NewInt(10), big.NewInt(10), key, priorityPrivateKeys[0])
 	if _, err := pool.add(tx, false); err != nil {
 		t.Error("didn't expect error", err)
 	}
@@ -911,7 +954,7 @@ func TestPriorityTransactionNonceRecovery(t *testing.T) {
 	testAddBalance(pool, addr, big.NewInt(100000000000000))
 	<-pool.requestReset(nil, nil)
 
-	tx := priorityTx(n, 21000, big.NewInt(10), big.NewInt(10), key, key)
+	tx := priorityTx(n, 21000, big.NewInt(10), big.NewInt(10), key, priorityPrivateKeys[0])
 	if err := pool.AddRemote(tx); err != nil {
 		t.Error(err)
 	}
@@ -1040,12 +1083,12 @@ func TestPriorityTransactionDropping(t *testing.T) {
 
 	// Add some pending and some queued transactions
 	var (
-		tx0  = priorityTx(0, 21000, big.NewInt(1), big.NewInt(1), key, key)
-		tx1  = priorityTx(1, 31000, big.NewInt(1), big.NewInt(1), key, key)
-		tx2  = priorityTx(2, 41000, big.NewInt(1), big.NewInt(1), key, key)
-		tx10 = priorityTx(10, 21000, big.NewInt(1), big.NewInt(1), key, key)
-		tx11 = priorityTx(11, 31000, big.NewInt(1), big.NewInt(1), key, key)
-		tx12 = priorityTx(12, 41000, big.NewInt(1), big.NewInt(1), key, key)
+		tx0  = priorityTx(0, 21000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+		tx1  = priorityTx(1, 31000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+		tx2  = priorityTx(2, 41000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+		tx10 = priorityTx(10, 21000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+		tx11 = priorityTx(11, 31000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+		tx12 = priorityTx(12, 41000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	)
 	pool.all.Add(tx0, false)
 	pool.priced.Put(tx0, false)
@@ -1271,9 +1314,9 @@ func TestPriorityTransactionPostponing(t *testing.T) {
 		for j := 0; j < 100; j++ {
 			var tx *types.Transaction
 			if (i+j)%2 == 0 {
-				tx = priorityTx(uint64(j), 25000, big.NewInt(1), big.NewInt(1), key, key)
+				tx = priorityTx(uint64(j), 25000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 			} else {
-				tx = priorityTx(uint64(j), 50000, big.NewInt(1), big.NewInt(1), key, key)
+				tx = priorityTx(uint64(j), 50000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 			}
 			txs = append(txs, tx)
 		}
@@ -1430,8 +1473,8 @@ func TestPriorityTransactionGapFilling(t *testing.T) {
 
 	// Create a pending and a queued transaction with a nonce-gap in between
 	pool.AddRemotesSync([]*types.Transaction{
-		priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), key, key),
-		priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), key, key),
+		priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]),
+		priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]),
 	})
 	pending, queued := pool.Stats()
 	if pending != 1 {
@@ -1447,7 +1490,7 @@ func TestPriorityTransactionGapFilling(t *testing.T) {
 		t.Fatalf("pool internal state corrupted: %v", err)
 	}
 	// Fill the nonce gap and ensure all transactions become pending
-	if err := pool.addRemoteSync(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), key, key)); err != nil {
+	if err := pool.addRemoteSync(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])); err != nil {
 		t.Fatalf("failed to add gapped transaction: %v", err)
 	}
 	pending, queued = pool.Stats()
@@ -1514,7 +1557,7 @@ func TestPriorityTransactionQueueAccountLimiting(t *testing.T) {
 
 	// Keep queuing up transactions and make sure all above a limit are dropped
 	for i := uint64(1); i <= testTxPoolConfig.AccountQueue+5; i++ {
-		if err := pool.addRemoteSync(priorityTx(i, 100000, big.NewInt(1), big.NewInt(1), key, key)); err != nil {
+		if err := pool.addRemoteSync(priorityTx(i, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])); err != nil {
 			t.Fatalf("tx %d: failed to add transaction: %v", i, err)
 		}
 		if len(pool.pending) != 0 {
@@ -1657,6 +1700,7 @@ func testPriorityTransactionQueueGlobalLimiting(t *testing.T, nolocals bool) {
 		testAddBalance(pool, crypto.PubkeyToAddress(keys[i].PublicKey), big.NewInt(1000000))
 	}
 	local := keys[len(keys)-1]
+	localPriority := priorityPrivateKeys[4]
 
 	// Generate and queue a batch of transactions
 	nonces := make(map[common.Address]uint64)
@@ -1666,7 +1710,7 @@ func testPriorityTransactionQueueGlobalLimiting(t *testing.T, nolocals bool) {
 		key := keys[rand.Intn(len(keys)-1)] // skip adding transactions with the local account
 		addr := crypto.PubkeyToAddress(key.PublicKey)
 
-		txs = append(txs, priorityTx(nonces[addr]+1, 100000, big.NewInt(1), big.NewInt(1), key, key))
+		txs = append(txs, priorityTx(nonces[addr]+1, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]))
 		nonces[addr]++
 	}
 	// Import the batch and verify that limits have been enforced
@@ -1685,7 +1729,7 @@ func testPriorityTransactionQueueGlobalLimiting(t *testing.T, nolocals bool) {
 	// Generate a batch of transactions from the local account and import them
 	txs = txs[:0]
 	for i := uint64(0); i < 3*config.PriorityQueue; i++ {
-		txs = append(txs, priorityTx(i+1, 100000, big.NewInt(1), big.NewInt(1), local, local))
+		txs = append(txs, priorityTx(i+1, 100000, big.NewInt(1), big.NewInt(1), local, localPriority))
 	}
 	pool.AddLocals(txs)
 
@@ -1746,6 +1790,9 @@ func testPriorityTransactionQueueGlobalLimitingMixed(t *testing.T, nolocals bool
 		keys[i], _ = crypto.GenerateKey()
 		testAddBalance(pool, crypto.PubkeyToAddress(keys[i].PublicKey), big.NewInt(1000000))
 	}
+	keys[9] = priorityPrivateKeys[9]
+	testAddBalance(pool, crypto.PubkeyToAddress(keys[9].PublicKey), big.NewInt(1000000))
+
 	local := keys[len(keys)/2-1]
 	priorityLocal := keys[len(keys)-1]
 
@@ -1763,7 +1810,6 @@ func testPriorityTransactionQueueGlobalLimitingMixed(t *testing.T, nolocals bool
 	for len(txs) < cap(txs) {
 		key := keys[len(keys)/2+rand.Intn(len(keys)/2-1)] // skip adding transactions with the local account
 		addr := crypto.PubkeyToAddress(key.PublicKey)
-
 		txs = append(txs, priorityTx(nonces[addr]+1, 100000, big.NewInt(1), big.NewInt(1), key, key))
 		nonces[addr]++
 	}
@@ -2017,16 +2063,18 @@ func testPriorityTransactionQueueTimeLimiting(t *testing.T, nolocals bool) {
 
 	// Create two test accounts to ensure remotes expire but locals do not
 	local, _ := crypto.GenerateKey()
+	priorityLocal := priorityPrivateKeys[0]
 	remote, _ := crypto.GenerateKey()
+	priorityRemote := priorityPrivateKeys[1]
 
 	testAddBalance(pool, crypto.PubkeyToAddress(local.PublicKey), big.NewInt(1000000000))
 	testAddBalance(pool, crypto.PubkeyToAddress(remote.PublicKey), big.NewInt(1000000000))
 
 	// Add the two transactions and ensure they both are queued up
-	if err := pool.AddLocal(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), local, local)); err != nil {
+	if err := pool.AddLocal(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), local, priorityLocal)); err != nil {
 		t.Fatalf("failed to add local transaction: %v", err)
 	}
-	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), remote, remote)); err != nil {
+	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), remote, priorityRemote)); err != nil {
 		t.Fatalf("failed to add remote transaction: %v", err)
 	}
 	pending, queued := pool.Stats()
@@ -2093,19 +2141,19 @@ func testPriorityTransactionQueueTimeLimiting(t *testing.T, nolocals bool) {
 	}
 
 	// Queue gapped transactions
-	if err := pool.AddLocal(priorityTx(4, 100000, big.NewInt(1), big.NewInt(1), local, local)); err != nil {
+	if err := pool.AddLocal(priorityTx(4, 100000, big.NewInt(1), big.NewInt(1), local, priorityLocal)); err != nil {
 		t.Fatalf("failed to add remote transaction: %v", err)
 	}
-	if err := pool.addRemoteSync(priorityTx(4, 100000, big.NewInt(1), big.NewInt(1), remote, remote)); err != nil {
+	if err := pool.addRemoteSync(priorityTx(4, 100000, big.NewInt(1), big.NewInt(1), remote, priorityRemote)); err != nil {
 		t.Fatalf("failed to add remote transaction: %v", err)
 	}
 	time.Sleep(5 * evictionInterval) // A half lifetime pass
 
 	// Queue executable transactions, the life cycle should be restarted.
-	if err := pool.AddLocal(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), local, local)); err != nil {
+	if err := pool.AddLocal(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), local, priorityLocal)); err != nil {
 		t.Fatalf("failed to add remote transaction: %v", err)
 	}
-	if err := pool.addRemoteSync(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), remote, remote)); err != nil {
+	if err := pool.addRemoteSync(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), remote, priorityRemote)); err != nil {
 		t.Fatalf("failed to add remote transaction: %v", err)
 	}
 	time.Sleep(6 * evictionInterval)
@@ -2203,7 +2251,7 @@ func TestPriorityTransactionPendingLimiting(t *testing.T) {
 
 	// Keep queuing up transactions and make sure all above a limit are dropped
 	for i := uint64(0); i < testTxPoolConfig.AccountQueue+5; i++ {
-		if err := pool.addRemoteSync(priorityTx(i, 100000, big.NewInt(1), big.NewInt(1), key, key)); err != nil {
+		if err := pool.addRemoteSync(priorityTx(i, 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])); err != nil {
 			t.Fatalf("tx %d: failed to add transaction: %v", i, err)
 		}
 		if pool.pending[account].Len() != int(i)+1 {
@@ -2301,7 +2349,7 @@ func TestPriorityTransactionPendingGlobalLimiting(t *testing.T) {
 	for _, key := range keys {
 		addr := crypto.PubkeyToAddress(key.PublicKey)
 		for j := 0; j < int(config.PrioritySlots)/len(keys)*2; j++ {
-			txs = append(txs, priorityTx(nonces[addr], 100000, big.NewInt(1), big.NewInt(1), key, key))
+			txs = append(txs, priorityTx(nonces[addr], 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]))
 			nonces[addr]++
 		}
 	}
@@ -2403,20 +2451,20 @@ func TestPriorityTransactionAllowedTxSize(t *testing.T) {
 	dataSize := txMaxSize - baseSize
 
 	// Try adding a transaction with maximal allowed size
-	tx := priorityDataTransaction(0, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, key, dataSize)
+	tx := priorityDataTransaction(0, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0], dataSize)
 	if err := pool.addRemoteSync(tx); err != nil {
 		t.Fatalf("failed to add transaction of size %d, close to maximal: %v", int(tx.Size()), err)
 	}
 	// Try adding a transaction with random allowed size
-	if err := pool.addRemoteSync(priorityDataTransaction(1, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, key, uint64(rand.Intn(int(dataSize))))); err != nil {
+	if err := pool.addRemoteSync(priorityDataTransaction(1, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0], uint64(rand.Intn(int(dataSize))))); err != nil {
 		t.Fatalf("failed to add transaction of random allowed size: %v", err)
 	}
 	// Try adding a transaction of minimal not allowed size
-	if err := pool.addRemoteSync(priorityDataTransaction(2, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, key, txMaxSize)); err == nil {
+	if err := pool.addRemoteSync(priorityDataTransaction(2, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0], txMaxSize)); err == nil {
 		t.Fatalf("expected rejection on slightly oversize transaction")
 	}
 	// Try adding a transaction of random not allowed size
-	if err := pool.addRemoteSync(priorityDataTransaction(2, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, key, dataSize+1+uint64(rand.Intn(10*txMaxSize)))); err == nil {
+	if err := pool.addRemoteSync(priorityDataTransaction(2, pool.currentMaxGas, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0], dataSize+1+uint64(rand.Intn(10*txMaxSize)))); err == nil {
 		t.Fatalf("expected rejection on oversize transaction")
 	}
 	// Run some sanity checks on the pool internals
@@ -2487,7 +2535,7 @@ func TestPriorityTransactionCapClearsFromAll(t *testing.T) {
 
 	txs := types.Transactions{}
 	for j := 0; j < int(config.GlobalSlots)*2; j++ {
-		txs = append(txs, priorityTx(uint64(j), 100000, big.NewInt(1), big.NewInt(1), key, key))
+		txs = append(txs, priorityTx(uint64(j), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]))
 	}
 	// Import the batch and verify that limits have been enforced
 	pool.AddRemotes(txs)
@@ -2571,7 +2619,7 @@ func TestPriorityTransactionPendingMinimumAllowance(t *testing.T) {
 	for _, key := range keys {
 		addr := crypto.PubkeyToAddress(key.PublicKey)
 		for j := 0; j < int(config.AccountSlots)*2; j++ {
-			txs = append(txs, priorityTx(nonces[addr], 100000, big.NewInt(1), big.NewInt(1), key, key))
+			txs = append(txs, priorityTx(nonces[addr], 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0]))
 			nonces[addr]++
 		}
 	}
@@ -2630,20 +2678,20 @@ func TestTransactionPoolRepricing(t *testing.T) {
 	txs = append(txs, pricedTransaction(3, 100000, big.NewInt(2), keys[2]))
 
 	// Priority
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(2), big.NewInt(2), keys[3], keys[3]))
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[3], keys[3]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[3], keys[3]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(2), big.NewInt(2), keys[3], priorityPrivateKeys[3]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[3], priorityPrivateKeys[3]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[3], priorityPrivateKeys[3]))
 
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[4], keys[4]))
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4]))
 
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[5], keys[5]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[5], keys[5]))
-	txs = append(txs, priorityTx(3, 100000, big.NewInt(2), big.NewInt(2), keys[5], keys[5]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[5], priorityPrivateKeys[5]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[5], priorityPrivateKeys[5]))
+	txs = append(txs, priorityTx(3, 100000, big.NewInt(2), big.NewInt(2), keys[5], priorityPrivateKeys[5]))
 
 	ltx := pricedTransaction(0, 100000, big.NewInt(1), keys[6])
-	lptx := priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[7], keys[7])
+	lptx := priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[7], priorityPrivateKeys[7])
 
 	// Import the batch and that both pending and queued transactions match up
 	pool.AddRemotesSync(txs)
@@ -2689,13 +2737,13 @@ func TestTransactionPoolRepricing(t *testing.T) {
 	if err := pool.AddRemote(pricedTransaction(2, 100000, big.NewInt(1), keys[2])); err != ErrUnderpriced {
 		t.Fatalf("adding underpriced queued transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
-	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[3], keys[3])); err != ErrUnderpriced {
+	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[3], priorityPrivateKeys[3])); err != ErrUnderpriced {
 		t.Fatalf("adding underpriced pending transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
-	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[3], keys[4])); err != ErrUnderpriced {
+	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[3], priorityPrivateKeys[4])); err != ErrUnderpriced {
 		t.Fatalf("adding underpriced pending transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
-	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[3], keys[4])); err != ErrUnderpriced {
+	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[3], priorityPrivateKeys[4])); err != ErrUnderpriced {
 		t.Fatalf("adding underpriced queued transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
 	if err := validateEvents(events, 0); err != nil {
@@ -2706,7 +2754,7 @@ func TestTransactionPoolRepricing(t *testing.T) {
 	}
 	// However we can add local underpriced transactions
 	tx := pricedTransaction(1, 100000, big.NewInt(1), keys[6])
-	tx2 := priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[7], keys[7])
+	tx2 := priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[7], priorityPrivateKeys[7])
 	if err := pool.AddLocal(tx); err != nil {
 		t.Fatalf("failed to add underpriced local transaction: %v", err)
 	}
@@ -2732,13 +2780,13 @@ func TestTransactionPoolRepricing(t *testing.T) {
 	if err := pool.AddRemote(pricedTransaction(2, 100000, big.NewInt(2), keys[2])); err != nil {
 		t.Fatalf("failed to add queued transaction: %v", err)
 	}
-	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[3], keys[3])); err != nil {
+	if err := pool.AddRemote(priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[3], priorityPrivateKeys[3])); err != nil {
 		t.Fatalf("failed to add pending transaction: %v", err)
 	}
-	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4])); err != nil {
+	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4])); err != nil {
 		t.Fatalf("failed to add pending transaction: %v", err)
 	}
-	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[5], keys[5])); err != nil {
+	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[5], priorityPrivateKeys[5])); err != nil {
 		t.Fatalf("failed to add queued transaction: %v", err)
 	}
 	if err := validateEvents(events, 10); err != nil {
@@ -2788,16 +2836,16 @@ func TestTransactionPoolRepricingDynamicFee(t *testing.T) {
 	txs = append(txs, dynamicFeeTx(3, 100000, big.NewInt(2), big.NewInt(2), keys[2]))
 
 	// Priority
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[3], keys[3]))
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(3), big.NewInt(2), keys[3], keys[3]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(3), big.NewInt(2), keys[3], keys[3]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[3], priorityPrivateKeys[3]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(3), big.NewInt(2), keys[3], priorityPrivateKeys[3]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(3), big.NewInt(2), keys[3], priorityPrivateKeys[3]))
 
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[4], keys[4]))
-	txs = append(txs, priorityTx(3, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(3, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4]))
 
 	ltx := dynamicFeeTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[5])
-	lptx := priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[6], keys[6])
+	lptx := priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[6], priorityPrivateKeys[6])
 
 	// Import the batch and that both pending and queued transactions match up
 	pool.AddRemotesSync(txs)
@@ -2857,7 +2905,7 @@ func TestTransactionPoolRepricingDynamicFee(t *testing.T) {
 	if err := pool.AddLocal(tx); err != nil {
 		t.Fatalf("failed to add underpriced local transaction: %v", err)
 	}
-	tx = priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[6], keys[6])
+	tx = priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[6], priorityPrivateKeys[6])
 	if err := pool.AddLocal(tx); err != nil {
 		t.Fatalf("failed to add underpriced local transaction: %v", err)
 	}
@@ -2883,11 +2931,11 @@ func TestTransactionPoolRepricingDynamicFee(t *testing.T) {
 	if err := pool.AddRemote(tx); err != nil {
 		t.Fatalf("failed to add queued transaction: %v", err)
 	}
-	tx = priorityTx(0, 100000, big.NewInt(3), big.NewInt(2), keys[3], keys[4])
+	tx = priorityTx(0, 100000, big.NewInt(3), big.NewInt(2), keys[3], priorityPrivateKeys[4])
 	if err := pool.AddRemote(tx); err != nil {
 		t.Fatalf("failed to add queued transaction: %v", err)
 	}
-	tx = priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[4], keys[4])
+	tx = priorityTx(2, 100000, big.NewInt(2), big.NewInt(2), keys[4], priorityPrivateKeys[4])
 	if err := pool.AddRemote(tx); err != nil {
 		t.Fatalf("failed to add queued transaction: %v", err)
 	}
@@ -2942,12 +2990,12 @@ func TestTransactionPoolRepricingKeepsLocals(t *testing.T) {
 		}
 
 		// Add pending priority transaction.
-		pendingTx = priorityTx(i, 100000, big.NewInt(int64(i)+1), big.NewInt(int64(i)), keys[0], keys[0])
+		pendingTx = priorityTx(i, 100000, big.NewInt(int64(i)+1), big.NewInt(int64(i)), keys[0], priorityPrivateKeys[0])
 		if err := pool.AddLocal(pendingTx); err != nil {
 			t.Fatal(err)
 		}
 		// Add queued dynamic fee transaction.
-		queuedTx = priorityTx(i+501, 100000, big.NewInt(int64(i)+1), big.NewInt(int64(i)), keys[0], keys[0])
+		queuedTx = priorityTx(i+501, 100000, big.NewInt(int64(i)+1), big.NewInt(int64(i)), keys[0], priorityPrivateKeys[0])
 		if err := pool.AddLocal(queuedTx); err != nil {
 			t.Fatal(err)
 		}
@@ -3192,12 +3240,12 @@ func TestTransactionPoolUnderpricingDynamicFee(t *testing.T) {
 	txs = append(txs, pricedTransaction(1, 100000, big.NewInt(2), keys[0]))
 	txs = append(txs, dynamicFeeTx(1, 100000, big.NewInt(2), big.NewInt(1), keys[1]))
 
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(3), big.NewInt(2), keys[2], keys[2]))
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[2], keys[2]))
-	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(1), keys[3], keys[3]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(3), big.NewInt(2), keys[2], priorityPrivateKeys[2]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(2), keys[2], priorityPrivateKeys[2]))
+	txs = append(txs, priorityTx(1, 100000, big.NewInt(2), big.NewInt(1), keys[3], priorityPrivateKeys[3]))
 
 	ltx := dynamicFeeTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[4])
-	lptx := priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[6], keys[6])
+	lptx := priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[6], priorityPrivateKeys[6])
 
 	// Import the batch and that both pending and queued transactions match up
 	pool.AddRemotes(txs) // Pend K0:0, K0:1, K2:0, K2:1; Que K1:1, K3:1
@@ -3225,13 +3273,13 @@ func TestTransactionPoolUnderpricingDynamicFee(t *testing.T) {
 	}
 
 	// Ensure that adding an underpriced priority transaction fails
-	tx = priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[3], keys[3])
+	tx = priorityTx(0, 100000, big.NewInt(2), big.NewInt(1), keys[3], priorityPrivateKeys[3])
 	if err := pool.AddRemote(tx); err != ErrPriorityTxPoolOverflow {
 		t.Fatalf("adding underpriced pending transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
 
 	// Ensure that adding an high priced priority transaction fails
-	tx = priorityTx(0, 100000, big.NewInt(4), big.NewInt(4), keys[3], keys[3])
+	tx = priorityTx(0, 100000, big.NewInt(4), big.NewInt(4), keys[3], priorityPrivateKeys[3])
 	if err := pool.AddRemote(tx); err != ErrPriorityTxPoolOverflow {
 		t.Fatalf("adding underpriced pending transaction error mismatch: have %v, want %v", err, ErrUnderpriced)
 	}
@@ -3272,11 +3320,11 @@ func TestTransactionPoolUnderpricingDynamicFee(t *testing.T) {
 	if err := pool.AddLocal(ltx); err != nil {
 		t.Fatalf("failed to add new underpriced local transaction: %v", err)
 	}
-	ltx = priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[6], keys[6])
+	ltx = priorityTx(1, 100000, big.NewInt(1), big.NewInt(1), keys[6], priorityPrivateKeys[6])
 	if err := pool.AddLocal(ltx); err != nil {
 		t.Fatalf("failed to append underpriced local transaction: %v", err)
 	}
-	ltx = priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[7], keys[7])
+	ltx = priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[7], priorityPrivateKeys[7])
 	if err := pool.AddLocal(ltx); err != nil {
 		t.Fatalf("failed to add new underpriced local transaction: %v", err)
 	}
@@ -3435,7 +3483,7 @@ func TestPriorityTransactionDeduplication(t *testing.T) {
 	// Create a batch of transactions and add a few of them
 	txs := make([]*types.Transaction, 16)
 	for i := 0; i < len(txs); i++ {
-		txs[i] = priorityTx(uint64(i), 100000, big.NewInt(1), big.NewInt(1), key, key)
+		txs[i] = priorityTx(uint64(i), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 	}
 	var firsts []*types.Transaction
 	for i := 0; i < len(txs); i += 2 {
@@ -3530,7 +3578,7 @@ func TestTransactionReplacement(t *testing.T) {
 		t.Fatalf("failed to replace original proper pending transaction: %v", err)
 	}
 	// Priority
-	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(threshold), big.NewInt(threshold), key, key)); err != ErrReplaceTypeNotCompatible {
+	if err := pool.AddRemote(priorityTx(0, 100000, big.NewInt(threshold), big.NewInt(threshold), key, priorityPrivateKeys[0])); err != ErrReplaceTypeNotCompatible {
 		t.Fatalf("failed to replace original proper pending transaction: %v", err)
 	}
 	if err := validateEvents(events, 2); err != nil {
@@ -3558,7 +3606,7 @@ func TestTransactionReplacement(t *testing.T) {
 		t.Fatalf("failed to replace original proper queued transaction: %v", err)
 	}
 	// Priority
-	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(threshold), big.NewInt(threshold), key, key)); err != ErrReplaceTypeNotCompatible {
+	if err := pool.AddRemote(priorityTx(2, 100000, big.NewInt(threshold), big.NewInt(threshold), key, priorityPrivateKeys[0])); err != ErrReplaceTypeNotCompatible {
 		t.Fatalf("failed to replace original proper pending transaction: %v", err)
 	}
 
@@ -3728,17 +3776,17 @@ func TestPriorityTransactionReplacement(t *testing.T) {
 		}
 
 		// 1.  Send initial tx => accept
-		tx := priorityTx(nonce, 100000, big.NewInt(2), big.NewInt(1), key, key)
+		tx := priorityTx(nonce, 100000, big.NewInt(2), big.NewInt(1), key, priorityPrivateKeys[0])
 		if err := pool.addRemoteSync(tx); err != nil {
 			t.Fatalf("failed to add original cheap %s transaction: %v", stage, err)
 		}
 		// 2.  Don't bump tip or feecap => discard
-		tx = priorityTx(nonce, 100001, big.NewInt(2), big.NewInt(1), key, key)
+		tx = priorityTx(nonce, 100001, big.NewInt(2), big.NewInt(1), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != ErrReplaceUnderpriced {
 			t.Fatalf("original cheap %s transaction replacement error mismatch: have %v, want %v", stage, err, ErrReplaceUnderpriced)
 		}
 		// 3.  Bump both more than min => accept
-		tx = priorityTx(nonce, 100000, big.NewInt(3), big.NewInt(2), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(3), big.NewInt(2), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != nil {
 			t.Fatalf("failed to replace original cheap %s transaction: %v", stage, err)
 		}
@@ -3751,32 +3799,32 @@ func TestPriorityTransactionReplacement(t *testing.T) {
 			t.Fatalf("cheap %s replacement event firing failed: %v", stage, err)
 		}
 		// 5.  Send new tx with larger tip and feeCap => accept
-		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(gasTipCap), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(gasTipCap), key, priorityPrivateKeys[0])
 		if err := pool.addRemoteSync(tx); err != nil {
 			t.Fatalf("failed to add original proper %s transaction: %v", stage, err)
 		}
 		// 6.  Bump tip max allowed so it's still underpriced => discard
-		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(tipThreshold-1), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(tipThreshold-1), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != ErrReplaceUnderpriced {
 			t.Fatalf("original proper %s transaction replacement error mismatch: have %v, want %v", stage, err, ErrReplaceUnderpriced)
 		}
 		// 7.  Bump fee cap max allowed so it's still underpriced => discard
-		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold-1), big.NewInt(gasTipCap), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold-1), big.NewInt(gasTipCap), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != ErrReplaceUnderpriced {
 			t.Fatalf("original proper %s transaction replacement error mismatch: have %v, want %v", stage, err, ErrReplaceUnderpriced)
 		}
 		// 8.  Bump tip min for acceptance => accept
-		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(tipThreshold), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(gasFeeCap), big.NewInt(tipThreshold), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != ErrReplaceUnderpriced {
 			t.Fatalf("original proper %s transaction replacement error mismatch: have %v, want %v", stage, err, ErrReplaceUnderpriced)
 		}
 		// 9.  Bump fee cap min for acceptance => accept
-		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold), big.NewInt(gasTipCap), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold), big.NewInt(gasTipCap), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != ErrReplaceUnderpriced {
 			t.Fatalf("original proper %s transaction replacement error mismatch: have %v, want %v", stage, err, ErrReplaceUnderpriced)
 		}
 		// 10. Check events match expected (3 new executable txs during pending, 0 during queue)
-		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold), big.NewInt(tipThreshold), key, key)
+		tx = priorityTx(nonce, 100000, big.NewInt(feeCapThreshold), big.NewInt(tipThreshold), key, priorityPrivateKeys[0])
 		if err := pool.AddRemote(tx); err != nil {
 			t.Fatalf("failed to replace original cheap %s transaction: %v", stage, err)
 		}
@@ -3836,9 +3884,9 @@ func testTransactionJournaling(t *testing.T, nolocals bool) {
 
 	// Create two test accounts to ensure remotes expire but locals do not
 	local, _ := crypto.GenerateKey()
-	priorityLocal, _ := crypto.GenerateKey()
+	priorityLocal := priorityPrivateKeys[0]
 	remote, _ := crypto.GenerateKey()
-	priorityRemote, _ := crypto.GenerateKey()
+	priorityRemote := priorityPrivateKeys[1]
 
 	testAddBalance(pool, crypto.PubkeyToAddress(local.PublicKey), big.NewInt(10000000000))
 	testAddBalance(pool, crypto.PubkeyToAddress(priorityLocal.PublicKey), big.NewInt(10000000000))
@@ -3961,10 +4009,10 @@ func TestTransactionStatusCheck(t *testing.T) {
 	txs = append(txs, pricedTransaction(2, 100000, big.NewInt(1), keys[1]))
 	txs = append(txs, pricedTransaction(2, 100000, big.NewInt(1), keys[2])) // Queued only
 
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[3], keys[3]))
-	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[4], keys[4]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[4], keys[4]))
-	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[5], keys[5]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[3], priorityPrivateKeys[3]))
+	txs = append(txs, priorityTx(0, 100000, big.NewInt(1), big.NewInt(1), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[4], priorityPrivateKeys[4]))
+	txs = append(txs, priorityTx(2, 100000, big.NewInt(1), big.NewInt(1), keys[5], priorityPrivateKeys[5]))
 
 	// Import the transaction and ensure they are correctly added
 	pool.AddRemotesSync(txs)
@@ -4015,12 +4063,12 @@ func TestTransactionSlotCount(t *testing.T) {
 
 	key, _ = crypto.GenerateKey()
 	// Check that an empty transaction consumes a single slot
-	smallTx = priorityDataTransaction(0, 0, big.NewInt(0), big.NewInt(0), key, key, 0)
+	smallTx = priorityDataTransaction(0, 0, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0], 0)
 	if slots := numSlots(smallTx); slots != 1 {
 		t.Fatalf("small transactions slot count mismatch: have %d want %d", slots, 1)
 	}
 	// Check that a large transaction consumes the correct number of slots
-	bigTx = priorityDataTransaction(0, 0, big.NewInt(0), big.NewInt(0), key, key, uint64(10*txSlotSize))
+	bigTx = priorityDataTransaction(0, 0, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0], uint64(10*txSlotSize))
 	if slots := numSlots(bigTx); slots != 11 {
 		t.Fatalf("big transactions slot count mismatch: have %d want %d", slots, 11)
 	}
@@ -4066,7 +4114,7 @@ func benchmarkPriorityPendingDemotion(b *testing.B, size int) {
 	testAddBalance(pool, account, big.NewInt(1000000))
 
 	for i := 0; i < size; i++ {
-		tx := priorityTx(uint64(i), 100000, big.NewInt(1), big.NewInt(1), key, key)
+		tx := priorityTx(uint64(i), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 		pool.promoteTx(account, tx.Hash(), tx)
 	}
 	// Benchmark the speed of pool validation
@@ -4116,7 +4164,7 @@ func benchmarkPriorityFuturePromotion(b *testing.B, size int) {
 	testAddBalance(pool, account, big.NewInt(1000000))
 
 	for i := 0; i < size; i++ {
-		tx := priorityTx(uint64(1+i), 100000, big.NewInt(1), big.NewInt(1), key, key)
+		tx := priorityTx(uint64(1+i), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 		pool.enqueueTx(tx.Hash(), tx, false, true)
 	}
 	// Benchmark the speed of pool validation
@@ -4194,7 +4242,7 @@ func benchmarkPriorityPoolBatchInsert(b *testing.B, size int, local bool) {
 	for i := 0; i < b.N; i++ {
 		batches[i] = make(types.Transactions, size)
 		for j := 0; j < size; j++ {
-			batches[i][j] = priorityTx(uint64(size*i+j), 100000, big.NewInt(1), big.NewInt(1), key, key)
+			batches[i][j] = priorityTx(uint64(size*i+j), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 		}
 	}
 	// Benchmark importing the transactions into the queue
@@ -4275,7 +4323,7 @@ func BenchmarkPriorityPoolMultiAccountBatchInsert(b *testing.B) {
 		key, _ := crypto.GenerateKey()
 		account := crypto.PubkeyToAddress(key.PublicKey)
 		pool.currentState.AddBalance(account, big.NewInt(1000000))
-		tx := priorityTx(uint64(0), 100000, big.NewInt(1), big.NewInt(1), key, key)
+		tx := priorityTx(uint64(0), 100000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
 		batches[i] = tx
 	}
 	// Benchmark importing the transactions into the queue
