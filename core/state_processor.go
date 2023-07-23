@@ -96,7 +96,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			}
 		}
 		statedb.Prepare(tx.Hash(), i)
-		receipt, err := applyTransaction(msg, p.config, p.bc, nil, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv, &transactors)
+		receipt, err := applyTransaction(msg, p.config, p.bc, nil, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
@@ -111,7 +111,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 // Keep this function for applying the transaction only, as opposed to verification and pre checks.
 // Priority transactor checks are done within process() for verifying pre-created blocks and the prior wrapper function of applytransaction() for creating blocks
-func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, transactors *common.PriorityTransactorMap ) (*types.Receipt, error) {
+func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
 	evm.Reset(txContext, statedb)
@@ -156,10 +156,12 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 
 	// Update the priority transactor map for the next tx application in the block validation loop if this tx
 	// successfully updated the priority transactor list in the EVM/stateDB.
-	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber){
-		*transactors, err = GetPriorityTransactors(blockNumber, config, evm)
-		if err != nil{
-			panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
+	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
+		if statedb.PriorityTransactorsCache != nil {
+			*statedb.PriorityTransactorsCache, err = GetPriorityTransactors(blockNumber, config, evm)
+			if err != nil {
+				panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
+			}
 		}
 	}
 	return receipt, err
@@ -169,7 +171,7 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 // and uses the input parameters for its environment. It returns the receipt
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
-func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config, transactors *common.PriorityTransactorMap) (*types.Receipt, error) {
+func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
 	msg, err := tx.AsMessage(types.MakeSigner(config, header.Number), header.BaseFee)
 	if err != nil {
 		return nil, err
@@ -180,7 +182,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 
 	// Validate priority transaction
 	if tx.Type() == types.PriorityTxType {
-		transactor, found := (*transactors)[msg.PrioritySender()]
+		transactor, found := (*statedb.PriorityTransactorsCache)[msg.PrioritySender()]
 		if !found {
 			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
 		}
@@ -188,5 +190,5 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
 		}
 	}
-	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv, transactors)
+	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }

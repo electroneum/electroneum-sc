@@ -368,6 +368,10 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
+func (bc *BlockChain) GetPriorityTransactors() common.PriorityTransactorMap {
+	return bc.priorityTransactorMap
+}
+
 // GetPriorityTransactorByKeyForBlock retrieves the transactor if present in the
 // priority transactors contract and within block start/end height
 func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {

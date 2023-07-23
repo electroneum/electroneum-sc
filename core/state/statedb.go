@@ -122,6 +122,10 @@ type StateDB struct {
 	StorageUpdated int
 	AccountDeleted int
 	StorageDeleted int
+
+	// Cache the priority transactors as we add to the state ready to deliver to the
+	// blockchain struct when we write the block to the real DB
+	PriorityTransactorsCache *common.PriorityTransactorMap
 }
 
 // New creates a new state from a given trie.

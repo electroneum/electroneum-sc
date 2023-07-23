@@ -18,7 +18,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -31,7 +30,6 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/misc"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
-	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
@@ -161,9 +159,8 @@ type blockChain interface {
 	CurrentBlock() *types.Block
 	GetBlock(hash common.Hash, number uint64) *types.Block
 	StateAt(root common.Hash) (*state.StateDB, error)
-
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
-
+	GetPriorityTransactors() common.PriorityTransactorMap
 	GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool)
 }
 
@@ -297,8 +294,7 @@ type TxPool struct {
 	wg              sync.WaitGroup // tracks loop, scheduleReorgLoop
 	initDoneCh      chan struct{}  // is closed once the pool is initialized (for tests)
 
-	changesSinceReorg     int // A counter for how many drops we've performed in-between reorg.
-	priorityTransactorMap common.PriorityTransactorMap
+	changesSinceReorg int // A counter for how many drops we've performed in-between reorg.
 }
 
 type txpoolResetRequest struct {
@@ -312,23 +308,22 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 	config = (&config).sanitize()
 	// Create the transaction pool with its initial settings
 	pool := &TxPool{
-		config:                config,
-		chainconfig:           chainconfig,
-		chain:                 chain,
-		signer:                types.LatestSigner(chainconfig),
-		pending:               make(map[common.Address]*txList),
-		queue:                 make(map[common.Address]*txList),
-		beats:                 make(map[common.Address]time.Time),
-		all:                   newTxLookup(),
-		chainHeadCh:           make(chan ChainHeadEvent, chainHeadChanSize),
-		reqResetCh:            make(chan *txpoolResetRequest),
-		reqPromoteCh:          make(chan *accountSet),
-		queueTxEventCh:        make(chan *types.Transaction),
-		reorgDoneCh:           make(chan chan struct{}),
-		reorgShutdownCh:       make(chan struct{}),
-		initDoneCh:            make(chan struct{}),
-		gasPrice:              new(big.Int).SetUint64(config.PriceLimit),
-		priorityTransactorMap: common.PriorityTransactorMap{},
+		config:          config,
+		chainconfig:     chainconfig,
+		chain:           chain,
+		signer:          types.LatestSigner(chainconfig),
+		pending:         make(map[common.Address]*txList),
+		queue:           make(map[common.Address]*txList),
+		beats:           make(map[common.Address]time.Time),
+		all:             newTxLookup(),
+		chainHeadCh:     make(chan ChainHeadEvent, chainHeadChanSize),
+		reqResetCh:      make(chan *txpoolResetRequest),
+		reqPromoteCh:    make(chan *accountSet),
+		queueTxEventCh:  make(chan *types.Transaction),
+		reorgDoneCh:     make(chan chan struct{}),
+		reorgShutdownCh: make(chan struct{}),
+		initDoneCh:      make(chan struct{}),
+		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
 	}
 	pool.locals = newAccountSet(pool.signer)
 	for _, addr := range config.Locals {
@@ -700,8 +695,9 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		if err != nil {
 			return errBadPrioritySignature
 		}
+		transactors := pool.chain.GetPriorityTransactors()
 		// Make sure the priority public key is an allowed one
-		transactor, exists := pool.priorityTransactorMap[priorityPubkey]
+		transactor, exists := transactors[priorityPubkey]
 		if !exists {
 			return errBadPriorityKey
 		}
@@ -1422,11 +1418,6 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 		return
 	}
 	pool.currentState = statedb
-	vmenv := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, pool.currentState, pool.chainconfig, vm.Config{})
-	pool.priorityTransactorMap, err = GetPriorityTransactors(pool.chain.CurrentBlock().Number(), pool.chainconfig, vmenv) // called upon pool reset which is called per new block added to the chain
-	if err != nil {
-		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-	}
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
 
@@ -1440,19 +1431,24 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	// again (priority reestablished in the next few hours) is pretty much zero and we dont want to waste resources
 	// pushing to queue, populate the queue unnecessarily and waste an account slot that could be used
 	// for another priority sender
+
 	for _, txList := range pool.pending {
 		for _, tx := range txList.Flatten() {
-			priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-			if _, ok := pool.priorityTransactorMap[priorityPubkey]; !ok {
-				pool.removeTx(tx.Hash(), true)
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
+					pool.removeTx(tx.Hash(), true)
+				}
 			}
 		}
 	}
 	for _, txList := range pool.queue {
 		for _, tx := range txList.Flatten() {
-			priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-			if _, ok := pool.priorityTransactorMap[priorityPubkey]; !ok {
-				pool.removeTx(tx.Hash(), true)
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
+					pool.removeTx(tx.Hash(), true)
+				}
 			}
 		}
 	}
