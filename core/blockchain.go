@@ -2102,22 +2102,6 @@ func (bc *BlockChain) reorg(oldBlock, newBlock *types.Block) error {
 			bc.chainSideFeed.Send(ChainSideEvent{Block: oldChain[i]})
 		}
 	}
-
-	// Get the state of the blockchain at the last inserted block
-	//stateDB, err := bc.StateAt(newBlock.Hash())
-	//if err != nil {
-	//	return err
-	//}
-
-	//blockContext := NewEVMBlockContext(newBlock.Header(), bc, nil)
-	//vmenv := vm.NewEVM(blockContext, vm.TxContext{}, stateDB, bc.Config(), *bc.GetVMConfig())
-	//transactors, err := GetPriorityTransactors(newBlock.Header().Number, bc.chainConfig, vmenv)
-	// if err != nil {
-	//	panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-	//}
-	// Update the priority transactors map in the BlockChain struct. The pool gets notified of reorgs and adjusts
-	//bc.priorityTransactorMap = transactors
-
 	return nil
 }
 

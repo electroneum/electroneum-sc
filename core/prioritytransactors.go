@@ -38,12 +38,9 @@ func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 		}
 		transactorsMeta := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
 		for _, t := range *transactorsMeta {
-			// Only add transactors that are within start/end height range
-			if t.StartHeight <= blockNumber.Uint64() && (t.EndHeight >= blockNumber.Uint64() || t.EndHeight == 0) {
-				result[common.HexToPublicKey(t.PublicKey)] = common.PriorityTransactor{
-					IsGasPriceWaiver: t.IsGasPriceWaiver,
-					EntityName:       t.Name,
-				}
+			result[common.HexToPublicKey(t.PublicKey)] = common.PriorityTransactor{
+				IsGasPriceWaiver: t.IsGasPriceWaiver,
+				EntityName:       t.Name,
 			}
 		}
 	}
@@ -69,13 +66,12 @@ func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PublicKey
 			return common.PriorityTransactor{}, false
 		}
 		transactorMeta := abi.ConvertType(unpackResult[0], new(prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
-		// Only add transactors that are within start/end height range
-		if transactorMeta.StartHeight <= blockNumber.Uint64() && (transactorMeta.EndHeight >= blockNumber.Uint64() || transactorMeta.EndHeight == 0) {
-			return common.PriorityTransactor{
-				EntityName:       transactorMeta.Name,
-				IsGasPriceWaiver: transactorMeta.IsGasPriceWaiver,
-			}, true
-		}
+
+		return common.PriorityTransactor{
+			EntityName:       transactorMeta.Name,
+			IsGasPriceWaiver: transactorMeta.IsGasPriceWaiver,
+		}, true
+
 	}
 	return common.PriorityTransactor{}, false
 }
