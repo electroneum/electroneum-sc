@@ -289,7 +289,8 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 
 	// Make sure the state associated with the block is available
 	head := bc.CurrentBlock()
-	if _, err := state.New(head.Root(), bc.stateCache, bc.snaps); err != nil {
+	stateDB, err := state.New(head.Root(), bc.stateCache, bc.snaps)
+	if err != nil {
 		// Head state is missing, before the state recovery, find out the
 		// disk layer point of snapshot(if it's enabled). Make sure the
 		// rewound point is lower than disk layer.
@@ -315,6 +316,22 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 			}
 		}
 	}
+
+	// get the latest block and its state
+	latestBlock := bc.CurrentBlock()
+
+	// Initialize the EVM and get the priority transactors map
+	blockContext := NewEVMBlockContext(latestBlock.Header(), bc, nil)
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, stateDB, bc.Config(), *bc.GetVMConfig())
+	transactors, err := GetPriorityTransactors(latestBlock.Header().Number, bc.chainConfig, vmenv)
+	// if there is an issue pulling the contract panic as something must be very
+	// wrong, and we don't want an accidental fork or potentially try again and have
+	// an incorrect flow
+	if err != nil {
+		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
+	}
+
+	bc.priorityTransactorMap = transactors
 
 	// Ensure that a previous crash in SetHead doesn't leave extra ancients
 	if frozen, err := bc.db.Ancients(); err == nil && frozen > 0 {
