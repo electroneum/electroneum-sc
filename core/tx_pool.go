@@ -1426,33 +1426,6 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	senderCacher.recover(pool.signer, reinject)
 	pool.addTxsLocked(reinject, false)
 
-	// kick was-priority transactions that don't abide by the new state rather than dealing with them in
-	// demoteExecutables and demoting to queue because the odds of such a tx becoming valid
-	// again (priority reestablished in the next few hours) is pretty much zero and we dont want to waste resources
-	// pushing to queue, populate the queue unnecessarily and waste an account slot that could be used
-	// for another priority sender
-
-	for _, txList := range pool.pending {
-		for _, tx := range txList.Flatten() {
-			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
-				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
-					pool.removeTx(tx.Hash(), true)
-				}
-			}
-		}
-	}
-	for _, txList := range pool.queue {
-		for _, tx := range txList.Flatten() {
-			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
-				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
-					pool.removeTx(tx.Hash(), true)
-				}
-			}
-		}
-	}
-
 	// Update all fork indicator by next pending block number.
 	next := new(big.Int).Add(newHead.Number, big.NewInt(1))
 	pool.istanbul = pool.chainconfig.IsIstanbul(next)
@@ -1473,6 +1446,17 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		if list == nil {
 			continue // Just in case someone calls with a non existing account
 		}
+
+		// kick priority tx that have a key that's expired
+		for _, tx := range list.Flatten() {
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
+					pool.all.Remove(tx.Hash())
+				}
+			}
+		}
+
 		// Drop all transactions that are deemed too old (low nonce)
 		forwards := list.Forward(pool.currentState.GetNonce(addr))
 		for _, tx := range forwards {
@@ -1811,6 +1795,18 @@ func (pool *TxPool) demoteUnexecutables() {
 	// Iterate over all accounts and demote any non-executable transactions
 	for addr, list := range pool.pending {
 		nonce := pool.currentState.GetNonce(addr)
+
+		// kick was-priority transactions that don't abide by the new state because the odds of such a tx becoming valid
+		// again (priority reestablished in the next few hours) is pretty much zero and we dont want to waste resources
+		// populating the queue unnecessarily and waste an account slot that could be used for another priority sender
+		for _, tx := range list.Flatten() {
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.chain.GetPriorityTransactors()[priorityPubkey]; !ok {
+					pool.all.Remove(tx.Hash())
+				}
+			}
+		}
 
 		// Drop all transactions that are deemed too old (low nonce)
 		olds := list.Forward(nonce)
