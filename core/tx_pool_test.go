@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"math/rand"
@@ -109,11 +110,11 @@ func init() {
 }
 
 type testBlockChain struct {
-	gasLimit              uint64 // must be first field for 64 bit alignment (atomic access)
-	statedb               *state.StateDB
-	chainHeadFeed         *event.Feed
-	prirorityType         int
-	priorityTransactorMap common.PriorityTransactorMap
+	gasLimit                   uint64 // must be first field for 64 bit alignment (atomic access)
+	statedb                    *state.StateDB
+	chainHeadFeed              *event.Feed
+	priorityType               int
+	priorityTransactorMapCache common.PriorityTransactorMap
 }
 
 func (bc *testBlockChain) CurrentBlock() *types.Block {
@@ -134,7 +135,7 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) even
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *testBlockChain) GetPriorityTransactors() common.PriorityTransactorMap {
+func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap {
 	priorityPubkeys := []string{
 		"04efb99d9860f4dec4cb548a5722c27e9ef58e37fbab9719c5b33d55c216db49311221a01f638ce5f255875b194e0acaa58b19a89d2e56a864427298f826a7f887",
 		"047409b5751867a7a4ac4b3b4358c3f87d97a339b2ab0943217e5dec9aebc10938de4bb7447c26f2eaf4e39417976480b30d2b5c60baccaeb08971840f3bbc282f",
@@ -158,7 +159,7 @@ func (bc *testBlockChain) GetPriorityTransactors() common.PriorityTransactorMap 
 		var publicKey common.PublicKey
 		copy(publicKey[:], bytes)
 
-		switch bc.prirorityType {
+		switch bc.priorityType {
 		case NonWaiverPriorityTx:
 			priorityTransactorMap[publicKey] = common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: false}
 		case WaiverPriorityTx:
@@ -173,8 +174,13 @@ func (bc *testBlockChain) GetPriorityTransactors() common.PriorityTransactorMap 
 	return priorityTransactorMap
 }
 
+// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
+	return common.PriorityTransactorMap{}, nil
+}
+
 func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
-	switch bc.prirorityType {
+	switch bc.priorityType {
 	case NonWaiverPriorityTx:
 		return common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: false}, true
 	case WaiverPriorityTx:

@@ -40,10 +40,6 @@ var ETNPriorityTransactorsInterfaceMetaData = &bind.MetaData{
 	ABI: "[{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_publicKey\",\"type\":\"string\"}],\"name\":\"getTransactorByKey\",\"outputs\":[{\"components\":[{\"internalType\":\"bool\",\"name\":\"isGasPriceWaiver\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"}],\"internalType\":\"structETNPriorityTransactorsInterface.TransactorMeta\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getTransactors\",\"outputs\":[{\"components\":[{\"internalType\":\"bool\",\"name\":\"isGasPriceWaiver\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"}],\"internalType\":\"structETNPriorityTransactorsInterface.TransactorMeta[]\",\"name\":\"\",\"type\":\"tuple[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
-// ETNPriorityTransactorsInterfaceABI is the input ABI used to generate the binding from.
-// Deprecated: Use ETNPriorityTransactorsInterfaceMetaData.ABI instead.
-var ETNPriorityTransactorsInterfaceABI = ETNPriorityTransactorsInterfaceMetaData.ABI
-
 // ETNPriorityTransactorsInterface is an auto generated Go binding around an Ethereum contract.
 type ETNPriorityTransactorsInterface struct {
 	ETNPriorityTransactorsInterfaceCaller     // Read-only binding to the contract
@@ -141,7 +137,7 @@ func NewETNPriorityTransactorsInterfaceFilterer(address common.Address, filterer
 
 // bindETNPriorityTransactorsInterface binds a generic wrapper to an already deployed contract.
 func bindETNPriorityTransactorsInterface(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(ETNPriorityTransactorsInterfaceABI))
+	parsed, err := abi.JSON(strings.NewReader(ETNPriorityTransactorsInterfaceMetaData.ABI))
 	if err != nil {
 		return nil, err
 	}

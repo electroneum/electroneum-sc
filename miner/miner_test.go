@@ -84,8 +84,13 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent)
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *testBlockChain) GetPriorityTransactors() common.PriorityTransactorMap {
+func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap {
 	return common.PriorityTransactorMap{}
+}
+
+// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
+	return common.PriorityTransactorMap{}, nil
 }
 
 func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {

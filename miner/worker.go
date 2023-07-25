@@ -32,7 +32,6 @@ import (
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
-	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
@@ -875,11 +874,11 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	var coalescedLogs []*types.Log
 
 	blockContext := core.NewEVMBlockContext(env.header, w.chain, nil)
-	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, env.state, w.chainConfig, *w.chain.GetVMConfig())
-	transactors, err := core.GetPriorityTransactors(env.header.Number, w.chainConfig, vmenv)
-	if err != nil { // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
+	transactors, err := w.chain.GetPriorityTransactorsForState(env.header.Number, env.state, blockContext) // we pass the current state but
+	if err != nil {                                                                                        // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
 		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
 	}
+
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
@@ -927,7 +926,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
-		env.state.PriorityTransactorsCache = &transactors
+		env.state.PriorityTransactorsForState = transactors
 
 		logs, err := w.commitTransaction(env, tx)
 		switch {

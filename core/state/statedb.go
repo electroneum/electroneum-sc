@@ -125,7 +125,7 @@ type StateDB struct {
 
 	// Cache the priority transactors as we add to the state ready to deliver to the
 	// blockchain struct when we write the block to the real DB
-	PriorityTransactorsCache *common.PriorityTransactorMap
+	PriorityTransactorsForState common.PriorityTransactorMap
 }
 
 // New creates a new state from a given trie.
@@ -135,18 +135,19 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		return nil, err
 	}
 	sdb := &StateDB{
-		db:                  db,
-		trie:                tr,
-		originalRoot:        root,
-		snaps:               snaps,
-		stateObjects:        make(map[common.Address]*stateObject),
-		stateObjectsPending: make(map[common.Address]struct{}),
-		stateObjectsDirty:   make(map[common.Address]struct{}),
-		logs:                make(map[common.Hash][]*types.Log),
-		preimages:           make(map[common.Hash][]byte),
-		journal:             newJournal(),
-		accessList:          newAccessList(),
-		hasher:              crypto.NewKeccakState(),
+		db:                          db,
+		trie:                        tr,
+		originalRoot:                root,
+		snaps:                       snaps,
+		stateObjects:                make(map[common.Address]*stateObject),
+		stateObjectsPending:         make(map[common.Address]struct{}),
+		stateObjectsDirty:           make(map[common.Address]struct{}),
+		logs:                        make(map[common.Hash][]*types.Log),
+		preimages:                   make(map[common.Hash][]byte),
+		journal:                     newJournal(),
+		accessList:                  newAccessList(),
+		hasher:                      crypto.NewKeccakState(),
+		PriorityTransactorsForState: make(map[common.PublicKey]common.PriorityTransactor),
 	}
 	if sdb.snaps != nil {
 		if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap != nil {
@@ -650,17 +651,18 @@ func (db *StateDB) ForEachStorage(addr common.Address, cb func(key, value common
 func (s *StateDB) Copy() *StateDB {
 	// Copy all the basic fields, initialize the memory ones
 	state := &StateDB{
-		db:                  s.db,
-		trie:                s.db.CopyTrie(s.trie),
-		stateObjects:        make(map[common.Address]*stateObject, len(s.journal.dirties)),
-		stateObjectsPending: make(map[common.Address]struct{}, len(s.stateObjectsPending)),
-		stateObjectsDirty:   make(map[common.Address]struct{}, len(s.journal.dirties)),
-		refund:              s.refund,
-		logs:                make(map[common.Hash][]*types.Log, len(s.logs)),
-		logSize:             s.logSize,
-		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
-		journal:             newJournal(),
-		hasher:              crypto.NewKeccakState(),
+		db:                          s.db,
+		trie:                        s.db.CopyTrie(s.trie),
+		stateObjects:                make(map[common.Address]*stateObject, len(s.journal.dirties)),
+		stateObjectsPending:         make(map[common.Address]struct{}, len(s.stateObjectsPending)),
+		stateObjectsDirty:           make(map[common.Address]struct{}, len(s.journal.dirties)),
+		refund:                      s.refund,
+		logs:                        make(map[common.Hash][]*types.Log, len(s.logs)),
+		logSize:                     s.logSize,
+		preimages:                   make(map[common.Hash][]byte, len(s.preimages)),
+		journal:                     newJournal(),
+		hasher:                      crypto.NewKeccakState(),
+		PriorityTransactorsForState: s.PriorityTransactorsForState,
 	}
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {

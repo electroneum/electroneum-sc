@@ -11,6 +11,7 @@ import (
 	"github.com/electroneum/electroneum-sc/params"
 )
 
+// GetPriorityTransactors Gets the priority transactor list for the current state using the priority contract address for the block number passed
 func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactorMap, error) {
 	var (
 		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
@@ -26,7 +27,7 @@ func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 			return result, nil
 		}
 
-		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceABI))
+		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
 		input, _ := contractABI.Pack(method)
 		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
 		if err != nil {
@@ -55,7 +56,7 @@ func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PublicKey
 	)
 
 	if address != (common.Address{}) {
-		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceABI))
+		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
 		input, _ := contractABI.Pack(method, publicKey.ToUnprefixedHexString())
 		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
 		if err != nil {

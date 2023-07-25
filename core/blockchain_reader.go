@@ -368,8 +368,18 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
-func (bc *BlockChain) GetPriorityTransactors() common.PriorityTransactorMap {
-	return bc.priorityTransactorMap
+func (bc *BlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap {
+	return bc.priorityTransactorMapCache
+}
+
+// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state using the contra
+func (bc *BlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, state, bc.chainConfig, bc.vmConfig)
+	transactors, err := GetPriorityTransactors(blockNumber, bc.chainConfig, vmenv)
+	return transactors, err
+
+	return common.PriorityTransactorMap{}, nil
+
 }
 
 // GetPriorityTransactorByKeyForBlock retrieves the transactor if present in the

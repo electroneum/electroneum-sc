@@ -213,7 +213,7 @@ type BlockChain struct {
 	vmConfig   vm.Config
 
 	// Cache the priority transactor map for pool use
-	priorityTransactorMap common.PriorityTransactorMap
+	priorityTransactorMapCache common.PriorityTransactorMap
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -322,16 +322,14 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 
 	// Initialize the EVM and get the priority transactors map
 	blockContext := NewEVMBlockContext(latestBlock.Header(), bc, nil)
-	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, stateDB, bc.Config(), *bc.GetVMConfig())
-	transactors, err := GetPriorityTransactors(latestBlock.Header().Number, bc.chainConfig, vmenv)
+	transactors, err := bc.GetPriorityTransactorsForState(latestBlock.Header().Number, stateDB, blockContext)
 	// if there is an issue pulling the contract panic as something must be very
 	// wrong, and we don't want an accidental fork or potentially try again and have
 	// an incorrect flow
 	if err != nil {
 		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
 	}
-
-	bc.priorityTransactorMap = transactors
+	bc.priorityTransactorMapCache = transactors
 
 	// Ensure that a previous crash in SetHead doesn't leave extra ancients
 	if frozen, err := bc.db.Ancients(); err == nil && frozen > 0 {
@@ -1308,9 +1306,8 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		}
 	}
 	// now everything is written to db, we can safely update the priority transactors cache
-	if state.PriorityTransactorsCache != nil {
-		bc.priorityTransactorMap = *state.PriorityTransactorsCache
-	}
+	bc.priorityTransactorMapCache = state.PriorityTransactorsForState
+
 	return nil
 }
 
