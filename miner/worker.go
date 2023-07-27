@@ -921,7 +921,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
-		env.state.PriorityTransactorsForState = transactors
+		env.state.SetPriorityTransactors(transactors)
 
 		logs, err := w.commitTransaction(env, tx)
 		switch {

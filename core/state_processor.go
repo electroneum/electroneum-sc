@@ -72,7 +72,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
-	statedb.PriorityTransactorsForState = MustGetPriorityTransactors(vmenv)
+	statedb.SetPriorityTransactors(MustGetPriorityTransactors(vmenv))
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
@@ -81,7 +81,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		// Validate priority transaction
 		if tx.Type() == types.PriorityTxType {
-			transactor, found := statedb.PriorityTransactorsForState[msg.PrioritySender()]
+			transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
 			if !found {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
@@ -151,7 +151,7 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	// Update the priority transactor map for the next tx application in the block validation loop if this tx
 	// successfully updated the priority transactor list in the EVM/stateDB.
 	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
-		statedb.PriorityTransactorsForState = MustGetPriorityTransactors(evm)
+		statedb.SetPriorityTransactors(MustGetPriorityTransactors(evm))
 	}
 	return receipt, err
 }
@@ -171,7 +171,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 
 	// Validate priority transaction
 	if tx.Type() == types.PriorityTxType {
-		transactor, found := (statedb.PriorityTransactorsForState)[msg.PrioritySender()]
+		transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
 		if !found {
 			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
 		}

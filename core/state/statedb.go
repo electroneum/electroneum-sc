@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -99,6 +100,11 @@ type StateDB struct {
 	// Per-transaction access list
 	accessList *accessList
 
+	// Cache the priority transactors as we add to the state ready to deliver to the
+	// blockchain struct when we write the block to the real DB
+	priorityTransactorsMu sync.Mutex
+	priorityTransactors   common.PriorityTransactorMap
+
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
 	journal        *journal
@@ -122,10 +128,6 @@ type StateDB struct {
 	StorageUpdated int
 	AccountDeleted int
 	StorageDeleted int
-
-	// Cache the priority transactors as we add to the state ready to deliver to the
-	// blockchain struct when we write the block to the real DB
-	PriorityTransactorsForState common.PriorityTransactorMap
 }
 
 // New creates a new state from a given trie.
@@ -135,19 +137,19 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		return nil, err
 	}
 	sdb := &StateDB{
-		db:                          db,
-		trie:                        tr,
-		originalRoot:                root,
-		snaps:                       snaps,
-		stateObjects:                make(map[common.Address]*stateObject),
-		stateObjectsPending:         make(map[common.Address]struct{}),
-		stateObjectsDirty:           make(map[common.Address]struct{}),
-		logs:                        make(map[common.Hash][]*types.Log),
-		preimages:                   make(map[common.Hash][]byte),
-		journal:                     newJournal(),
-		accessList:                  newAccessList(),
-		hasher:                      crypto.NewKeccakState(),
-		PriorityTransactorsForState: make(map[common.PublicKey]common.PriorityTransactor),
+		db:                  db,
+		trie:                tr,
+		originalRoot:        root,
+		snaps:               snaps,
+		stateObjects:        make(map[common.Address]*stateObject),
+		stateObjectsPending: make(map[common.Address]struct{}),
+		stateObjectsDirty:   make(map[common.Address]struct{}),
+		logs:                make(map[common.Hash][]*types.Log),
+		preimages:           make(map[common.Hash][]byte),
+		journal:             newJournal(),
+		accessList:          newAccessList(),
+		hasher:              crypto.NewKeccakState(),
+		priorityTransactors: make(map[common.PublicKey]common.PriorityTransactor),
 	}
 	if sdb.snaps != nil {
 		if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap != nil {
@@ -662,6 +664,7 @@ func (s *StateDB) Copy() *StateDB {
 		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
 		journal:             newJournal(),
 		hasher:              crypto.NewKeccakState(),
+		priorityTransactors: make(common.PriorityTransactorMap),
 	}
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {
@@ -705,8 +708,8 @@ func (s *StateDB) Copy() *StateDB {
 	for hash, preimage := range s.preimages {
 		state.preimages[hash] = preimage
 	}
-	for key, transactor := range s.PriorityTransactorsForState {
-		state.PriorityTransactorsForState[key] = transactor
+	for key, transactor := range s.priorityTransactors {
+		state.priorityTransactors[key] = transactor
 	}
 	// Do we need to copy the access list? In practice: No. At the start of a
 	// transaction, the access list is empty. In practice, we only ever copy state
@@ -1053,4 +1056,18 @@ func (s *StateDB) AddressInAccessList(addr common.Address) bool {
 // SlotInAccessList returns true if the given (address, slot)-tuple is in the access list.
 func (s *StateDB) SlotInAccessList(addr common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
 	return s.accessList.Contains(addr, slot)
+}
+
+func (s *StateDB) SetPriorityTransactors(transactors common.PriorityTransactorMap) {
+	s.priorityTransactorsMu.Lock()
+	defer s.priorityTransactorsMu.Unlock()
+	s.priorityTransactors = make(common.PriorityTransactorMap)
+	for key, transactor := range transactors {
+		s.priorityTransactors[key] = transactor
+	}
+}
+
+func (s *StateDB) GetPriorityTransactorByKey(pubkey common.PublicKey) (common.PriorityTransactor, bool) {
+	transactor, found := s.priorityTransactors[pubkey]
+	return transactor, found
 }
