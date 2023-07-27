@@ -19,7 +19,6 @@ package miner
 
 import (
 	"errors"
-	"math/big"
 	"testing"
 	"time"
 
@@ -89,7 +88,7 @@ func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransacto
 }
 
 // MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
-func (bc *testBlockChain) MustGetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) common.PriorityTransactorMap {
+func (bc *testBlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
 	return common.PriorityTransactorMap{}
 }
 

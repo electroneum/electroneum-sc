@@ -160,7 +160,7 @@ type blockChain interface {
 	GetBlock(hash common.Hash, number uint64) *types.Block
 	StateAt(root common.Hash) (*state.StateDB, error)
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
-	GetPriorityTransactorsCache() common.PriorityTransactorMap
+	MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
@@ -294,6 +294,8 @@ type TxPool struct {
 	initDoneCh      chan struct{}  // is closed once the pool is initialized (for tests)
 
 	changesSinceReorg int // A counter for how many drops we've performed in-between reorg.
+
+	currentPriorityTransactors common.PriorityTransactorMap
 }
 
 type txpoolResetRequest struct {
@@ -694,9 +696,8 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		if err != nil {
 			return errBadPrioritySignature
 		}
-		transactors := pool.chain.GetPriorityTransactorsCache()
 		// Make sure the priority public key is an allowed one
-		transactor, exists := transactors[priorityPubkey]
+		transactor, exists := pool.currentPriorityTransactors[priorityPubkey]
 		if !exists {
 			return errBadPriorityKey
 		}
@@ -1420,6 +1421,8 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
 
+	pool.currentPriorityTransactors = pool.chain.MustGetPriorityTransactorsForState(newHead, pool.currentState)
+
 	// Inject any transactions discarded due to reorgs
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	senderCacher.recover(pool.signer, reinject)
@@ -1450,7 +1453,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range list.Flatten() {
 			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
 				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-				if _, ok := pool.chain.GetPriorityTransactorsCache()[priorityPubkey]; !ok {
+				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
 					pool.all.Remove(tx.Hash())
 				}
 			}
@@ -1801,7 +1804,7 @@ func (pool *TxPool) demoteUnexecutables() {
 		for _, tx := range list.Flatten() {
 			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
 				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
-				if _, ok := pool.chain.GetPriorityTransactorsCache()[priorityPubkey]; !ok {
+				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
 					pool.all.Remove(tx.Hash())
 				}
 			}

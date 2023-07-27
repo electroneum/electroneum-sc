@@ -211,9 +211,6 @@ type BlockChain struct {
 	processor  Processor // Block transaction processor interface
 	forker     *ForkChoice
 	vmConfig   vm.Config
-
-	// Cache the priority transactor map for pool use
-	priorityTransactorMapCache common.PriorityTransactorMap
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -289,8 +286,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 
 	// Make sure the state associated with the block is available
 	head := bc.CurrentBlock()
-	stateDB, err := state.New(head.Root(), bc.stateCache, bc.snaps)
-	if err != nil {
+	if _, err := state.New(head.Root(), bc.stateCache, bc.snaps); err != nil {
 		// Head state is missing, before the state recovery, find out the
 		// disk layer point of snapshot(if it's enabled). Make sure the
 		// rewound point is lower than disk layer.
@@ -316,9 +312,6 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 			}
 		}
 	}
-
-	// Get the priority transactors map
-	bc.priorityTransactorMapCache = bc.MustGetPriorityTransactorsForState(head.Header(), stateDB)
 
 	// Ensure that a previous crash in SetHead doesn't leave extra ancients
 	if frozen, err := bc.db.Ancients(); err == nil && frozen > 0 {
@@ -1294,9 +1287,6 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			}
 		}
 	}
-	// now everything is written to db, we can safely update the priority transactors cache
-	bc.priorityTransactorMapCache = state.PriorityTransactorsForState
-
 	return nil
 }
 
