@@ -72,15 +72,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
-	transactors, err := GetPriorityTransactors(blockNumber, p.config, vmenv)
-	// if there is an issue pulling the contract panic as something must be very
-	// wrong, and we don't want an accidental fork or potentially try again and have
-	// an incorrect flow
-
-	if err != nil {
-		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-	}
-	statedb.PriorityTransactorsForState = transactors
+	statedb.PriorityTransactorsForState = MustGetPriorityTransactors(vmenv)
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
@@ -89,7 +81,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		// Validate priority transaction
 		if tx.Type() == types.PriorityTxType {
-			transactor, found := transactors[msg.PrioritySender()]
+			transactor, found := statedb.PriorityTransactorsForState[msg.PrioritySender()]
 			if !found {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
@@ -159,10 +151,7 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	// Update the priority transactor map for the next tx application in the block validation loop if this tx
 	// successfully updated the priority transactor list in the EVM/stateDB.
 	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
-		statedb.PriorityTransactorsForState, err = GetPriorityTransactors(blockNumber, config, evm)
-		if err != nil {
-			panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-		}
+		statedb.PriorityTransactorsForState = MustGetPriorityTransactors(evm)
 	}
 	return receipt, err
 }

@@ -1,7 +1,7 @@
 package core
 
 import (
-	"math/big"
+	"fmt"
 	"strings"
 
 	"github.com/electroneum/electroneum-sc/accounts/abi"
@@ -12,30 +12,42 @@ import (
 )
 
 // GetPriorityTransactors Gets the priority transactor list for the current state using the priority contract address for the block number passed
-func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactorMap, error) {
+func MustGetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
 	var (
-		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
-		contract = vm.AccountRef(address)
-		method   = "getTransactors"
-		result   = make(common.PriorityTransactorMap)
+		blockNumber = evm.Context.BlockNumber
+		config      = evm.ChainConfig()
+		address     = config.GetPriorityTransactorsContractAddress(blockNumber)
+		contract    = vm.AccountRef(address)
+		method      = "getTransactors"
+		result      = make(common.PriorityTransactorMap)
 	)
 
 	if address != (common.Address{}) {
 		// Check if contract code exists at the address. If it doesn't. We haven't deployed the contract yet, so no error needed.
 		byteCode := evm.StateDB.GetCode(address)
 		if len(byteCode) == 0 {
-			return result, nil
+			return result
 		}
 
 		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
 		input, _ := contractABI.Pack(method)
 		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
 		if err != nil {
-			return result, err
+			// if there is an issue pulling the contract panic as something must be very
+			// wrong, and we don't want an accidental fork or potentially try again and have
+			// an incorrect flow
+			if err != nil {
+				panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
+			}
 		}
 		unpackResult, err := contractABI.Unpack(method, output)
 		if err != nil {
-			return result, err
+			// if there is an issue pulling the contract panic as something must be very
+			// wrong, and we don't want an accidental fork or potentially try again and have
+			// an incorrect flow
+			if err != nil {
+				panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
+			}
 		}
 		transactorsMeta := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
 		for _, t := range *transactorsMeta {
@@ -45,34 +57,5 @@ func GetPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, ev
 			}
 		}
 	}
-	return result, nil
-}
-
-func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PublicKey, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactor, bool) {
-	var (
-		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
-		contract = vm.AccountRef(address)
-		method   = "getTransactorByKey"
-	)
-
-	if address != (common.Address{}) {
-		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
-		input, _ := contractABI.Pack(method, publicKey.ToUnprefixedHexString())
-		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
-		if err != nil {
-			return common.PriorityTransactor{}, false
-		}
-		unpackResult, err := contractABI.Unpack(method, output)
-		if err != nil {
-			return common.PriorityTransactor{}, false
-		}
-		transactorMeta := abi.ConvertType(unpackResult[0], new(prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
-
-		return common.PriorityTransactor{
-			EntityName:       transactorMeta.Name,
-			IsGasPriceWaiver: transactorMeta.IsGasPriceWaiver,
-		}, true
-
-	}
-	return common.PriorityTransactor{}, false
+	return result
 }

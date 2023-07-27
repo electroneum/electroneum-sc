@@ -18,7 +18,6 @@ package core
 
 import (
 	"errors"
-	"github.com/electroneum/electroneum-sc/core/vm"
 	"math"
 	"math/big"
 	"sort"
@@ -162,8 +161,6 @@ type blockChain interface {
 	StateAt(root common.Hash) (*state.StateDB, error)
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
 	GetPriorityTransactorsCache() common.PriorityTransactorMap
-	GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error)
-	GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool)
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.

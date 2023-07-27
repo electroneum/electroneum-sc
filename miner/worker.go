@@ -873,12 +873,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	}
 	var coalescedLogs []*types.Log
 
-	blockContext := core.NewEVMBlockContext(env.header, w.chain, nil)
-	transactors, err := w.chain.GetPriorityTransactorsForState(env.header.Number, env.state, blockContext) // we pass the current state but
-	if err != nil {                                                                                        // if there is an issue pulling the contract panic as something must be very wrong and we don't want an accidental fork or potentially try again and have an incorrect flow
-		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-	}
-
+	transactors := w.chain.MustGetPriorityTransactorsForState(env.header, env.state)
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1

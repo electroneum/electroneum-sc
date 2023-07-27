@@ -88,13 +88,9 @@ func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransacto
 	return common.PriorityTransactorMap{}
 }
 
-// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
-func (bc *testBlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
-	return common.PriorityTransactorMap{}, nil
-}
-
-func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
-	return common.PriorityTransactor{}, false
+// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) MustGetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) common.PriorityTransactorMap {
+	return common.PriorityTransactorMap{}
 }
 
 func TestMiner(t *testing.T) {

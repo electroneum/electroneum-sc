@@ -27,7 +27,6 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/event"
-	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
@@ -372,32 +371,11 @@ func (bc *BlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap
 	return bc.priorityTransactorMapCache
 }
 
-// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state using the contra
-func (bc *BlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
-	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, state, bc.chainConfig, bc.vmConfig)
-	transactors, err := GetPriorityTransactors(blockNumber, bc.chainConfig, vmenv)
-	return transactors, err
-
-	return common.PriorityTransactorMap{}, nil
-
-}
-
-// GetPriorityTransactorByKeyForBlock retrieves the transactor if present in the
-// priority transactors contract and within block start/end height
-func (bc *BlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
-	// Create a new context to be used in the EVM environment
-	header := bc.GetHeaderByNumber(blockNumber.Uint64())
+// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state using the contra
+func (bc *BlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
 	blockContext := NewEVMBlockContext(header, bc, nil)
-
-	statedb, err := bc.StateAt(header.Root)
-	if err != nil {
-		log.Warn("GetPriorityTransactorByKeyForBlock(): unable to get state", "blocknumber", blockNumber, "err", err)
-		return common.PriorityTransactor{}, false
-	}
-
-	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, bc.chainConfig, bc.vmConfig)
-	transactor, found := getPriorityTransactorByKey(blockNumber, pkey, bc.chainConfig, vmenv)
-	return transactor, found
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, state, bc.chainConfig, bc.vmConfig)
+	return MustGetPriorityTransactors(vmenv)
 }
 
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.

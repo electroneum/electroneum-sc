@@ -23,14 +23,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/core/vm"
-	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 	"math/big"
 	"math/rand"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
@@ -172,22 +172,6 @@ func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransacto
 	}
 
 	return priorityTransactorMap
-}
-
-// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
-func (bc *testBlockChain) GetPriorityTransactorsForState(blockNumber *big.Int, state *state.StateDB, blockContext vm.BlockContext) (common.PriorityTransactorMap, error) {
-	return common.PriorityTransactorMap{}, nil
-}
-
-func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PublicKey) (common.PriorityTransactor, bool) {
-	switch bc.priorityType {
-	case NonWaiverPriorityTx:
-		return common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: false}, true
-	case WaiverPriorityTx:
-		return common.PriorityTransactor{EntityName: "Test Entity", IsGasPriceWaiver: true}, true
-	default:
-		return common.PriorityTransactor{}, false
-	}
 }
 
 func transaction(nonce uint64, gaslimit uint64, key *ecdsa.PrivateKey) *types.Transaction {

@@ -317,19 +317,8 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 		}
 	}
 
-	// get the latest block and its state
-	latestBlock := bc.CurrentBlock()
-
-	// Initialize the EVM and get the priority transactors map
-	blockContext := NewEVMBlockContext(latestBlock.Header(), bc, nil)
-	transactors, err := bc.GetPriorityTransactorsForState(latestBlock.Header().Number, stateDB, blockContext)
-	// if there is an issue pulling the contract panic as something must be very
-	// wrong, and we don't want an accidental fork or potentially try again and have
-	// an incorrect flow
-	if err != nil {
-		panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %v", err))
-	}
-	bc.priorityTransactorMapCache = transactors
+	// Get the priority transactors map
+	bc.priorityTransactorMapCache = bc.MustGetPriorityTransactorsForState(head.Header(), stateDB)
 
 	// Ensure that a previous crash in SetHead doesn't leave extra ancients
 	if frozen, err := bc.db.Ancients(); err == nil && frozen > 0 {
