@@ -32,23 +32,21 @@ func MustGetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
 		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
 		input, _ := contractABI.Pack(method)
 		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
+		// if there is an issue pulling the contract panic as something must be very
+		// wrong, and we don't want an accidental fork or potentially try again and have
+		// an incorrect flow
 		if err != nil {
-			// if there is an issue pulling the contract panic as something must be very
-			// wrong, and we don't want an accidental fork or potentially try again and have
-			// an incorrect flow
-			if err != nil {
-				panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
-			}
+			panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
 		}
+
 		unpackResult, err := contractABI.Unpack(method, output)
+		// if there is an issue pulling the contract panic as something must be very
+		// wrong, and we don't want an accidental fork or potentially try again and have
+		// an incorrect flow
 		if err != nil {
-			// if there is an issue pulling the contract panic as something must be very
-			// wrong, and we don't want an accidental fork or potentially try again and have
-			// an incorrect flow
-			if err != nil {
-				panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
-			}
+			panic(fmt.Errorf("error getting the priority transactors from the EVM/contract: %s", err))
 		}
+
 		transactorsMeta := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
 		for _, t := range *transactorsMeta {
 			result[common.HexToPublicKey(t.PublicKey)] = common.PriorityTransactor{
