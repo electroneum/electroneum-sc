@@ -113,8 +113,13 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 	}
 
 	sorter := make(sortGasAndReward, len(bf.block.Transactions()))
-	for i, tx := range bf.block.Transactions() {
-		reward, _ := tx.EffectiveGasTip(bf.block.BaseFee())
+	for i, tx := range bf.block.Transactions() { //this is post block confirmation
+		var reward *big.Int
+		if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
+			reward, _ = tx.EffectiveGasTip(big.NewInt(0))
+		} else {
+			reward, _ = tx.EffectiveGasTip(bf.block.BaseFee())
+		}
 		sorter[i] = txGasAndReward{gasUsed: bf.receipts[i].GasUsed, reward: reward}
 	}
 	sort.Stable(sorter)
@@ -289,7 +294,7 @@ func (oracle *Oracle) FeeHistory(ctx context.Context, blocks int, unresolvedLast
 			return common.Big0, nil, nil, nil, fees.err
 		}
 		i := int(fees.blockNumber - oldestBlock)
-		if fees.results.baseFee != nil {
+		if fees.results.baseFee != nil { //block logic not tx
 			reward[i], baseFee[i], baseFee[i+1], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.nextBaseFee, fees.results.gasUsedRatio
 		} else {
 			// getting no block and no error means we are requesting into the future (might happen because of a reorg)

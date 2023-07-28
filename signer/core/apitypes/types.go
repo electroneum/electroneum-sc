@@ -110,7 +110,7 @@ func (args SendTxArgs) String() string {
 	return err.Error()
 }
 
-// ToTransaction converts the arguments to a transaction.
+// ToTransaction converts the arguments to a transaction. Priority tx are only ever raw signed so we don't use this. We do however go from args straight to msg in simulatiions via NewMessage()
 func (args *SendTxArgs) ToTransaction() *types.Transaction {
 	// Add the To-field, if specified
 	var to *common.Address

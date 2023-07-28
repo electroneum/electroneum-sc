@@ -95,8 +95,10 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 			utils.TxPoolPriceBumpFlag,
 			utils.TxPoolAccountSlotsFlag,
 			utils.TxPoolGlobalSlotsFlag,
+			utils.TxPoolPrioritySlotsFlag,
 			utils.TxPoolAccountQueueFlag,
 			utils.TxPoolGlobalQueueFlag,
+			utils.TxPoolPriorityQueueFlag,
 			utils.TxPoolLifetimeFlag,
 		},
 	},
@@ -187,6 +189,7 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 			utils.MinerExtraDataFlag,
 			utils.MinerRecommitIntervalFlag,
 			utils.MinerNoVerifyFlag,
+			utils.MinerPrioritiseElectroneumFlag,
 		},
 	},
 	{

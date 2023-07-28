@@ -51,6 +51,10 @@ func (s *senderFromServer) Sender(tx *types.Transaction) (common.Address, error)
 	return s.addr, nil
 }
 
+func (s *senderFromServer) PrioritySender(tx *types.Transaction) (common.PublicKey, error) { // implement this later
+	return common.PublicKey{}, nil
+}
+
 func (s *senderFromServer) ChainID() *big.Int {
 	panic("can't sign with senderFromServer")
 }

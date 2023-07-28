@@ -88,12 +88,13 @@ var (
 type environment struct {
 	signer types.Signer
 
-	state     *state.StateDB // apply state changes here
-	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
-	family    mapset.Set     // family set (used for checking uncle invalidity)
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
-	coinbase  common.Address
+	state                 *state.StateDB // apply state changes here
+	ancestors             mapset.Set     // ancestor set (used for checking uncle parent validity)
+	family                mapset.Set     // family set (used for checking uncle invalidity)
+	tcount                int            // tx count in cycle
+	gasPool               *core.GasPool  // available gas used to pack transactions
+	coinbase              common.Address
+	prioritiseElectroneum bool // prioritise electroneum's transactions over others?
 
 	header   *types.Header
 	txs      []*types.Transaction
@@ -104,14 +105,15 @@ type environment struct {
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
 	cpy := &environment{
-		signer:    env.signer,
-		state:     env.state.Copy(),
-		ancestors: env.ancestors.Clone(),
-		family:    env.family.Clone(),
-		tcount:    env.tcount,
-		coinbase:  env.coinbase,
-		header:    types.CopyHeader(env.header),
-		receipts:  copyReceipts(env.receipts),
+		signer:                env.signer,
+		state:                 env.state.Copy(),
+		ancestors:             env.ancestors.Clone(),
+		family:                env.family.Clone(),
+		tcount:                env.tcount,
+		coinbase:              env.coinbase,
+		prioritiseElectroneum: env.prioritiseElectroneum,
+		header:                types.CopyHeader(env.header),
+		receipts:              copyReceipts(env.receipts),
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -871,6 +873,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	}
 	var coalescedLogs []*types.Log
 
+	transactors := w.chain.MustGetPriorityTransactorsForState(env.header, env.state)
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
@@ -918,6 +921,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
+		env.state.SetPriorityTransactors(transactors)
 
 		logs, err := w.commitTransaction(env, tx)
 		switch {
@@ -1076,9 +1080,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
-	// Split the pending transactions into locals and remotes
-	// Fill the block with all available pending transactions.
+	// First pull Electroneum Ltd transactions out of 'pending' if flag --prioritiseElectroneum was passed by
+	// cli argument and then Split the pending transactions into locals and remotes
+	// pending is a local copy of the pool not a pointer, so it's ok to strip out Electroneum tx from localTxs and
+	// remoteTxs before processing them separately and avoid double counting.
 	pending := w.eth.TxPool().Pending(true)
+
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
 		if txs := remoteTxs[account]; len(txs) > 0 {
@@ -1086,6 +1093,32 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			localTxs[account] = txs
 		}
 	}
+
+	priorityTxs := w.eth.TxPool().PendingPriority(true)
+	for _, account := range w.eth.TxPool().Locals() {
+		if txs := priorityTxs[account]; len(txs) > 0 {
+			delete(priorityTxs, account)
+			localTxs[account] = txs
+		}
+	}
+
+	if w.config.PrioritiseElectroneum {
+		// By default the miner prioritises their own (local) transactions and then moves onto everyone else's (remote) tx
+		// if --miner.PrioritiseElectroneum flag is present, electroneumTxs take priority over both local & remote
+		if len(priorityTxs) > 0 {
+			txs := types.NewTransactionsByPriceAndNonce(env.signer, priorityTxs, env.header.BaseFee)
+			if err := w.commitTransactions(env, txs, interrupt); err != nil {
+				return err
+			}
+		}
+	} else {
+		// If --miner.PrioritiseElectroneum flag is *NOT* present, put them in the remoteTxs list
+		for account, list := range priorityTxs {
+			delete(priorityTxs, account)
+			remoteTxs[account] = list
+		}
+	}
+
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
 		if err := w.commitTransactions(env, txs, interrupt); err != nil {
@@ -1254,7 +1287,12 @@ func (w *worker) postSideBlock(event core.ChainSideEvent) {
 func totalFees(block *types.Block, receipts []*types.Receipt) *big.Float {
 	feesWei := new(big.Int)
 	for i, tx := range block.Transactions() {
-		minerFee, _ := tx.EffectiveGasTip(block.BaseFee())
+		var minerFee *big.Int
+		if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
+			minerFee, _ = tx.EffectiveGasTip(big.NewInt(0))
+		} else {
+			minerFee, _ = tx.EffectiveGasTip(block.BaseFee())
+		}
 		feesWei.Add(feesWei, new(big.Int).Mul(new(big.Int).SetUint64(receipts[i].GasUsed), minerFee))
 	}
 	return new(big.Float).Quo(new(big.Float).SetInt(feesWei), new(big.Float).SetInt(big.NewInt(params.Ether)))

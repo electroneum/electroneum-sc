@@ -20,6 +20,8 @@ import (
 	"math/big"
 	"reflect"
 	"testing"
+
+	"github.com/electroneum/electroneum-sc/common"
 )
 
 func TestCheckCompatible(t *testing.T) {
@@ -93,6 +95,105 @@ func TestCheckCompatible(t *testing.T) {
 		err := test.stored.CheckCompatible(test.new, test.head)
 		if !reflect.DeepEqual(err, test.wantErr) {
 			t.Errorf("error mismatch:\nstored: %v\nnew: %v\nhead: %v\nerr: %v\nwant: %v", test.stored, test.new, test.head, err, test.wantErr)
+		}
+	}
+}
+
+func TestCheckTransitionsData(t *testing.T) {
+	type test struct {
+		stored  *ChainConfig
+		wantErr error
+	}
+	var ibftTransitionsConfig, qbftTransitionsConfig, invalidBlockOrder []Transition
+	tranI0 := Transition{big.NewInt(0), 30000, 5, 10, common.Address{}}
+	tranI5 := Transition{big.NewInt(5), 30000, 5, 10, common.Address{}}
+	tranI8 := Transition{big.NewInt(8), 30000, 5, 10, common.Address{}}
+	tranI10 := Transition{big.NewInt(10), 30000, 5, 10, common.Address{}}
+
+	ibftTransitionsConfig = append(ibftTransitionsConfig, tranI0, tranI5, tranI8, tranI10)
+	invalidBlockOrder = append(invalidBlockOrder, tranI8, tranI5)
+
+	tests := []test{
+		{stored: MainnetChainConfig, wantErr: nil},
+		{stored: AllEthashProtocolChanges, wantErr: nil},
+		{stored: AllCliqueProtocolChanges, wantErr: nil},
+		{stored: TestChainConfig, wantErr: nil},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: ibftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: qbftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: ibftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: qbftTransitionsConfig},
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{Transitions: invalidBlockOrder},
+			wantErr: ErrBlockOrder,
+		},
+		{
+			stored:  &ChainConfig{Transitions: []Transition{{nil, 30000, 5, 10, common.Address{}}}},
+			wantErr: ErrBlockNumberMissing,
+		},
+		{
+			stored:  &ChainConfig{Transitions: []Transition{{Block: big.NewInt(0)}}},
+			wantErr: nil,
+		},
+	}
+
+	for _, test := range tests {
+		err := test.stored.CheckTransitionsData()
+		if !reflect.DeepEqual(err, test.wantErr) {
+			t.Errorf("error mismatch:\nstored: %v\nerr: %v\nwant: %v", test.stored, err, test.wantErr)
+		}
+	}
+}
+
+func TestGetPriorityTransactorsContractAddress(t *testing.T) {
+	address, address1, address2, address3 := common.Address{}, common.Address{0x2}, common.Address{0x4}, common.Address{0x6}
+
+	config := TestChainConfig
+	config.Transitions = []Transition{{
+		Block:                              big.NewInt(2),
+		PriorityTransactorsContractAddress: address1,
+	}, {
+		Block:                              big.NewInt(4),
+		PriorityTransactorsContractAddress: address2,
+	}, {
+		Block:                              big.NewInt(6),
+		PriorityTransactorsContractAddress: address3,
+	}}
+
+	type test struct {
+		blockNumber     int64
+		expectedAddress common.Address
+	}
+	tests := []test{
+		{0, address},
+		{1, address},
+		{2, address1},
+		{3, address1},
+		{4, address2},
+		{5, address2},
+		{10, address3},
+		{100, address3},
+	}
+
+	for _, test := range tests {
+		c := config.GetPriorityTransactorsContractAddress(big.NewInt(test.blockNumber))
+		if !reflect.DeepEqual(c, test.expectedAddress) {
+			t.Errorf("error mismatch:\nexpected: %v\ngot: %v\n", test.expectedAddress, c)
 		}
 	}
 }

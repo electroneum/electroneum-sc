@@ -17,7 +17,7 @@
 package utils
 
 import (
-	"math/rand"
+	"crypto/rand"
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/p2p/enode"

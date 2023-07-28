@@ -40,11 +40,12 @@ var (
 	errShortTypedTx         = errors.New("typed transaction too short")
 )
 
-// Transaction types.
+// Transaction types. ETH types begin from 0 and ETN Types begin from 64
 const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
+	PriorityTxType = 64 // the implementation stops at 128
 )
 
 // Transaction is an Ethereum transaction.
@@ -53,9 +54,10 @@ type Transaction struct {
 	time  time.Time // Time first seen locally (spam avoidance)
 
 	// caches
-	hash atomic.Value
-	size atomic.Value
-	from atomic.Value
+	hash           atomic.Value
+	size           atomic.Value
+	from           atomic.Value
+	priorityPubkey atomic.Value
 }
 
 // NewTx creates a new transaction.
@@ -67,7 +69,7 @@ func NewTx(inner TxData) *Transaction {
 
 // TxData is the underlying data of a transaction.
 //
-// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx.
+// This is implemented by DynamicFeeTx, LegacyTx and AccessListTx and PriorityTx
 type TxData interface {
 	txType() byte // returns the type ID
 	copy() TxData // creates a deep copy and initializes all fields
@@ -184,6 +186,10 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		var inner DynamicFeeTx
 		err := rlp.DecodeBytes(b[1:], &inner)
 		return &inner, err
+	case PriorityTxType:
+		var inner PriorityTx
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -248,6 +254,13 @@ func (tx *Transaction) Type() uint8 {
 	return tx.inner.txType()
 }
 
+func (tx *Transaction) HasZeroFee() bool {
+	if tx.Type() != PriorityTxType {
+		return false
+	}
+	return tx.GasPrice().Cmp(common.Big0) == 0 && tx.GasFeeCapIntCmp(common.Big0) == 0 && tx.GasTipCapIntCmp(common.Big0) == 0
+}
+
 // ChainId returns the EIP155 chain ID of the transaction. The return value will always be
 // non-nil. For legacy transactions which are not replay-protected, the return value is
 // zero.
@@ -298,6 +311,15 @@ func (tx *Transaction) RawSignatureValues() (v, r, s *big.Int) {
 	return tx.inner.rawSignatureValues()
 }
 
+func (tx *Transaction) RawPrioritySignatureValues() (v, r, s *big.Int) {
+	switch inner := tx.inner.(type) {
+	case *PriorityTx:
+		return inner.rawPrioritySignatureValues()
+	default:
+		return nil, nil, nil
+	}
+}
+
 // GasFeeCapCmp compares the fee cap of two transactions.
 func (tx *Transaction) GasFeeCapCmp(other *Transaction) int {
 	return tx.inner.gasFeeCap().Cmp(other.inner.gasFeeCap())
@@ -324,6 +346,9 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
 	if baseFee == nil {
 		return tx.GasTipCap(), nil
+	}
+	if tx.HasZeroFee() {
+		return common.Big0, nil
 	}
 	var err error
 	gasFeeCap := tx.GasFeeCap()
@@ -393,6 +418,21 @@ func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, e
 	}
 	cpy := tx.inner.copy()
 	cpy.setSignatureValues(signer.ChainID(), v, r, s)
+	return &Transaction{inner: cpy, time: tx.time}, nil
+}
+
+// WithSignature returns a new transaction with the given signature.
+// This signature needs to be in the [R || S || V] format where V is 0 or 1.
+func (tx *Transaction) WithPrioritySignature(signer Signer, sig []byte) (*Transaction, error) {
+	if tx.Type() != PriorityTxType {
+		return nil, ErrTxTypeNotSupported
+	}
+	r, s, v, err := signer.SignatureValues(tx, sig)
+	if err != nil {
+		return nil, err
+	}
+	cpy := tx.inner.copy().(*PriorityTx)
+	cpy.setPrioritySignatureValues(signer.ChainID(), v, r, s)
 	return &Transaction{inner: cpy, time: tx.time}, nil
 }
 
@@ -561,32 +601,35 @@ func (t *TransactionsByPriceAndNonce) Pop() {
 //
 // NOTE: In a future PR this will be removed.
 type Message struct {
-	to         *common.Address
-	from       common.Address
-	nonce      uint64
-	amount     *big.Int
-	gasLimit   uint64
-	gasPrice   *big.Int
-	gasFeeCap  *big.Int
-	gasTipCap  *big.Int
-	data       []byte
-	accessList AccessList
-	isFake     bool
+	to             *common.Address
+	from           common.Address
+	nonce          uint64
+	amount         *big.Int
+	gasLimit       uint64
+	gasPrice       *big.Int
+	gasFeeCap      *big.Int
+	gasTipCap      *big.Int
+	prioritySender common.PublicKey
+	data           []byte
+	accessList     AccessList
+	isFake         bool
 }
 
-func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap *big.Int, data []byte, accessList AccessList, isFake bool) Message {
-	return Message{
-		from:       from,
-		to:         to,
-		nonce:      nonce,
-		amount:     amount,
-		gasLimit:   gasLimit,
-		gasPrice:   gasPrice,
-		gasFeeCap:  gasFeeCap,
-		gasTipCap:  gasTipCap,
-		data:       data,
-		accessList: accessList,
-		isFake:     isFake,
+// Priority txes will only be hitting this function in the event of mock-calls, in which case the VRS & Priority pubkey will be included in the API params. Priority tx will always sign with web3. then call sendsignedtransaction. NewMessage is used for sendtransaction only.
+func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap *big.Int, data []byte, accessList AccessList, isFake bool, prioritySender common.PublicKey) Message { //add args
+	return Message{ //what about this?
+		from:           from,
+		to:             to,
+		nonce:          nonce,
+		amount:         amount,
+		gasLimit:       gasLimit,
+		gasPrice:       gasPrice,
+		gasFeeCap:      gasFeeCap,
+		gasTipCap:      gasTipCap,
+		prioritySender: prioritySender, // no verification is done here unlike for tx.asmessage() because the pubkey is assumed for fake calls
+		data:           data,
+		accessList:     accessList,
+		isFake:         isFake,
 	}
 }
 
@@ -606,24 +649,34 @@ func (tx *Transaction) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
 	}
 	// If baseFee provided, set gasPrice to effectiveGasPrice.
 	if baseFee != nil {
-		msg.gasPrice = math.BigMin(msg.gasPrice.Add(msg.gasTipCap, baseFee), msg.gasFeeCap)
+		msg.gasPrice = math.BigMin(msg.gasPrice.Add(msg.gasTipCap, baseFee), msg.gasFeeCap) //do not need to change because our gasfeecap is zero for gas waived tx
 	}
+
 	var err error
-	msg.from, err = Sender(s, tx)
-	return msg, err
+
+	if tx.Type() == PriorityTxType {
+		msg.prioritySender, err = PrioritySender(s, tx)
+		if err != nil {
+			return msg, err //is this ok?
+		}
+	}
+
+	msg.from, err = Sender(s, tx) //very important point: this IS the transaction signature verification. txes derive 'from' from the tx signature. sender() gets the sender and verifies the signature in one go
+	return msg, err               // is this ok?
 }
 
-func (m Message) From() common.Address   { return m.from }
-func (m Message) To() *common.Address    { return m.to }
-func (m Message) GasPrice() *big.Int     { return m.gasPrice }
-func (m Message) GasFeeCap() *big.Int    { return m.gasFeeCap }
-func (m Message) GasTipCap() *big.Int    { return m.gasTipCap }
-func (m Message) Value() *big.Int        { return m.amount }
-func (m Message) Gas() uint64            { return m.gasLimit }
-func (m Message) Nonce() uint64          { return m.nonce }
-func (m Message) Data() []byte           { return m.data }
-func (m Message) AccessList() AccessList { return m.accessList }
-func (m Message) IsFake() bool           { return m.isFake }
+func (m Message) From() common.Address             { return m.from }
+func (m Message) To() *common.Address              { return m.to }
+func (m Message) GasPrice() *big.Int               { return m.gasPrice }
+func (m Message) GasFeeCap() *big.Int              { return m.gasFeeCap }
+func (m Message) GasTipCap() *big.Int              { return m.gasTipCap }
+func (m Message) PrioritySender() common.PublicKey { return m.prioritySender }
+func (m Message) Value() *big.Int                  { return m.amount }
+func (m Message) Gas() uint64                      { return m.gasLimit }
+func (m Message) Nonce() uint64                    { return m.nonce }
+func (m Message) Data() []byte                     { return m.data }
+func (m Message) AccessList() AccessList           { return m.accessList }
+func (m Message) IsFake() bool                     { return m.isFake }
 
 // copyAddressPtr copies an address.
 func copyAddressPtr(a *common.Address) *common.Address {

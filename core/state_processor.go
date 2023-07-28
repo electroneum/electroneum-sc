@@ -72,11 +72,22 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
+	statedb.SetPriorityTransactors(MustGetPriorityTransactors(vmenv))
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+		}
+		// Validate priority transaction
+		if tx.Type() == types.PriorityTxType {
+			transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
+			if !found {
+				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
+			}
+			if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
+				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errNoGasPriceWaiver)
+			}
 		}
 		statedb.Prepare(tx.Hash(), i)
 		receipt, err := applyTransaction(msg, p.config, p.bc, nil, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
@@ -92,13 +103,15 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	return receipts, allLogs, *usedGas, nil
 }
 
+// Keep this function for applying the transaction only, as opposed to verification and pre checks.
+// Priority transactor checks are done within process() for verifying pre-created blocks and the prior wrapper function of applytransaction() for creating blocks
 func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
 	evm.Reset(txContext, statedb)
 
 	// Apply the transaction to the current state (included in the env).
-	result, err := ApplyMessage(evm, msg, gp)
+	result, err := ApplyMessage(evm, msg, gp) // apply transaction that calls this apply transaction has our waiver check. also process that calls this apply transaction has our waiver check.
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +147,12 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
+
+	// Update the priority transactor map for the next tx application in the block validation loop if this tx
+	// successfully updated the priority transactor list in the EVM/stateDB.
+	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
+		statedb.SetPriorityTransactors(MustGetPriorityTransactors(evm))
+	}
 	return receipt, err
 }
 
@@ -149,5 +168,16 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)
+
+	// Validate priority transaction
+	if tx.Type() == types.PriorityTxType {
+		transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
+		if !found {
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
+		}
+		if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
+		}
+	}
 	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }

@@ -83,6 +83,15 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent)
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
+func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap {
+	return common.PriorityTransactorMap{}
+}
+
+// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
+	return common.PriorityTransactorMap{}
+}
+
 func TestMiner(t *testing.T) {
 	miner, mux, cleanup := createMiner(t)
 	defer cleanup(false)

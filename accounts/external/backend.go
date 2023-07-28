@@ -196,7 +196,7 @@ type signTransactionResult struct {
 // If chainID is nil, or tx.ChainID is zero, the chain ID will be assigned
 // by the external signer. For non-legacy transactions, the chain ID of the
 // transaction overrides the chainID parameter.
-func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
+func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) { //sort this (clef) out another time
 	data := hexutil.Bytes(tx.Data())
 	var to *common.MixedcaseAddress
 	if tx.To() != nil {
@@ -215,6 +215,9 @@ func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transactio
 	case types.LegacyTxType, types.AccessListTxType:
 		args.GasPrice = (*hexutil.Big)(tx.GasPrice())
 	case types.DynamicFeeTxType:
+		args.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap())
+		args.MaxPriorityFeePerGas = (*hexutil.Big)(tx.GasTipCap())
+	case types.PriorityTxType:
 		args.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap())
 		args.MaxPriorityFeePerGas = (*hexutil.Big)(tx.GasTipCap())
 	default:

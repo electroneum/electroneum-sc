@@ -367,6 +367,13 @@ func (bc *BlockChain) TxLookupLimit() uint64 {
 	return bc.txLookupLimit
 }
 
+// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state using the contra
+func (bc *BlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
+	blockContext := NewEVMBlockContext(header, bc, nil)
+	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, state, bc.chainConfig, bc.vmConfig)
+	return MustGetPriorityTransactors(vmenv)
+}
+
 // SubscribeRemovedLogsEvent registers a subscription of RemovedLogsEvent.
 func (bc *BlockChain) SubscribeRemovedLogsEvent(ch chan<- RemovedLogsEvent) event.Subscription {
 	return bc.scope.Track(bc.rmLogsFeed.Subscribe(ch))

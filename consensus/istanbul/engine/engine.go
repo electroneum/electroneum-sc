@@ -195,7 +195,7 @@ func (e *Engine) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 	}
 
 	// Ensure that the block's timestamp isn't too close to it's parent
-	if parent.Time+e.cfg.BlockPeriod > header.Time {
+	if parent.Time+e.cfg.GetConfig(parent.Number).BlockPeriod > header.Time {
 		return istanbulcommon.ErrInvalidTimestamp
 	}
 
@@ -320,7 +320,7 @@ func (e *Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 	header.Difficulty = istanbulcommon.DefaultDifficulty
 
 	// set header's timestamp
-	header.Time = parent.Time + e.cfg.BlockPeriod
+	header.Time = parent.Time + e.cfg.GetConfig(header.Number).BlockPeriod
 	if header.Time < uint64(time.Now().Unix()) {
 		header.Time = uint64(time.Now().Unix())
 	}
@@ -382,7 +382,7 @@ func (e *Engine) SealHash(header *types.Header) common.Hash {
 }
 
 func (e *Engine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
-	return new(big.Int)
+	return istanbulcommon.DefaultDifficulty
 }
 
 func (e *Engine) Validators(header *types.Header) ([]common.Address, error) {

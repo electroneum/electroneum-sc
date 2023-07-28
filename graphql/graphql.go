@@ -242,7 +242,15 @@ func (t *Transaction) GasPrice(ctx context.Context) (hexutil.Big, error) {
 	case types.DynamicFeeTxType:
 		if t.block != nil {
 			if baseFee, _ := t.block.BaseFeePerGas(ctx); baseFee != nil {
-				// price = min(tip, gasFeeCap - baseFee) + baseFee
+				// price = min(gasTipCap + baseFee, gasFeeCap)
+				return (hexutil.Big)(*math.BigMin(new(big.Int).Add(tx.GasTipCap(), baseFee.ToInt()), tx.GasFeeCap())), nil
+			}
+		}
+		return hexutil.Big(*tx.GasPrice()), nil
+	case types.PriorityTxType:
+		if t.block != nil {
+			if baseFee, _ := t.block.BaseFeePerGas(ctx); baseFee != nil {
+				// price = min(gasTipCap + baseFee, gasFeeCap)
 				return (hexutil.Big)(*math.BigMin(new(big.Int).Add(tx.GasTipCap(), baseFee.ToInt()), tx.GasFeeCap())), nil
 			}
 		}
@@ -281,6 +289,8 @@ func (t *Transaction) MaxFeePerGas(ctx context.Context) (*hexutil.Big, error) {
 		return nil, nil
 	case types.DynamicFeeTxType:
 		return (*hexutil.Big)(tx.GasFeeCap()), nil
+	case types.PriorityTxType:
+		return (*hexutil.Big)(tx.GasFeeCap()), nil
 	default:
 		return nil, nil
 	}
@@ -296,12 +306,14 @@ func (t *Transaction) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, e
 		return nil, nil
 	case types.DynamicFeeTxType:
 		return (*hexutil.Big)(tx.GasTipCap()), nil
+	case types.PriorityTxType:
+		return (*hexutil.Big)(tx.GasTipCap()), nil
 	default:
 		return nil, nil
 	}
 }
 
-func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) {
+func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) { //deprecated anyway
 	tx, err := t.resolve(ctx)
 	if err != nil || tx == nil {
 		return nil, err
@@ -317,8 +329,12 @@ func (t *Transaction) EffectiveTip(ctx context.Context) (*hexutil.Big, error) {
 	if header.BaseFee == nil {
 		return (*hexutil.Big)(tx.GasPrice()), nil
 	}
-
-	tip, err := tx.EffectiveGasTip(header.BaseFee)
+	var tip *big.Int
+	if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
+		tip, err = tx.EffectiveGasTip(big.NewInt(0))
+	} else {
+		tip, err = tx.EffectiveGasTip(header.BaseFee)
+	}
 	if err != nil {
 		return nil, err
 	}

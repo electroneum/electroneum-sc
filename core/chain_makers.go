@@ -22,6 +22,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/misc"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -98,6 +99,7 @@ func (b *BlockGen) AddTx(tx *types.Transaction) {
 // further limitations on the content of transactions that can be
 // added. If contract code relies on the BLOCKHASH instruction,
 // the block in chain will be returned.
+// todo: set priority transactors before this point before future tests that send priority tx
 func (b *BlockGen) AddTxWithChain(bc *BlockChain, tx *types.Transaction) {
 	if b.gasPool == nil {
 		b.SetCoinbase(common.Address{})
@@ -232,8 +234,13 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		// correct value.
 		if b.header.Difficulty == nil {
 			if config.TerminalTotalDifficulty == nil {
-				// Clique chain
-				b.header.Difficulty = big.NewInt(2)
+				if config.IBFT != nil {
+					// IBFT chain
+					b.header.Difficulty = istanbulcommon.DefaultDifficulty
+				} else {
+					// Clique chain
+					b.header.Difficulty = big.NewInt(2)
+				}
 			} else {
 				// Post-merge chain
 				b.header.Difficulty = big.NewInt(0)

@@ -73,6 +73,7 @@ type Message interface {
 	GasPrice() *big.Int
 	GasFeeCap() *big.Int
 	GasTipCap() *big.Int
+	PrioritySender() common.PublicKey
 	Gas() uint64
 	Value() *big.Int
 
@@ -181,7 +182,7 @@ func NewStateTransition(evm *vm.EVM, msg Message, gp *GasPool) *StateTransition 
 // indicates a core error meaning that the message would always fail for that particular
 // state and would never be accepted within a block.
 func ApplyMessage(evm *vm.EVM, msg Message, gp *GasPool) (*ExecutionResult, error) {
-	return NewStateTransition(evm, msg, gp).TransitionDb()
+	return NewStateTransition(evm, msg, gp).TransitionDb() // ALL tx are validated before they hit this (if validation is necessary) - sometimes we don't need to validate as part of the flow. However double checks are made inside transitiondb by convention for future safety (and sometimes out of necessity)
 }
 
 // to returns the recipient of the message.
@@ -253,7 +254,9 @@ func (st *StateTransition) preCheck() error {
 			}
 			// This will panic if baseFee is nil, but basefee presence is verified
 			// as part of header validation.
-			if st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
+			//
+			// st.msg.PrioritySender() is already validated at this point
+			if st.msg.PrioritySender() == (common.PublicKey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
 			}
@@ -282,6 +285,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// 4. the purchased gas is enough to cover intrinsic usage
 	// 5. there is no overflow when calculating intrinsic gas
 	// 6. caller has enough balance to cover asset transfer for **topmost** call
+	// 7. Priority txes are signed with a pubkey in the priority key map & have the
+	//    correct gas pricing contingent on the key's gas price waiver status.
 
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
@@ -342,9 +347,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	}
 	effectiveTip := st.gasPrice
 	if rules.IsLondon {
-		effectiveTip = cmath.BigMin(st.gasTipCap, new(big.Int).Sub(st.gasFeeCap, st.evm.Context.BaseFee))
+		effectiveTip = cmath.BigMin(st.gasTipCap, new(big.Int).Sub(st.gasFeeCap, st.evm.Context.BaseFee)) // gastipcap is zero for priority tx with waiver, so this holds fine
 	}
-	st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), effectiveTip))
+	st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), effectiveTip)) //this is where you do the coinbase payout of the miner tip
 
 	return &ExecutionResult{
 		UsedGas:    st.gasUsed(),

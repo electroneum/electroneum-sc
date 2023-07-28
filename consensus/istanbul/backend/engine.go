@@ -37,11 +37,12 @@ import (
 )
 
 const (
-	checkpointInterval = 1024 // Number of blocks after which to save the vote snapshot to the database
-	inmemorySnapshots  = 128  // Number of recent vote snapshots to keep in memory
-	inmemoryEmissions  = 128
-	inmemoryPeers      = 40
-	inmemoryMessages   = 1024
+	checkpointInterval     = 1024 // Number of blocks after which to save the vote snapshot to the database
+	inmemorySnapshots      = 128  // Number of recent vote snapshots to keep in memory
+	inmemoryEmissions      = 128
+	inmemoryBlockSnapshots = 128
+	inmemoryPeers          = 40
+	inmemoryMessages       = 1024
 )
 
 // Author retrieves the Ethereum address of the account that minted the given
@@ -516,7 +517,7 @@ func (sb *Backend) snapshot(chain consensus.ChainHeaderReader, number uint64, ha
 		}
 		// If an on-disk checkpoint snapshot can be found, use that
 		if number%checkpointInterval == 0 {
-			if s, err := loadSnapshot(sb.config.Epoch, sb.db, hash); err == nil {
+			if s, err := loadSnapshot(sb.config.GetConfig(new(big.Int).SetUint64(number)).Epoch, sb.db, hash); err == nil {
 				snap = s
 				sb.snapLogger(snap).Trace("IBFT: loaded voting snapshot from database")
 				break
@@ -538,7 +539,7 @@ func (sb *Backend) snapshot(chain consensus.ChainHeaderReader, number uint64, ha
 				return nil, err
 			}
 
-			snap = newSnapshot(sb.config.Epoch, 0, genesis.Hash(), validator.NewSet(validators, sb.config.ProposerPolicy))
+			snap = newSnapshot(sb.config.GetConfig(new(big.Int).SetUint64(number)).Epoch, 0, genesis.Hash(), validator.NewSet(validators, sb.config.ProposerPolicy))
 			if err := sb.storeSnap(snap); err != nil {
 				return nil, err
 			}

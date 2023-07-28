@@ -141,7 +141,7 @@ var (
 	}
 	NetworkIdFlag = cli.Uint64Flag{
 		Name:  "networkid",
-		Usage: "Explicitly set network id (integer)(For testnets: use --ropsten, --rinkeby, --goerli instead)",
+		Usage: "Explicitly set network id (integer)(For the test and stagenets: use --testnet and --stagenet instead)",
 		Value: ethconfig.Defaults.NetworkId,
 	}
 	MainnetFlag = cli.BoolFlag{
@@ -150,7 +150,7 @@ var (
 	}
 	StagenetFlag = cli.BoolFlag{
 		Name:  "stagenet",
-		Usage: "Electroneum Test network: pre-configured IBFT test network",
+		Usage: "Electroneum Staging network: pre-configured IBFT staging network",
 	}
 	TestnetFlag = cli.BoolFlag{
 		Name:  "testnet",
@@ -373,6 +373,11 @@ var (
 		Usage: "Maximum number of executable transaction slots for all accounts",
 		Value: ethconfig.Defaults.TxPool.GlobalSlots,
 	}
+	TxPoolPrioritySlotsFlag = cli.Uint64Flag{
+		Name:  "txpool.priorityslots",
+		Usage: "Minimum number of executable priority transaction slots guaranteed per account",
+		Value: ethconfig.Defaults.TxPool.PrioritySlots,
+	}
 	TxPoolAccountQueueFlag = cli.Uint64Flag{
 		Name:  "txpool.accountqueue",
 		Usage: "Maximum number of non-executable transaction slots permitted per account",
@@ -382,6 +387,11 @@ var (
 		Name:  "txpool.globalqueue",
 		Usage: "Maximum number of non-executable transaction slots for all accounts",
 		Value: ethconfig.Defaults.TxPool.GlobalQueue,
+	}
+	TxPoolPriorityQueueFlag = cli.Uint64Flag{
+		Name:  "txpool.priorityqueue",
+		Usage: "Maximum number of non-executable priority transaction slots for all accounts",
+		Value: ethconfig.Defaults.TxPool.PriorityQueue,
 	}
 	TxPoolLifetimeFlag = cli.DurationFlag{
 		Name:  "txpool.lifetime",
@@ -481,6 +491,10 @@ var (
 	MinerNoVerifyFlag = cli.BoolFlag{
 		Name:  "miner.noverify",
 		Usage: "Disable remote sealing verification",
+	}
+	MinerPrioritiseElectroneumFlag = cli.BoolFlag{
+		Name:  "miner.PrioritiseElectroneum",
+		Usage: "Prioritise Electroneum Ltd Transactions when filling blocks",
 	}
 	// Account settings
 	UnlockedAccountFlag = cli.StringFlag{
@@ -1397,11 +1411,17 @@ func setTxPool(ctx *cli.Context, cfg *core.TxPoolConfig) {
 	if ctx.GlobalIsSet(TxPoolGlobalSlotsFlag.Name) {
 		cfg.GlobalSlots = ctx.GlobalUint64(TxPoolGlobalSlotsFlag.Name)
 	}
+	if ctx.GlobalIsSet(TxPoolPrioritySlotsFlag.Name) {
+		cfg.PrioritySlots = ctx.GlobalUint64(TxPoolPrioritySlotsFlag.Name)
+	}
 	if ctx.GlobalIsSet(TxPoolAccountQueueFlag.Name) {
 		cfg.AccountQueue = ctx.GlobalUint64(TxPoolAccountQueueFlag.Name)
 	}
 	if ctx.GlobalIsSet(TxPoolGlobalQueueFlag.Name) {
 		cfg.GlobalQueue = ctx.GlobalUint64(TxPoolGlobalQueueFlag.Name)
+	}
+	if ctx.GlobalIsSet(TxPoolPriorityQueueFlag.Name) {
+		cfg.PriorityQueue = ctx.GlobalUint64(TxPoolPriorityQueueFlag.Name)
 	}
 	if ctx.GlobalIsSet(TxPoolLifetimeFlag.Name) {
 		cfg.Lifetime = ctx.GlobalDuration(TxPoolLifetimeFlag.Name)
@@ -1457,6 +1477,10 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	}
 	if ctx.GlobalIsSet(LegacyMinerGasTargetFlag.Name) {
 		log.Warn("The generic --miner.gastarget flag is deprecated and will be removed in the future!")
+	}
+	if ctx.GlobalIsSet(MinerPrioritiseElectroneumFlag.Name) {
+		log.Warn("In using --PrioritiseElectroneum you have decided to Prioritise Electroneum's transactions when mining")
+		cfg.PrioritiseElectroneum = ctx.GlobalBool(MinerPrioritiseElectroneumFlag.Name)
 	}
 }
 
@@ -1553,7 +1577,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)
-
 	// Cap the cache allowance and tune the garbage collector
 	mem, err := gopsutil.VirtualMemory()
 	if err == nil {

@@ -18,6 +18,7 @@ package params
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -66,7 +67,8 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
+		PriorityTransactorsContractAddress: common.Address{},
 	}
 
 	// StagenetChainConfig is the chain parameters to run a node on the test network.
@@ -93,7 +95,8 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		PriorityTransactorsContractAddress: common.Address{},
 	}
 
 	// TestnetChainConfig is the chain parameters to run a node on the test network.
@@ -120,7 +123,14 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN: math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
+		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
+		PriorityTransactorsContractAddress: common.Address{},
+		Transitions: []Transition{
+			{
+				Block:                              big.NewInt(2598419),
+				PriorityTransactorsContractAddress: common.HexToAddress("0x76A28f7D93dB786A8f72380F02f542e49dFFeFb7"),
+			},
+		},
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -128,16 +138,16 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0)}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0)}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, big.NewInt(0), common.Address{}, nil}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0)}
+	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, new(EthashConfig), nil, nil, big.NewInt(0), common.Address{}, nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int), false)
 )
 
@@ -228,7 +238,10 @@ type ChainConfig struct {
 	Clique *CliqueConfig `json:"clique,omitempty"`
 	IBFT   *IBFTConfig   `json:"ibft,omitempty"`
 
-	GenesisETN *big.Int `json:"genesisETN,omitempty"`
+	GenesisETN                         *big.Int       `json:"genesisETN,omitempty"`
+	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
+
+	Transitions []Transition `json:"transitions,omitempty"` // Transition config based on the block number
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -261,6 +274,14 @@ type IBFTConfig struct {
 
 func (c IBFTConfig) String() string {
 	return "IBFT"
+}
+
+type Transition struct {
+	Block                              *big.Int       `json:"block"`
+	EpochLength                        uint64         `json:"epochlength,omitempty"`              // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
 }
 
 // String implements the fmt.Stringer interface.
@@ -378,6 +399,12 @@ func (c *ChainConfig) IsTerminalPoWBlock(parentTotalDiff *big.Int, totalDiff *bi
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
 	bhead := new(big.Int).SetUint64(height)
 
+	// compare the transitions data between the old and new config
+	cBlock, newCfgBlock, err := isTransitionsConfigCompatible(c, newcfg, bhead)
+	if err != nil {
+		return newCompatError(err.Error(), cBlock, newCfgBlock)
+	}
+
 	// Iterate checkCompatible to find the lowest conflict.
 	var lasterr *ConfigCompatError
 	for {
@@ -493,6 +520,17 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	return nil
 }
 
+func (c *ChainConfig) GetPriorityTransactorsContractAddress(blockNumber *big.Int) common.Address {
+	if c.Transitions != nil {
+		for i := len(c.Transitions) - 1; i >= 0; i-- {
+			if c.Transitions[i].Block.Cmp(blockNumber) <= 0 && c.Transitions[i].PriorityTransactorsContractAddress != (common.Address{}) {
+				return c.Transitions[i].PriorityTransactorsContractAddress
+			}
+		}
+	}
+	return c.PriorityTransactorsContractAddress
+}
+
 // isForkIncompatible returns true if a fork scheduled at s1 cannot be rescheduled to
 // block s2 because head is already past the fork.
 func isForkIncompatible(s1, s2, head *big.Int) bool {
@@ -505,6 +543,85 @@ func isForked(s, head *big.Int) bool {
 		return false
 	}
 	return s.Cmp(head) <= 0
+}
+
+func (c *ChainConfig) CheckTransitionsData() error {
+	prevBlock := big.NewInt(0)
+	for _, transition := range c.Transitions {
+		if transition.Block == nil {
+			return ErrBlockNumberMissing
+		}
+		if transition.Block.Cmp(prevBlock) < 0 {
+			return ErrBlockOrder
+		}
+		prevBlock = transition.Block
+	}
+	return nil
+}
+
+func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int, *big.Int, error) {
+	if len(c1.Transitions) == 0 && len(c2.Transitions) == 0 {
+		// maxCodeSizeConfig not used. return
+		return big.NewInt(0), big.NewInt(0), nil
+	}
+
+	// existing config had Transitions and new one does not have the same return error
+	if len(c1.Transitions) > 0 && len(c2.Transitions) == 0 {
+		return head, head, fmt.Errorf("genesis file missing transitions information")
+	}
+
+	if len(c2.Transitions) > 0 && len(c1.Transitions) == 0 {
+		return big.NewInt(0), big.NewInt(0), nil
+	}
+
+	// check the number of records below current head in both configs
+	// if they do not match throw an error
+	c1RecsBelowHead := 0
+	for _, data := range c1.Transitions {
+		if data.Block.Cmp(head) <= 0 {
+			c1RecsBelowHead++
+		} else {
+			break
+		}
+	}
+
+	c2RecsBelowHead := 0
+	for _, data := range c2.Transitions {
+		if data.Block.Cmp(head) <= 0 {
+			c2RecsBelowHead++
+		} else {
+			break
+		}
+	}
+
+	// if the count of past records is not matching return error
+	if c1RecsBelowHead != c2RecsBelowHead {
+		return head, head, errors.New("transitions data incompatible. updating transitions for past")
+	}
+
+	// validate that each past record is matching exactly. if not return error
+	for i := 0; i < c1RecsBelowHead; i++ {
+		isDifferentBlock := c1.Transitions[i].Block.Cmp(c2.Transitions[i].Block) != 0
+
+		if isDifferentBlock {
+			return head, head, fmt.Errorf("Block mismatch for transition %d", i)
+		}
+
+		if c1.Transitions[i].BlockPeriodSeconds != c2.Transitions[i].BlockPeriodSeconds {
+			return head, head, ErrTransitionIncompatible("BlockPeriodSeconds")
+		}
+		if c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
+			return head, head, ErrTransitionIncompatible("RequestTimeoutSeconds")
+		}
+		if c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
+			return head, head, ErrTransitionIncompatible("EpochLength")
+		}
+		if c1.Transitions[i].PriorityTransactorsContractAddress != c2.Transitions[i].PriorityTransactorsContractAddress {
+			return head, head, ErrTransitionIncompatible("PriorityTransactorsContractAddress")
+		}
+	}
+
+	return big.NewInt(0), big.NewInt(0), nil
 }
 
 func configNumEqual(x, y *big.Int) bool {

@@ -89,12 +89,13 @@ func copyConfig(config *istanbul.Config) istanbul.Config {
 }
 
 func makeHeader(parent *types.Block, config *istanbul.Config) *types.Header {
+	blockNumber := parent.Number().Add(parent.Number(), common.Big1)
 	header := &types.Header{
 		ParentHash: parent.Hash(),
-		Number:     parent.Number().Add(parent.Number(), common.Big1),
+		Number:     blockNumber,
 		GasLimit:   core.CalcGasLimit(parent.GasLimit(), parent.GasLimit()),
 		GasUsed:    0,
-		Time:       parent.Time() + config.BlockPeriod,
+		Time:       parent.Time() + config.GetConfig(blockNumber).BlockPeriod,
 		Difficulty: istanbulcommon.DefaultDifficulty,
 	}
 	return header
@@ -309,7 +310,7 @@ func TestVerifyHeader(t *testing.T) {
 	// invalid timestamp
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
-	header.Time = chain.Genesis().Time() + (engine.config.BlockPeriod - 1)
+	header.Time = chain.Genesis().Time() + (engine.config.GetConfig(block.Number()).BlockPeriod - 1)
 	err = engine.VerifyHeader(chain, header, false)
 	if err != istanbulcommon.ErrInvalidTimestamp {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidTimestamp)

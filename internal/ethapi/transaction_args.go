@@ -52,6 +52,9 @@ type TransactionArgs struct {
 	// Introduced by AccessListTxType transaction.
 	AccessList *types.AccessList `json:"accessList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
+
+	// mock execution only for private transactions (eg eth_estimateGas eth_call)
+	PriorityPubkey *common.PublicKey `json:"priorityPubkey,omitempty"`
 }
 
 // from retrieves the transaction sender address.
@@ -209,13 +212,13 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 		gasFeeCap, gasTipCap = gasPrice, gasPrice
 	} else {
 		// A basefee is provided, necessitating 1559-type execution
-		if args.GasPrice != nil {
+		if args.PriorityPubkey == nil && args.GasPrice != nil {
 			// User specified the legacy gas field, convert to 1559 gas typing
 			gasPrice = args.GasPrice.ToInt()
 			gasFeeCap, gasTipCap = gasPrice, gasPrice
 		} else {
 			// User specified 1559 gas feilds (or none), use those
-			gasFeeCap = new(big.Int)
+			gasFeeCap = new(big.Int) //sets as zero for our priority with waiver
 			if args.MaxFeePerGas != nil {
 				gasFeeCap = args.MaxFeePerGas.ToInt()
 			}
@@ -223,7 +226,7 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 			if args.MaxPriorityFeePerGas != nil {
 				gasTipCap = args.MaxPriorityFeePerGas.ToInt()
 			}
-			// Backfill the legacy gasPrice for EVM execution, unless we're all zeroes
+			// Backfill the legacy gasPrice for EVM execution, unless we're all zeroes. This holds for priority tx with waiver (feecap and tipcap are zero so gasPrice should stay 0)
 			gasPrice = new(big.Int)
 			if gasFeeCap.BitLen() > 0 || gasTipCap.BitLen() > 0 {
 				gasPrice = math.BigMin(new(big.Int).Add(gasTipCap, baseFee), gasFeeCap)
@@ -239,12 +242,19 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, true)
+
+	var priorityPubkey common.PublicKey
+	if args.PriorityPubkey != nil {
+		priorityPubkey = *args.PriorityPubkey
+	}
+
+	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, true, priorityPubkey) // this is being called for mock-priority-tx calls only like estimate gas. the web3 flow for purely signing and sending priority tx will never actually hit this
 	return msg, nil
 }
 
 // toTransaction converts the arguments to a transaction.
 // This assumes that setDefaults has been called.
+// Priority tx are only ever raw signed, so we will never enter this scope. We may however, translate args straight into msg for simulation via NewMessage()
 func (args *TransactionArgs) toTransaction() *types.Transaction {
 	var data types.TxData
 	switch {

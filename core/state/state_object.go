@@ -395,7 +395,7 @@ func (s *stateObject) CommitTrie(db Database) (int, error) {
 }
 
 // AddBalance adds amount to s's balance.
-// It is used to add funds to the destination account of a transfer.
+// It is used to add funds to the destination account of a transfer. If the amount is zero, we 'touch' the database to show we 'were here' even though we didn't modify
 func (s *stateObject) AddBalance(amount *big.Int) {
 	// EIP161: We must check emptiness for the objects such that the account
 	// clearing (0,0,0 objects) can take effect.
