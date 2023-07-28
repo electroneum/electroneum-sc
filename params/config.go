@@ -127,8 +127,8 @@ var (
 		PriorityTransactorsContractAddress: common.Address{},
 		Transitions: []Transition{
 			{
-				Block:                              big.NewInt(2598419),
-				PriorityTransactorsContractAddress: common.HexToAddress("0x76A28f7D93dB786A8f72380F02f542e49dFFeFb7"),
+				Block:                              big.NewInt(2781968),
+				PriorityTransactorsContractAddress: common.HexToAddress("0xF417c0fda33fE35BDE245768FaD00209Feca801e"),
 			},
 		},
 	}
