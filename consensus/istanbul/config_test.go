@@ -60,14 +60,14 @@ func TestGetConfig(t *testing.T) {
 		BlockPeriodSeconds: 5,
 	}, {
 		Block:                 big.NewInt(5),
-		RequestTimeoutSeconds: 15000,
+		RequestTimeoutSeconds: 15,
 	}}
 	config1 := *DefaultConfig
 	config1.Epoch = 40000
 	config3 := config1
 	config3.BlockPeriod = 5
 	config5 := config3
-	config5.RequestTimeout = 15000
+	config5.RequestTimeoutSeconds = 15
 
 	type test struct {
 		blockNumber    int64

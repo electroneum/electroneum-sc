@@ -61,11 +61,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
 		PriorityTransactorsContractAddress: common.Address{},
@@ -89,11 +90,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 		PriorityTransactorsContractAddress: common.Address{},
@@ -117,11 +119,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
 		PriorityTransactorsContractAddress: common.Address{},
@@ -265,11 +268,12 @@ func (c *CliqueConfig) String() string {
 
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
-	EpochLength            uint64 `json:"epochlength"`            // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds     uint64 `json:"blockperiodseconds"`     // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds  uint64 `json:"requesttimeoutseconds"`  // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy         uint64 `json:"policy"`                 // The policy for proposer selection
-	AllowedFutureBlockTime uint64 `json:"allowedfutureblocktime"` //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
+	EpochLength              uint64 `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds       uint64 `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds    uint64 `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in seconds
+	MaxRequestTimeoutSeconds uint64 `json:"maxrequesttimeoutseconds"` // Maximum request timeout for each IBFT or QBFT round in seconds
+	ProposerPolicy           uint64 `json:"policy"`                   // The policy for proposer selection
+	AllowedFutureBlockTime   uint64 `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 }
 
 func (c IBFTConfig) String() string {
@@ -280,7 +284,8 @@ type Transition struct {
 	Block                              *big.Int       `json:"block"`
 	EpochLength                        uint64         `json:"epochlength,omitempty"`              // Number of blocks that should pass before pending validator votes are reset
 	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in seconds
+	MaxRequestTimeoutSeconds           uint64         `json:"maxrequesttimeoutseconds,omitempty"` // Maximum request timeout for each IBFT or QBFT round in seconds
 	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
 }
 
