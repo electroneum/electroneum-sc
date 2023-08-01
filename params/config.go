@@ -619,6 +619,9 @@ func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int
 		if c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
 			return head, head, ErrTransitionIncompatible("RequestTimeoutSeconds")
 		}
+		if c1.Transitions[i].MaxRequestTimeoutSeconds != c2.Transitions[i].MaxRequestTimeoutSeconds {
+			return head, head, ErrTransitionIncompatible("MaxRequestTimeoutSeconds")
+		}
 		if c1.Transitions[i].AllowedFutureBlockTime != c2.Transitions[i].AllowedFutureBlockTime {
 			return head, head, ErrTransitionIncompatible("AllowedFutureBlockTime")
 		}
