@@ -232,7 +232,7 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 			ProposerPolicy:           istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
 			RequestTimeoutSeconds:    chainConfig.IBFT.RequestTimeoutSeconds,
 			MaxRequestTimeoutSeconds: chainConfig.IBFT.MaxRequestTimeoutSeconds,
-			AllowedFutureBlockTime:   5,
+			AllowedFutureBlockTime:   chainConfig.IBFT.AllowedFutureBlockTime,
 			Transitions:              chainConfig.Transitions,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {

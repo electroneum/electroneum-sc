@@ -154,6 +154,9 @@ func (c Config) GetConfig(blockNumber *big.Int) Config {
 		if c.Transitions[i].MaxRequestTimeoutSeconds != 0 {
 			newConfig.MaxRequestTimeoutSeconds = c.Transitions[i].MaxRequestTimeoutSeconds
 		}
+		if c.Transitions[i].AllowedFutureBlockTime != 0 {
+			newConfig.AllowedFutureBlockTime = c.Transitions[i].AllowedFutureBlockTime
+		}
 	}
 	return newConfig
 }

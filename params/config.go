@@ -287,6 +287,7 @@ type Transition struct {
 	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in seconds
 	MaxRequestTimeoutSeconds           uint64         `json:"maxrequesttimeoutseconds,omitempty"` // Maximum request timeout for each IBFT or QBFT round in seconds
 	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
+	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime,omitempty"`
 }
 
 // String implements the fmt.Stringer interface.
@@ -617,6 +618,9 @@ func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int
 		}
 		if c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
 			return head, head, ErrTransitionIncompatible("RequestTimeoutSeconds")
+		}
+		if c1.Transitions[i].AllowedFutureBlockTime != c2.Transitions[i].AllowedFutureBlockTime {
+			return head, head, ErrTransitionIncompatible("AllowedFutureBlockTime")
 		}
 		if c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
 			return head, head, ErrTransitionIncompatible("EpochLength")
