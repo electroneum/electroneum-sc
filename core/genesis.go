@@ -423,14 +423,14 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 }
 
 func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
-	// Create the vanity
-	vanity := make([]byte, 32) // 32 bytes of zeros
 
-	// Initialize a pointer to an instance of types.IstanbulExtra
-	extra := &types.IstanbulExtra{
-		Validators:    valset, // Update as necessary
-		Seal:          []byte{},
-		CommittedSeal: [][]byte{},
+	// Initialize a pointer to an instance of types.QBFTExtra
+	extra := &types.QBFTExtra{
+		VanityData:    make([]byte, 32),
+		Validators:    valset,     // Update as necessary
+		Vote:          nil,        // Nil at genesis
+		Round:         0,          // 0 at genesis
+		CommittedSeal: [][]byte{}, // Empty at genesis
 	}
 
 	// Encode the instance to bytes
@@ -439,10 +439,10 @@ func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
 		panic("RLP Encoding of genesis extra failed. Unable to create genesis block")
 	}
 
-	// genesisExtraDataHex := hex.EncodeToString(append(vanity, extraBytes...))
-	// fmt.Println(genesisExtraDataHex)
-	// Append the vanity and extraBytes
-	return append(vanity, extraBytes...)
+	genesisExtraDataHex := hex.EncodeToString(extraBytes)
+	fmt.Println(genesisExtraDataHex)
+
+	return extraBytes
 }
 
 // DefaultGenesisBlock returns the Electroneum-sc mainnet genesis block.
