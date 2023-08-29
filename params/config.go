@@ -31,7 +31,7 @@ import (
 var (
 	MainnetGenesisHash  = common.HexToHash("0x4fda998638776057c8c27989bc021aed4b813fcebd483bf7a6b139f6efb324a6")
 	StagenetGenesisHash = common.HexToHash("0x619e6f8fa6e99eb9829e1f0c7fa62a999d47bf8a7da51a72c2af3cd83cb6e4a3")
-	TestnetGenesisHash  = common.HexToHash("0xcf1b6615aa11a133442a21cc1bf9fbe935fd146f74123ba4f3f0e107362c3eb4")
+	TestnetGenesisHash  = common.HexToHash("0x31cf4b703626e42f9bded05754f4c6072986a02db46c9c6281a9924aea75a788")
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -127,9 +127,12 @@ var (
 			RequestTimeoutSeconds:  10,
 			AllowedFutureBlockTime: 5,
 		},
-		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing,
-		LegacyV9ForkHeight:                 big.NewInt(0),
-		LegacyToSmartchainMigrationHeight:  big.NewInt(0),
+		// I observed that the legacy testnet gen block had billions emitted and later the 21B max supply overflowed.
+		// Therefore I have entered the circ supply correct to up to and including the **MAINNET*** height 1675364 to
+		// help mock the mainnet with the testnet (for now...we may do a reset further down the road)
+		GenesisETN:                         math.MustParseBig256("17951808565760000000000000000"),
+		LegacyV9ForkHeight:                 big.NewInt(707121),
+		LegacyToSmartchainMigrationHeight:  big.NewInt(1455270),
 		PriorityTransactorsContractAddress: common.HexToAddress("0x1ef0959497375a7539e487749584aeb4947b7a90"),
 		Transitions:                        []Transition{},
 	}
