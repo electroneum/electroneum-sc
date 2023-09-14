@@ -120,7 +120,8 @@ func (p *ProposerPolicy) ClearRegistry() {
 }
 
 type Config struct {
-	RequestTimeout                     uint64              `toml:",omitempty"` // The timeout for each Istanbul round in milliseconds.
+	RequestTimeoutSeconds              uint64              `toml:",omitempty"` // The timeout for each Istanbul round in seconds.
+	MaxRequestTimeoutSeconds           uint64              `toml:",omitempty"` // Max request timeout for each Istanbul round in seconds.
 	BlockPeriod                        uint64              `toml:",omitempty"` // Default minimum difference between two consecutive block's timestamps in second
 	ProposerPolicy                     *ProposerPolicy     `toml:",omitempty"` // The policy for proposer selection
 	Epoch                              uint64              `toml:",omitempty"` // The number of blocks after which to checkpoint and reset the pending votes
@@ -130,24 +131,31 @@ type Config struct {
 }
 
 var DefaultConfig = &Config{
-	RequestTimeout:         10000,
-	BlockPeriod:            5,
-	ProposerPolicy:         NewRoundRobinProposerPolicy(),
-	Epoch:                  30000,
-	AllowedFutureBlockTime: 5,
+	RequestTimeoutSeconds:    10,
+	MaxRequestTimeoutSeconds: 60,
+	BlockPeriod:              5,
+	ProposerPolicy:           NewRoundRobinProposerPolicy(),
+	Epoch:                    30000,
+	AllowedFutureBlockTime:   5,
 }
 
 func (c Config) GetConfig(blockNumber *big.Int) Config {
 	newConfig := c
 	for i := 0; c.Transitions != nil && i < len(c.Transitions) && c.Transitions[i].Block.Cmp(blockNumber) <= 0; i++ {
 		if c.Transitions[i].RequestTimeoutSeconds != 0 {
-			newConfig.RequestTimeout = c.Transitions[i].RequestTimeoutSeconds
+			newConfig.RequestTimeoutSeconds = c.Transitions[i].RequestTimeoutSeconds
 		}
 		if c.Transitions[i].EpochLength != 0 {
 			newConfig.Epoch = c.Transitions[i].EpochLength
 		}
 		if c.Transitions[i].BlockPeriodSeconds != 0 {
 			newConfig.BlockPeriod = c.Transitions[i].BlockPeriodSeconds
+		}
+		if c.Transitions[i].MaxRequestTimeoutSeconds != 0 {
+			newConfig.MaxRequestTimeoutSeconds = c.Transitions[i].MaxRequestTimeoutSeconds
+		}
+		if c.Transitions[i].AllowedFutureBlockTime != 0 {
+			newConfig.AllowedFutureBlockTime = c.Transitions[i].AllowedFutureBlockTime
 		}
 	}
 	return newConfig

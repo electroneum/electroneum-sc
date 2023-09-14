@@ -873,6 +873,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	}
 	var coalescedLogs []*types.Log
 
+	transactors := w.chain.MustGetPriorityTransactorsForState(env.header, env.state)
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
@@ -920,6 +921,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
+		env.state.SetPriorityTransactors(transactors)
 
 		logs, err := w.commitTransaction(env, tx)
 		switch {
@@ -1286,7 +1288,7 @@ func totalFees(block *types.Block, receipts []*types.Receipt) *big.Float {
 	feesWei := new(big.Int)
 	for i, tx := range block.Transactions() {
 		var minerFee *big.Int
-		if tx.Type() == types.PriorityTxType && tx.GasFeeCap() == big.NewInt(0) && tx.GasTipCap() == big.NewInt(0) {
+		if tx.Type() == types.PriorityTxType && tx.HasZeroFee() {
 			minerFee, _ = tx.EffectiveGasTip(big.NewInt(0))
 		} else {
 			minerFee, _ = tx.EffectiveGasTip(block.BaseFee())

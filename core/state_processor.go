@@ -19,13 +19,10 @@ package core
 import (
 	"fmt"
 	"math/big"
-	"strings"
 
-	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/misc"
-	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/core/vm"
@@ -75,7 +72,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
-	transactors := getPriorityTransactors(blockNumber, p.config, vmenv)
+	statedb.SetPriorityTransactors(MustGetPriorityTransactors(vmenv))
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
@@ -84,7 +81,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		// Validate priority transaction
 		if tx.Type() == types.PriorityTxType {
-			transactor, found := transactors[msg.PrioritySenderPubkey()]
+			transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
 			if !found {
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
@@ -106,69 +103,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	return receipts, allLogs, *usedGas, nil
 }
 
-func getPriorityTransactors(blockNumber *big.Int, config *params.ChainConfig, evm *vm.EVM) common.PriorityTransactorMap {
-	var (
-		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
-		contract = vm.AccountRef(address)
-		method   = "getTransactors"
-		result   = make(common.PriorityTransactorMap)
-	)
-
-	if address != (common.Address{}) {
-		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceABI))
-		input, _ := contractABI.Pack(method)
-		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
-		if err != nil {
-			return result
-		}
-		unpackResult, err := contractABI.Unpack(method, output)
-		if err != nil {
-			return result
-		}
-		transactorsMeta := abi.ConvertType(unpackResult[0], new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
-		for _, t := range *transactorsMeta {
-			// Only add transactors that are within start/end height range
-			if t.StartHeight <= blockNumber.Uint64() && (t.EndHeight >= blockNumber.Uint64() || t.EndHeight == 0) {
-				result[common.HexToPriorityPubkey(t.PublicKey)] = common.PriorityTransactor{
-					IsGasPriceWaiver: t.IsGasPriceWaiver,
-					EntityName:       t.Name,
-				}
-			}
-		}
-	}
-	return result
-}
-
-func getPriorityTransactorByKey(blockNumber *big.Int, publicKey common.PriorityPubkey, config *params.ChainConfig, evm *vm.EVM) (common.PriorityTransactor, bool) {
-	var (
-		address  = config.GetPriorityTransactorsContractAddress(blockNumber)
-		contract = vm.AccountRef(address)
-		method   = "getTransactorByKey"
-	)
-
-	if address != (common.Address{}) {
-		contractABI, _ := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceABI))
-		input, _ := contractABI.Pack(method, publicKey.ToPaddedHexString())
-		output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
-		if err != nil {
-			return common.PriorityTransactor{}, false
-		}
-		unpackResult, err := contractABI.Unpack(method, output)
-		if err != nil {
-			return common.PriorityTransactor{}, false
-		}
-		transactorMeta := abi.ConvertType(unpackResult[0], new(prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)).(*prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
-		// Only add transactors that are within start/end height range
-		if transactorMeta.StartHeight <= blockNumber.Uint64() && (transactorMeta.EndHeight >= blockNumber.Uint64() || transactorMeta.EndHeight == 0) {
-			return common.PriorityTransactor{
-				EntityName:       transactorMeta.Name,
-				IsGasPriceWaiver: transactorMeta.IsGasPriceWaiver,
-			}, true
-		}
-	}
-	return common.PriorityTransactor{}, false
-}
-
+// Keep this function for applying the transaction only, as opposed to verification and pre checks.
+// Priority transactor checks are done within process() for verifying pre-created blocks and the prior wrapper function of applytransaction() for creating blocks
 func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
@@ -211,6 +147,12 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
+
+	// Update the priority transactor map for the next tx application in the block validation loop if this tx
+	// successfully updated the priority transactor list in the EVM/stateDB.
+	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
+		statedb.SetPriorityTransactors(MustGetPriorityTransactors(evm))
+	}
 	return receipt, err
 }
 
@@ -226,14 +168,15 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)
+
 	// Validate priority transaction
 	if tx.Type() == types.PriorityTxType {
-		transactor, found := getPriorityTransactorByKey(header.Number, msg.PrioritySenderPubkey(), config, vmenv)
+		transactor, found := statedb.GetPriorityTransactorByKey(msg.PrioritySender())
 		if !found {
-			return nil, errBadPriorityKey
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
 		}
 		if !transactor.IsGasPriceWaiver && tx.HasZeroFee() {
-			return nil, errNoGasPriceWaiver
+			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
 		}
 	}
 	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)

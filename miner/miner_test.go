@@ -19,7 +19,6 @@ package miner
 
 import (
 	"errors"
-	"math/big"
 	"testing"
 	"time"
 
@@ -84,8 +83,13 @@ func (bc *testBlockChain) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent)
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *testBlockChain) GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool) {
-	return common.PriorityTransactor{}, false
+func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransactorMap {
+	return common.PriorityTransactorMap{}
+}
+
+// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
+	return common.PriorityTransactorMap{}
 }
 
 func TestMiner(t *testing.T) {

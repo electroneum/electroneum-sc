@@ -106,3 +106,7 @@ func (tx *PriorityTx) rawPrioritySignatureValues() (v, r, s *big.Int) {
 func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.V, tx.R, tx.S = chainID, v, r, s
 }
+
+func (tx *PriorityTx) setPrioritySignatureValues(chainID, v, r, s *big.Int) {
+	tx.ChainID, tx.PriorityV, tx.PriorityR, tx.PriorityS = chainID, v, r, s
+}

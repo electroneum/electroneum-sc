@@ -252,10 +252,16 @@ func (c *core) newRoundChangeTimer() {
 	c.stopTimer()
 
 	// set timeout based on the round number
-	baseTimeout := time.Duration(c.config.GetConfig(c.current.Sequence()).RequestTimeout) * time.Millisecond
+	baseTimeout := time.Duration(c.config.GetConfig(c.current.Sequence()).RequestTimeoutSeconds) * time.Second
 	round := c.current.Round().Uint64()
 
 	timeout := baseTimeout * time.Duration(math.Pow(2, float64(round)))
+
+	maxRequestTimeout := time.Duration(c.config.GetConfig(c.current.Sequence()).MaxRequestTimeoutSeconds) * time.Second
+
+	if maxRequestTimeout > time.Duration(0) && timeout > maxRequestTimeout {
+		timeout = maxRequestTimeout
+	}
 
 	c.currentLogger(true, nil).Trace("IBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.roundChangeTimer = time.AfterFunc(timeout, func() {

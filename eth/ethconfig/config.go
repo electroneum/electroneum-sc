@@ -227,12 +227,13 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 
 	if chainConfig.IBFT != nil {
 		return istanbulBackend.New(istanbul.Config{
-			BlockPeriod:            chainConfig.IBFT.BlockPeriodSeconds,
-			Epoch:                  chainConfig.IBFT.EpochLength,
-			ProposerPolicy:         istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
-			RequestTimeout:         chainConfig.IBFT.RequestTimeoutSeconds * 1000,
-			AllowedFutureBlockTime: 5,
-			Transitions:            chainConfig.Transitions,
+			BlockPeriod:              chainConfig.IBFT.BlockPeriodSeconds,
+			Epoch:                    chainConfig.IBFT.EpochLength,
+			ProposerPolicy:           istanbul.NewProposerPolicy(istanbul.ProposerPolicyId(chainConfig.IBFT.ProposerPolicy)),
+			RequestTimeoutSeconds:    chainConfig.IBFT.RequestTimeoutSeconds,
+			MaxRequestTimeoutSeconds: chainConfig.IBFT.MaxRequestTimeoutSeconds,
+			AllowedFutureBlockTime:   chainConfig.IBFT.AllowedFutureBlockTime,
+			Transitions:              chainConfig.Transitions,
 		}, stack.GetNodeKey(), db)
 	} else if chainConfig.Clique != nil {
 		engine = clique.New(chainConfig.Clique, db)

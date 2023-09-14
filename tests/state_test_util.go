@@ -359,7 +359,7 @@ func (tx *stTransaction) toMessage(ps stPostState, baseFee *big.Int) (core.Messa
 	}
 
 	msg := types.NewMessage(from, to, tx.Nonce, value, gasLimit, gasPrice,
-		tx.MaxFeePerGas, tx.MaxPriorityFeePerGas, data, accessList, false, common.PriorityPubkey{}) //create new tests later
+		tx.MaxFeePerGas, tx.MaxPriorityFeePerGas, data, accessList, false, common.PublicKey{}) //create new tests later
 	return msg, nil
 }
 

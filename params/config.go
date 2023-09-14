@@ -61,11 +61,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
 		LegacyV9ForkHeight:                 big.NewInt(0),
@@ -91,11 +92,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		GenesisETN:                         math.MustParseBig256("2000000000000000000000000000"), // 2Bn ETN allocated to developer accounts for testing
 		LegacyV9ForkHeight:                 big.NewInt(862866),
@@ -121,11 +123,12 @@ var (
 		LondonBlock:         big.NewInt(0),
 		ArrowGlacierBlock:   nil,
 		IBFT: &IBFTConfig{
-			BlockPeriodSeconds:     5,
-			EpochLength:            17280,
-			ProposerPolicy:         0,
-			RequestTimeoutSeconds:  10,
-			AllowedFutureBlockTime: 5,
+			BlockPeriodSeconds:       5,
+			EpochLength:              17280,
+			ProposerPolicy:           0,
+			RequestTimeoutSeconds:    10,
+			MaxRequestTimeoutSeconds: 60,
+			AllowedFutureBlockTime:   5,
 		},
 		// I observed that the legacy testnet gen block had billions emitted and later the 21B max supply overflowed.
 		// Therefore I have entered the circ supply correct to up to and including the **MAINNET*** height 1675364 to
@@ -270,11 +273,12 @@ func (c *CliqueConfig) String() string {
 
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
-	EpochLength            uint64 `json:"epochlength"`            // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds     uint64 `json:"blockperiodseconds"`     // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds  uint64 `json:"requesttimeoutseconds"`  // Minimum request timeout for each IBFT or QBFT round in milliseconds
-	ProposerPolicy         uint64 `json:"policy"`                 // The policy for proposer selection
-	AllowedFutureBlockTime uint64 `json:"allowedfutureblocktime"` //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
+	EpochLength              uint64 `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
+	BlockPeriodSeconds       uint64 `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds    uint64 `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in seconds
+	MaxRequestTimeoutSeconds uint64 `json:"maxrequesttimeoutseconds"` // Maximum request timeout for each IBFT or QBFT round in seconds
+	ProposerPolicy           uint64 `json:"policy"`                   // The policy for proposer selection
+	AllowedFutureBlockTime   uint64 `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 }
 
 func (c IBFTConfig) String() string {
@@ -285,8 +289,10 @@ type Transition struct {
 	Block                              *big.Int       `json:"block"`
 	EpochLength                        uint64         `json:"epochlength,omitempty"`              // Number of blocks that should pass before pending validator votes are reset
 	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in milliseconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in seconds
+	MaxRequestTimeoutSeconds           uint64         `json:"maxrequesttimeoutseconds,omitempty"` // Maximum request timeout for each IBFT or QBFT round in seconds
 	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
+	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime,omitempty"`
 }
 
 // String implements the fmt.Stringer interface.
@@ -617,6 +623,12 @@ func isTransitionsConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (*big.Int
 		}
 		if c1.Transitions[i].RequestTimeoutSeconds != c2.Transitions[i].RequestTimeoutSeconds {
 			return head, head, ErrTransitionIncompatible("RequestTimeoutSeconds")
+		}
+		if c1.Transitions[i].MaxRequestTimeoutSeconds != c2.Transitions[i].MaxRequestTimeoutSeconds {
+			return head, head, ErrTransitionIncompatible("MaxRequestTimeoutSeconds")
+		}
+		if c1.Transitions[i].AllowedFutureBlockTime != c2.Transitions[i].AllowedFutureBlockTime {
+			return head, head, ErrTransitionIncompatible("AllowedFutureBlockTime")
 		}
 		if c1.Transitions[i].EpochLength != c2.Transitions[i].EpochLength {
 			return head, head, ErrTransitionIncompatible("EpochLength")

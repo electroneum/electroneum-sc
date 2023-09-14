@@ -80,6 +80,10 @@ var (
 	// with a different one without the required price bump.
 	ErrReplaceUnderpriced = errors.New("replacement transaction underpriced")
 
+	// ErrReplaceTypeNotCompatible is return if a transaction is attempted to be replaces
+	// with a different typed one
+	ErrReplaceTypeNotCompatible = errors.New("replacement transaction not compatible")
+
 	// ErrGasLimit is returned if a transaction's requested gas limit exceeds the
 	// maximum allowance of the current block.
 	ErrGasLimit = errors.New("exceeds block gas limit")
@@ -155,10 +159,8 @@ type blockChain interface {
 	CurrentBlock() *types.Block
 	GetBlock(hash common.Hash, number uint64) *types.Block
 	StateAt(root common.Hash) (*state.StateDB, error)
-
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
-
-	GetPriorityTransactorByKeyForBlock(blockNumber *big.Int, pkey common.PriorityPubkey) (common.PriorityTransactor, bool)
+	MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
@@ -224,6 +226,10 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 		log.Warn("Sanitizing invalid txpool global slots", "provided", conf.GlobalSlots, "updated", DefaultTxPoolConfig.GlobalSlots)
 		conf.GlobalSlots = DefaultTxPoolConfig.GlobalSlots
 	}
+	if conf.PrioritySlots < 1 {
+		log.Warn("Sanitizing invalid txpool priority slots", "provided", conf.PrioritySlots, "updated", DefaultTxPoolConfig.PrioritySlots)
+		conf.PrioritySlots = DefaultTxPoolConfig.PrioritySlots
+	}
 	if conf.AccountQueue < 1 {
 		log.Warn("Sanitizing invalid txpool account queue", "provided", conf.AccountQueue, "updated", DefaultTxPoolConfig.AccountQueue)
 		conf.AccountQueue = DefaultTxPoolConfig.AccountQueue
@@ -231,6 +237,10 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 	if conf.GlobalQueue < 1 {
 		log.Warn("Sanitizing invalid txpool global queue", "provided", conf.GlobalQueue, "updated", DefaultTxPoolConfig.GlobalQueue)
 		conf.GlobalQueue = DefaultTxPoolConfig.GlobalQueue
+	}
+	if conf.PriorityQueue < 1 {
+		log.Warn("Sanitizing invalid txpool priority queue", "provided", conf.PriorityQueue, "updated", DefaultTxPoolConfig.PriorityQueue)
+		conf.PriorityQueue = DefaultTxPoolConfig.PriorityQueue
 	}
 	if conf.Lifetime < 1 {
 		log.Warn("Sanitizing invalid txpool lifetime", "provided", conf.Lifetime, "updated", DefaultTxPoolConfig.Lifetime)
@@ -284,6 +294,8 @@ type TxPool struct {
 	initDoneCh      chan struct{}  // is closed once the pool is initialized (for tests)
 
 	changesSinceReorg int // A counter for how many drops we've performed in-between reorg.
+
+	currentPriorityTransactors common.PriorityTransactorMap
 }
 
 type txpoolResetRequest struct {
@@ -295,7 +307,6 @@ type txpoolResetRequest struct {
 func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain blockChain) *TxPool {
 	// Sanitize the input to ensure no vulnerable gas prices are set
 	config = (&config).sanitize()
-
 	// Create the transaction pool with its initial settings
 	pool := &TxPool{
 		config:          config,
@@ -681,12 +692,12 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	isGasWaiver := false
 	if tx.Type() == types.PriorityTxType {
 		// Make sure the priority signature checks out
-		priorityPubkey, err := types.PrioritySenderPubkey(pool.signer, tx)
+		priorityPubkey, err := types.PrioritySender(pool.signer, tx)
 		if err != nil {
 			return errBadPrioritySignature
 		}
 		// Make sure the priority public key is an allowed one
-		transactor, exists := pool.chain.GetPriorityTransactorByKeyForBlock(pool.chain.CurrentBlock().Number(), priorityPubkey)
+		transactor, exists := pool.currentPriorityTransactors[priorityPubkey]
 		if !exists {
 			return errBadPriorityKey
 		}
@@ -798,12 +809,15 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		inserted, old := list.Add(tx, pool.config.PriceBump)
 		if !inserted {
 			pendingDiscardMeter.Mark(1)
+			if IsPriorityTransaction(tx) != list.isPriority {
+				return false, ErrReplaceTypeNotCompatible
+			}
 			return false, ErrReplaceUnderpriced
 		}
 		// New transaction is better, replace old one
 		if old != nil {
 			pool.all.Remove(old.Hash())
-			if !IsPriorityTransaction(tx) {
+			if !list.isPriority {
 				pool.priced.Removed(1)
 			}
 			pendingReplaceMeter.Mark(1)
@@ -855,12 +869,15 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	if !inserted {
 		// An older transaction was better, discard this
 		queuedDiscardMeter.Mark(1)
+		if IsPriorityTransaction(tx) != pool.queue[from].isPriority {
+			return false, ErrReplaceTypeNotCompatible
+		}
 		return false, ErrReplaceUnderpriced
 	}
 	// Discard any previous transaction and mark this
 	if old != nil {
 		pool.all.Remove(old.Hash())
-		if !IsPriorityTransaction(tx) {
+		if !pool.queue[from].isPriority {
 			pool.priced.Removed(1)
 		}
 		queuedReplaceMeter.Mark(1)
@@ -1007,7 +1024,7 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		if IsPriorityTransaction(tx) {
 			// Exclude priority transactions with invalid priority signature as soon
 			// as possible
-			_, err = types.PrioritySenderPubkey(pool.signer, tx)
+			_, err = types.PrioritySender(pool.signer, tx)
 			if err != nil {
 				errs[i] = ErrInvalidPrioritySender
 				invalidTxMeter.Mark(1)
@@ -1404,6 +1421,8 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
 
+	pool.currentPriorityTransactors = pool.chain.MustGetPriorityTransactorsForState(newHead, pool.currentState)
+
 	// Inject any transactions discarded due to reorgs
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	senderCacher.recover(pool.signer, reinject)
@@ -1429,6 +1448,17 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		if list == nil {
 			continue // Just in case someone calls with a non existing account
 		}
+
+		// kick priority tx that have a key that's expired
+		for _, tx := range list.Flatten() {
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
+					pool.all.Remove(tx.Hash())
+				}
+			}
+		}
+
 		// Drop all transactions that are deemed too old (low nonce)
 		forwards := list.Forward(pool.currentState.GetNonce(addr))
 		for _, tx := range forwards {
@@ -1767,6 +1797,18 @@ func (pool *TxPool) demoteUnexecutables() {
 	// Iterate over all accounts and demote any non-executable transactions
 	for addr, list := range pool.pending {
 		nonce := pool.currentState.GetNonce(addr)
+
+		// kick was-priority transactions that don't abide by the new state because the odds of such a tx becoming valid
+		// again (priority reestablished in the next few hours) is pretty much zero and we dont want to waste resources
+		// populating the queue unnecessarily and waste an account slot that could be used for another priority sender
+		for _, tx := range list.Flatten() {
+			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
+				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
+					pool.all.Remove(tx.Hash())
+				}
+			}
+		}
 
 		// Drop all transactions that are deemed too old (low nonce)
 		olds := list.Forward(nonce)

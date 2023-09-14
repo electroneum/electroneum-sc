@@ -54,7 +54,7 @@ type TransactionArgs struct {
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 
 	// mock execution only for private transactions (eg eth_estimateGas eth_call)
-	PriorityPubkey *common.PriorityPubkey `json:"priorityPubkey,omitempty"`
+	PriorityPubkey *common.PublicKey `json:"priorityPubkey,omitempty"`
 }
 
 // from retrieves the transaction sender address.
@@ -243,7 +243,7 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 		accessList = *args.AccessList
 	}
 
-	var priorityPubkey common.PriorityPubkey
+	var priorityPubkey common.PublicKey
 	if args.PriorityPubkey != nil {
 		priorityPubkey = *args.PriorityPubkey
 	}
