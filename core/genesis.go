@@ -489,7 +489,7 @@ func DefaultTestnetGenesisBlock() *Genesis {
 		Config:     params.TestnetChainConfig,
 		Number:     0,
 		Nonce:      0,
-		Timestamp:  1702925864, // wed 18th dec 2023
+		Timestamp:  1704292320, // wed 3rd jan 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
 		GasUsed:    0, //ok unless we add a smart contract in the genesis state
