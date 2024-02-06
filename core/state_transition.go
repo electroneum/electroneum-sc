@@ -348,6 +348,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	effectiveTip := st.gasPrice
 	if rules.IsLondon {
 		effectiveTip = cmath.BigMin(st.gasTipCap, new(big.Int).Sub(st.gasFeeCap, st.evm.Context.BaseFee)) // gastipcap is zero for priority tx with waiver, so this holds fine
+		if effectiveTip.Sign() < 0 {
+			effectiveTip = new(big.Int).SetUint64(0)
+		}
 	}
 	st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), effectiveTip)) //this is where you do the coinbase payout of the miner tip
 
