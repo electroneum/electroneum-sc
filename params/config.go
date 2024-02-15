@@ -31,7 +31,7 @@ import (
 var (
 	MainnetGenesisHash  = common.HexToHash("0x4fda998638776057c8c27989bc021aed4b813fcebd483bf7a6b139f6efb324a6")
 	StagenetGenesisHash = common.HexToHash("0x619e6f8fa6e99eb9829e1f0c7fa62a999d47bf8a7da51a72c2af3cd83cb6e4a3")
-	TestnetGenesisHash  = common.HexToHash("0x322499feda3a070c335633b4b483f90b697f131ea61ba1a18af1d7bc3b9aa994")
+	TestnetGenesisHash  = common.HexToHash("0x10e52a738c4546344d46c0f0b601476cc9a7ed28dfcd62ead9528fdd1fe56a93")
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
