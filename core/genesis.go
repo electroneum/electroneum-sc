@@ -22,8 +22,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/rlp"
 	"math/big"
+
+	"github.com/electroneum/electroneum-sc/rlp"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
@@ -423,7 +424,6 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 }
 
 func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
-
 	// Initialize a pointer to an instance of types.QBFTExtra
 	extra := &types.QBFTExtra{
 		VanityData:    make([]byte, 32),
