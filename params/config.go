@@ -29,7 +29,7 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash  = common.HexToHash("0x4fda998638776057c8c27989bc021aed4b813fcebd483bf7a6b139f6efb324a6")
+	MainnetGenesisHash  = common.HexToHash("0x9ec40a3c9e4165b0150331271abf47984ca2614ca11b08c29a5fdd547566401b")
 	StagenetGenesisHash = common.HexToHash("0x619e6f8fa6e99eb9829e1f0c7fa62a999d47bf8a7da51a72c2af3cd83cb6e4a3")
 	TestnetGenesisHash  = common.HexToHash("0x10e52a738c4546344d46c0f0b601476cc9a7ed28dfcd62ead9528fdd1fe56a93")
 )
@@ -68,10 +68,11 @@ var (
 			MaxRequestTimeoutSeconds: 60,
 			AllowedFutureBlockTime:   5,
 		},
-		GenesisETN:                         math.MustParseBig256("17000000000000000000000000000"), //TODO: Get the exact circulating supply at time of blockchain migration
-		LegacyV9ForkHeight:                 big.NewInt(0),
-		LegacyToSmartchainMigrationHeight:  big.NewInt(0),
-		PriorityTransactorsContractAddress: common.Address{},
+		GenesisETN:                         math.MustParseBig256("17964946965760000000000000000"), // = terminal circulating supply for legacy mainnet [0,1806749}. Legacy emissions are burned from height 1806749 onwards
+		LegacyV9ForkHeight:                 big.NewInt(862866),
+		LegacyToSmartchainMigrationHeight:  big.NewInt(1806749),
+		PriorityTransactorsContractAddress: common.HexToAddress("0x92cdf1fc0e54d3150f100265ae2717b0689660ee"),
+		Transitions:                        []Transition{},
 	}
 
 	// StagenetChainConfig is the chain parameters to run a node on the test network.

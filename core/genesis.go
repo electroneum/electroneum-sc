@@ -463,7 +463,7 @@ func DefaultGenesisBlock() *Genesis {
 		Config:     params.MainnetChainConfig,
 		Number:     0,
 		Nonce:      0,
-		Timestamp:  0,
+		Timestamp:  1709141867, // 28 Feb 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
 		GasUsed:    0, //ok unless we add a smart contract in the genesis state
@@ -471,8 +471,8 @@ func DefaultGenesisBlock() *Genesis {
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 		Coinbase:   common.Address{},
-		Alloc: GenesisAlloc{ //TODO: get etn circulating supply allocated to the bridge address. the address is already correct
-			common.HexToAddress("0x7b56c6e6f53498e3e9332b180fe41f1add202f28"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+		Alloc: GenesisAlloc{
+			common.HexToAddress("0x7b56c6e6f53498e3e9332b180fe41f1add202f28"): {Balance: math.MustParseBig256("17964946965760000000000000000")}, // = terminal circulating supply for legacy mainnet [0,1806749}. Legacy emissions are burned from height 1806749 onwards
 		},
 	}
 }
