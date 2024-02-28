@@ -439,8 +439,8 @@ func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
 		panic("RLP Encoding of genesis extra failed. Unable to create genesis block")
 	}
 
-	genesisExtraDataHex := hex.EncodeToString(extraBytes)
-	fmt.Println(genesisExtraDataHex)
+	//genesisExtraDataHex := hex.EncodeToString(extraBytes)
+	//fmt.Println(genesisExtraDataHex)
 
 	return extraBytes
 }
