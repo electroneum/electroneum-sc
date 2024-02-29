@@ -31,7 +31,7 @@ Electroneum Smart Chain supports cross-chain transfers between our legacy Electr
 
 For prerequisites and detailed build instructions please read the [Installation Instructions](https://github.com/electroneum/electroneum-sc/wiki/Install-and-Build).
 
-Building `etn-sc` requires both a Go (version 1.16 or later) and a C compiler. You can install
+Building `etn-sc` requires both a Go (version 1.19 or later) and a C compiler. You can install
 them using your favourite package manager. Once the dependencies are installed, run
 
 ```shell
@@ -135,7 +135,7 @@ Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instanc
 *Note: Although there are some internal protective measures to prevent transactions from
 crossing over between the main network and test network, you should make sure to always
 use separate accounts for play-cryptocurrency and real-cryptocurrency. Unless you manually move
-accounts, `ls etn-sc` will by default correctly separate the two networks and will not make any
+accounts, `etn-sc` will by default correctly separate the two networks and will not make any
 accounts available between them.*
 
 ### Configuration
