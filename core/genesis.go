@@ -22,8 +22,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/electroneum/electroneum-sc/rlp"
 	"math/big"
+
+	"github.com/electroneum/electroneum-sc/rlp"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
@@ -423,7 +424,6 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 }
 
 func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
-
 	// Initialize a pointer to an instance of types.QBFTExtra
 	extra := &types.QBFTExtra{
 		VanityData:    make([]byte, 32),
@@ -439,8 +439,8 @@ func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
 		panic("RLP Encoding of genesis extra failed. Unable to create genesis block")
 	}
 
-	genesisExtraDataHex := hex.EncodeToString(extraBytes)
-	fmt.Println(genesisExtraDataHex)
+	//genesisExtraDataHex := hex.EncodeToString(extraBytes)
+	//fmt.Println(genesisExtraDataHex)
 
 	return extraBytes
 }
@@ -463,7 +463,7 @@ func DefaultGenesisBlock() *Genesis {
 		Config:     params.MainnetChainConfig,
 		Number:     0,
 		Nonce:      0,
-		Timestamp:  0,
+		Timestamp:  1709141867, // 28 Feb 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
 		GasUsed:    0, //ok unless we add a smart contract in the genesis state
@@ -471,8 +471,8 @@ func DefaultGenesisBlock() *Genesis {
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 		Coinbase:   common.Address{},
-		Alloc: GenesisAlloc{ //TODO: get etn circulating supply allocated to the bridge address. the address is already correct
-			common.HexToAddress("0x7b56c6e6f53498e3e9332b180fe41f1add202f28"): {Balance: math.MustParseBig256("1000000000000000000000000000")},
+		Alloc: GenesisAlloc{
+			common.HexToAddress("0x7b56c6e6f53498e3e9332b180fe41f1add202f28"): {Balance: math.MustParseBig256("17964946965760000000000000000")}, // = terminal circulating supply for legacy mainnet [0,1806749}. Legacy emissions are burned from height 1806749 onwards
 		},
 	}
 }
@@ -489,7 +489,7 @@ func DefaultTestnetGenesisBlock() *Genesis {
 		Config:     params.TestnetChainConfig,
 		Number:     0,
 		Nonce:      0,
-		Timestamp:  1693335596, // tue 29 aug 2023
+		Timestamp:  1707989393, // feb 15 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
 		GasUsed:    0, //ok unless we add a smart contract in the genesis state
