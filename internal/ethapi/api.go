@@ -18,9 +18,11 @@ package ethapi
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -112,6 +114,160 @@ func (s *PublicEthereumAPI) FeeHistory(ctx context.Context, blockCount rpc.Decim
 		}
 	}
 	return results, nil
+}
+
+// findBlockHeightForTimestamp Returns the block at, or near, the given timestamp.
+// If above is true, it returns the closest block with a timestamp greater than or equal to the given timestamp.
+// If above is false, it returns the closest block with a timestamp less than or equal to the given timestamp.
+func (s *PublicEthereumAPI) findBlockHeightForTimestamp(ctx context.Context, timestamp uint64, above bool) (rpc.BlockNumber, error) {
+	low := big.NewInt(0)
+	high := new(big.Int).SetUint64(s.b.CurrentBlock().NumberU64())
+
+	var bestBlock *types.Block
+
+	for low.Cmp(high) <= 0 { // while low <= high
+		mid := new(big.Int).Add(low, high)
+		mid.Div(mid, big.NewInt(2)) // mid = (low + high) / 2
+
+		midBlockNumber := rpc.BlockNumber(mid.Int64())
+		midBlock, err := s.b.BlockByNumber(ctx, midBlockNumber)
+		if err != nil {
+			return 0, err
+		}
+
+		midBlockTime := midBlock.Time()
+
+		if midBlockTime < timestamp {
+			low = new(big.Int).Add(mid, big.NewInt(1))
+		} else {
+			high = new(big.Int).Sub(mid, big.NewInt(1))
+			bestBlock = midBlock // This block is at or above the timestamp
+		}
+	}
+
+	// At this point, low and high have converged or crossed
+	// We need to carefully return the correct block depending on `above`
+
+	if above {
+		if bestBlock != nil {
+			return rpc.BlockNumber(bestBlock.Number().Int64()), nil
+		}
+		// Fallback: bestBlock shouldn't be nil here unless no block is above timestamp
+		lowBlock, err := s.b.BlockByNumber(ctx, rpc.BlockNumber(low.Int64()))
+		if err != nil {
+			return 0, err
+		}
+		return rpc.BlockNumber(lowBlock.Number().Int64()), nil
+	} else {
+		// Ensure the returned block is at or below the target timestamp
+		highBlock, err := s.b.BlockByNumber(ctx, rpc.BlockNumber(high.Int64()))
+		if err != nil {
+			return 0, err
+		}
+
+		// Sanity check: If `highBlock` timestamp is greater than the target, go to the last block that was less than timestamp
+		if highBlock.Time() > timestamp {
+			if high.Cmp(big.NewInt(0)) > 0 { // If not the first block, move back
+				highBlock, err = s.b.BlockByNumber(ctx, rpc.BlockNumber(high.Int64()-1))
+				if err != nil {
+					return 0, err
+				}
+			}
+		}
+
+		return rpc.BlockNumber(highBlock.Number().Int64()), nil
+	}
+}
+
+
+// GetTaxData fetches transactions in the specified time range which Electroneum validated and writes them to a CSV file
+// startTime & endTime are Unix Timestamps
+// excludeThirdPartyValidators is a slice of third party validator pubkeys in all lower case
+func (s *PublicEthereumAPI) GetTaxData(ctx context.Context, excludeThirdPartyValidators []string, startTime uint64, endTime uint64) (string, error) {
+
+	// First get the start and end blocks for the timeframe and determine their height.
+	startHeight, err := s.findBlockHeightForTimestamp(ctx, startTime, true)
+	if err != nil {
+		return "Error finding start block", err
+	}
+	endHeight, err := s.findBlockHeightForTimestamp(ctx, endTime, false)
+	if err != nil {
+		return "Error finding end block", err
+	}
+
+	var allDetails []struct {
+		Height     uint64
+		Timestamp  string
+		TxID       common.Hash
+		Fee        *big.Float
+		AmountSent *big.Float
+	}
+
+	// Loop over the blocks, pull all transactions and write their information to a slice of structs ready for csv
+	for i := startHeight; i <= endHeight; i++ {
+		block, err := s.b.BlockByNumber(context.Background(), i)
+		if err != nil {
+			return "Error fetching block", err
+		}
+
+		// If the coinbase is inside excludeThirdPartyValidators, skip this block
+		exclude := false
+		for _, validator := range excludeThirdPartyValidators{
+			if strings.ToLower(block.Header().Coinbase.Hex()) == validator{
+				exclude = true
+			}
+		}
+		if exclude {
+			continue
+		}
+
+		baseFee := block.BaseFee()
+
+		for _, tx := range block.Transactions() {
+			if tx.To() == nil {
+				continue // Skip coinbase transactions
+			}
+
+			if tx.EffectiveGasTipValue(baseFee).Cmp(big.NewInt(0)) != 0 { //  we only want tx with tips
+				allDetails = append(allDetails, struct {
+					Height     uint64
+					Timestamp  string
+					TxID       common.Hash
+					Fee        *big.Float
+					AmountSent *big.Float
+				}{
+					Height:     block.NumberU64(),
+					Timestamp:  time.Unix(int64(block.Time()), 0).Format(time.RFC3339), // Convert and format the timestamp
+					TxID:       tx.Hash(),
+					Fee:        new(big.Float).Quo(new(big.Float).SetInt(tx.EffectiveGasTipValue(baseFee)), big.NewFloat(1e18)), // Convert Wei to Ether
+					AmountSent: new(big.Float).Quo(new(big.Float).SetInt(tx.Value()), big.NewFloat(1e18)),                       // Convert Wei to Ether
+				})
+			}
+		}
+	}
+
+	file, err := os.Create("transactions.csv")
+	if err != nil {
+		return "Error creating CSV file", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	writer.Write([]string{"Height", "Timestamp", "TxID", "Fee", "AmountSent"})
+
+	for _, d := range allDetails {
+		writer.Write([]string{
+			fmt.Sprintf("%d", d.Height),
+			d.Timestamp,
+			d.TxID.Hex(),
+			d.Fee.String(),
+			d.AmountSent.String(),
+		})
+	}
+
+	return "CSV file created successfully", nil
 }
 
 // Syncing returns false in case the node is currently not syncing with the network. It can be up to date or has not
