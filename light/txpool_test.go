@@ -36,8 +36,8 @@ type testTxRelay struct {
 	send, discard, mined chan int
 }
 
-func (self *testTxRelay) Send(txs types.Transactions) {
-	self.send <- len(txs)
+func (p *testTxRelay) Send(txs types.Transactions) {
+	p.send <- len(txs)
 }
 
 func (self *testTxRelay) NewHead(head common.Hash, mined []common.Hash, rollback []common.Hash) {
@@ -51,8 +51,10 @@ func (self *testTxRelay) Discard(hashes []common.Hash) {
 	self.discard <- len(hashes)
 }
 
-const poolTestTxs = 1000
-const poolTestBlocks = 100
+const (
+	poolTestTxs    = 1000
+	poolTestBlocks = 100
+)
 
 // test tx 0..n-1
 var testTx [poolTestTxs]*types.Transaction

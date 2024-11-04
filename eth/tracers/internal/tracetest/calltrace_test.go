@@ -143,7 +143,6 @@ func testCallTracer(tracerName string, dirPath string, t *testing.T) {
 		if !strings.HasSuffix(file.Name(), ".json") {
 			continue
 		}
-		file := file // capture range variable
 		t.Run(camel(strings.TrimSuffix(file.Name(), ".json")), func(t *testing.T) {
 			t.Parallel()
 
@@ -204,9 +203,9 @@ func testCallTracer(tracerName string, dirPath string, t *testing.T) {
 
 			if !jsonEqual(ret, test.Result) {
 				// uncomment this for easier debugging
-				//have, _ := json.MarshalIndent(ret, "", " ")
-				//want, _ := json.MarshalIndent(test.Result, "", " ")
-				//t.Fatalf("trace mismatch: \nhave %+v\nwant %+v", string(have), string(want))
+				// have, _ := json.MarshalIndent(ret, "", " ")
+				// want, _ := json.MarshalIndent(test.Result, "", " ")
+				// t.Fatalf("trace mismatch: \nhave %+v\nwant %+v", string(have), string(want))
 				t.Fatalf("trace mismatch: \nhave %+v\nwant %+v", ret, test.Result)
 			}
 		})
@@ -239,6 +238,7 @@ func camel(str string) string {
 	}
 	return strings.Join(pieces, "")
 }
+
 func BenchmarkTracers(b *testing.B) {
 	files, err := os.ReadDir(filepath.Join("testdata", "call_tracer"))
 	if err != nil {
@@ -248,7 +248,6 @@ func BenchmarkTracers(b *testing.B) {
 		if !strings.HasSuffix(file.Name(), ".json") {
 			continue
 		}
-		file := file // capture range variable
 		b.Run(camel(strings.TrimSuffix(file.Name(), ".json")), func(b *testing.B) {
 			blob, err := os.ReadFile(filepath.Join("testdata", "call_tracer", file.Name()))
 			if err != nil {
@@ -314,7 +313,7 @@ func benchTracer(tracerName string, test *callTracerTest, b *testing.B) {
 // Tx to A, A calls B with zero value. B does not already exist.
 // Expected: that enter/exit is invoked and the inner call is shown in the result
 func TestZeroValueToNotExitCall(t *testing.T) {
-	var to = common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+	to := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
 	privkey, err := crypto.HexToECDSA("0000000000000000deadbeef00000000000000000000000000000000deadbeef")
 	if err != nil {
 		t.Fatalf("err %v", err)
@@ -342,12 +341,12 @@ func TestZeroValueToNotExitCall(t *testing.T) {
 		Difficulty:  big.NewInt(0x30000),
 		GasLimit:    uint64(6000000),
 	}
-	var code = []byte{
+	code := []byte{
 		byte(vm.PUSH1), 0x0, byte(vm.DUP1), byte(vm.DUP1), byte(vm.DUP1), // in and outs zero
 		byte(vm.DUP1), byte(vm.PUSH1), 0xff, byte(vm.GAS), // value=0,address=0xff, gas=GAS
 		byte(vm.CALL),
 	}
-	var alloc = core.GenesisAlloc{
+	alloc := core.GenesisAlloc{
 		to: core.GenesisAccount{
 			Nonce: 1,
 			Code:  code,
@@ -358,7 +357,7 @@ func TestZeroValueToNotExitCall(t *testing.T) {
 		},
 	}
 
-	var testchainConfig = params.MainnetChainConfig
+	testchainConfig := params.MainnetChainConfig
 	testchainConfig.IstanbulBlock = big.NewInt(9_069_000)
 	testchainConfig.BerlinBlock = big.NewInt(12_244_000)
 	testchainConfig.LondonBlock = big.NewInt(12_965_000)

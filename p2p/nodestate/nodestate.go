@@ -749,7 +749,6 @@ func (ns *NodeStateMachine) Operation(fn func()) error {
 // offlineCallbacks calls state update callbacks at startup or shutdown
 func (ns *NodeStateMachine) offlineCallbacks(start bool) {
 	for _, cb := range ns.offlineCallbackList {
-		cb := cb
 		callback := func() {
 			for _, sub := range ns.stateSubs {
 				offState := offlineState & sub.mask

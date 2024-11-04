@@ -18,7 +18,6 @@ package core
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	crand "crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -98,7 +97,7 @@ func init() {
 
 	for _, privateKey := range priorityPrivateKeys {
 		pubKey := privateKey.Public().(*ecdsa.PublicKey)
-		pubKeyBytes := elliptic.Marshal(pubKey.Curve, pubKey.X, pubKey.Y)
+		pubKeyBytes := crypto.FromECDSAPub(pubKey)
 		pubKeyHex := hex.EncodeToString(pubKeyBytes)
 		fmt.Println("Public Key in Hex:", pubKeyHex)
 	}
@@ -1576,6 +1575,7 @@ func TestPriorityTransactionQueueAccountLimiting(t *testing.T) {
 func TestTransactionQueueGlobalLimiting(t *testing.T) {
 	testTransactionQueueGlobalLimiting(t, false)
 }
+
 func TestTransactionQueueGlobalLimitingNoLocals(t *testing.T) {
 	testTransactionQueueGlobalLimiting(t, true)
 }
@@ -1665,6 +1665,7 @@ func testTransactionQueueGlobalLimiting(t *testing.T, nolocals bool) {
 func TestPriorityTransactionQueueGlobalLimiting(t *testing.T) {
 	testPriorityTransactionQueueGlobalLimiting(t, false)
 }
+
 func TestPriorityTransactionQueueGlobalLimitingNoLocals(t *testing.T) {
 	testPriorityTransactionQueueGlobalLimiting(t, true)
 }
@@ -1755,6 +1756,7 @@ func testPriorityTransactionQueueGlobalLimiting(t *testing.T, nolocals bool) {
 func TestPriorityTransactionQueueGlobalLimitingMixed(t *testing.T) {
 	testPriorityTransactionQueueGlobalLimitingMixed(t, false)
 }
+
 func TestPriorityTransactionQueueGlobalLimitingNoLocalsMixed(t *testing.T) {
 	testPriorityTransactionQueueGlobalLimitingMixed(t, true)
 }
@@ -1875,6 +1877,7 @@ func testPriorityTransactionQueueGlobalLimitingMixed(t *testing.T, nolocals bool
 func TestTransactionQueueTimeLimiting(t *testing.T) {
 	testTransactionQueueTimeLimiting(t, false)
 }
+
 func TestTransactionQueueTimeLimitingNoLocals(t *testing.T) {
 	testTransactionQueueTimeLimiting(t, true)
 }
@@ -2031,6 +2034,7 @@ func testTransactionQueueTimeLimiting(t *testing.T, nolocals bool) {
 func TestPriorityTransactionQueueTimeLimiting(t *testing.T) {
 	testPriorityTransactionQueueTimeLimiting(t, false)
 }
+
 func TestPriorityTransactionQueueTimeLimitingNoLocals(t *testing.T) {
 	testPriorityTransactionQueueTimeLimiting(t, true)
 }
@@ -4203,9 +4207,11 @@ func benchmarkPoolBatchInsert(b *testing.B, size int, local bool) {
 func BenchmarkPriorityPoolBatchInsert100(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 100, false)
 }
+
 func BenchmarkPriorityPoolBatchInsert1000(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 1000, false)
 }
+
 func BenchmarkPriorityPoolBatchInsert10000(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 10000, false)
 }
@@ -4213,9 +4219,11 @@ func BenchmarkPriorityPoolBatchInsert10000(b *testing.B) {
 func BenchmarkPriorityPoolBatchLocalInsert100(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 100, true)
 }
+
 func BenchmarkPriorityPoolBatchLocalInsert1000(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 1000, true)
 }
+
 func BenchmarkPriorityPoolBatchLocalInsert10000(b *testing.B) {
 	benchmarkPriorityPoolBatchInsert(b, 10000, true)
 }
