@@ -655,14 +655,14 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 		peers := h.peers.peersWithoutTransaction(tx.Hash())
 		// Send the tx unconditionally to a subset of our peers
 		// Ibft protocol changes for broadcasting to all peers not only Sqrt
-		//numDirect := int(math.Sqrt(float64(len(peers))))
-		for _, peer := range peers {
+		numDirect := int(math.Sqrt(float64(len(peers))))
+		for _, peer := range peers[:numDirect] {
 			txset[peer] = append(txset[peer], tx.Hash())
 		}
 		// For the remaining peers, send announcement only
-		//for _, peer := range peers[numDirect:] {
-		//	annos[peer] = append(annos[peer], tx.Hash())
-		//}
+		for _, peer := range peers[numDirect:] {
+			annos[peer] = append(annos[peer], tx.Hash())
+		}
 		log.Trace("Broadcast transaction", "hash", tx.Hash(), "recipients", len(peers))
 	}
 	for peer, hashes := range txset {
@@ -787,7 +787,7 @@ func (h *handler) makeIbftConsensusProtocol(ProtoName string, version uint, leng
 				p2pPeerId := fmt.Sprintf("%x", p.ID().Bytes()[:8])
 				ethPeer := h.peers.peer(p2pPeerId)
 				if ethPeer == nil {
-					p2pPeerId = fmt.Sprintf("%x", p.ID().Bytes()) //TODO:BBO
+					p2pPeerId = fmt.Sprintf("%x", p.ID().Bytes()) // TODO:BBO
 					ethPeer = h.peers.peer(p2pPeerId)
 					log.Warn("full p2p peer", "id", p2pPeerId, "etnPeer", ethPeer)
 				}
