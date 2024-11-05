@@ -30,6 +30,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/beacon"
 	"github.com/electroneum/electroneum-sc/consensus/clique"
 	"github.com/electroneum/electroneum-sc/consensus/ethash"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/forkid"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -824,6 +825,10 @@ func (h *handler) handleConsensusLoop(p *p2p.Peer, protoRW p2p.MsgReadWriter) er
 	// Handle incoming messages until the connection is torn down
 	for {
 		if err := h.handleConsensus(p, protoRW); err != nil {
+			if errors.Is(err, istanbul.ErrStoppedEngine) && h.downloader.Synchronising() {
+				p.Log().Debug("Ignoring `stopped engine` consensus error due to active sync.")
+				continue
+			}
 			p.Log().Debug("Ethereum ibft message handling failed", "err", err)
 			return err
 		}
