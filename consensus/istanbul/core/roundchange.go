@@ -17,6 +17,7 @@
 package core
 
 import (
+	"errors"
 	"math/big"
 	"sort"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -158,8 +160,13 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		// If we have received a quorum of PREPARE messages with hadBlockProposal=false,
 		// propose the same block again. If hadBlockProposal=true, propose the block that we generated
 		_, proposal := c.highestPrepared(currentRound)
-		if proposal == nil || c.backend.HasBadProposal(proposal.Hash()) {
-			proposal = c.current.pendingRequest.Proposal
+		if proposal == nil {
+			if c.current != nil && c.current.pendingRequest != nil {
+				proposal = c.current.pendingRequest.Proposal
+			} else {
+				log.Warn("round change returns an error: no proposal as pending request is nil")
+				return errors.New("no proposal as pending request is nil")
+			}
 		}
 
 		// Prepare justification for ROUND-CHANGE messages
