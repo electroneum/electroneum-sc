@@ -656,14 +656,14 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 		peers := h.peers.peersWithoutTransaction(tx.Hash())
 		// Send the tx unconditionally to a subset of our peers
 		// Ibft protocol changes for broadcasting to all peers not only Sqrt
-		numDirect := int(math.Sqrt(float64(len(peers))))
-		for _, peer := range peers[:numDirect] {
+		// numDirect := int(math.Sqrt(float64(len(peers))))
+		for _, peer := range peers {
 			txset[peer] = append(txset[peer], tx.Hash())
 		}
 		// For the remaining peers, send announcement only
-		for _, peer := range peers[numDirect:] {
-			annos[peer] = append(annos[peer], tx.Hash())
-		}
+		//for _, peer := range peers[numDirect:] {
+		//	annos[peer] = append(annos[peer], tx.Hash())
+		//}
 		log.Trace("Broadcast transaction", "hash", tx.Hash(), "recipients", len(peers))
 	}
 	for peer, hashes := range txset {
