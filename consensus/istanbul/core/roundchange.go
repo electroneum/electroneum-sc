@@ -88,7 +88,7 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 		return
 	}
 
-	withMsg(logger, roundChange).Info("IBFT: broadcast ROUND-CHANGE message", "payload", hexutil.Encode(data))
+	withMsg(logger, roundChange).Trace("IBFT: broadcast ROUND-CHANGE message", "payload", hexutil.Encode(data))
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, roundChange.Code(), data); err != nil {
@@ -112,7 +112,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 	// number of validators we received ROUND-CHANGE from for the current round
 	currentRoundMessages := c.roundChangeSet.getRCMessagesForGivenRound(currentRound)
 
-	logger.Info("IBFT: handle ROUND-CHANGE message", "higherRoundChanges.count", num, "currentRoundChanges.count", currentRoundMessages)
+	logger.Trace("IBFT: handle ROUND-CHANGE message", "higherRoundChanges.count", num, "currentRoundChanges.count", currentRoundMessages)
 
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
@@ -144,12 +144,12 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		// we start new round and broadcast ROUND-CHANGE message
 		newRound := c.roundChangeSet.getMinRoundChange(currentRound)
 
-		logger.Info("IBFT: received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
+		logger.Trace("Consensus: Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
 
 		c.startNewRound(newRound)
 		c.broadcastRoundChange(newRound)
 	} else if currentRoundMessages >= c.QuorumSize() && c.IsProposer() && c.current.preprepareSent.Cmp(currentRound) < 0 {
-		logger.Info("IBFT: received quorum of ROUND-CHANGE messages")
+		logger.Trace("Consensus: Received quorum of ROUND-CHANGE messages")
 
 		// We received quorum of ROUND-CHANGE for current round and we are proposer
 

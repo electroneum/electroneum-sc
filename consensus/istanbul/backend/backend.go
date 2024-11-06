@@ -219,7 +219,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// update block's header
 	block = block.WithSeal(h)
 
-	sb.logger.Info("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
+	sb.logger.Trace("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
 
 	// - if the proposed and committed blocks are the same, send the proposed hash
 	//   to commit channel, which is being watched inside the engine.Seal() function.
@@ -383,7 +383,6 @@ func (sb *Backend) stop() error {
 
 // StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
 func (sb *Backend) StartQBFTConsensus() error {
-	sb.logger.Info("IBFT: switch from IBFT to QBFT")
 	if err := sb.stop(); err != nil {
 		return err
 	}

@@ -19,7 +19,7 @@ package core
 import "github.com/electroneum/electroneum-sc/common"
 
 func (c *core) handleFinalCommitted() error {
-	c.currentLogger(true, nil).Info("IBFT: handle final committed")
+	c.currentLogger(true, nil).Trace("IBFT: handle final committed")
 
 	// Stopping the timer, so that round changes do not happen
 	c.stopTimer()

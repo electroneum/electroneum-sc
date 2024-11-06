@@ -137,13 +137,13 @@ func (p *SignedRoundChangePayload) DecodeRLP(stream *rlp.Stream) error {
 
 	p.code = RoundChangeCode
 
-	log.Info("IBFT: Correctly decoded SignedRoundChangePayload", "p", p)
+	log.Trace("IBFT: Correctly decoded SignedRoundChangePayload", "p", p)
 
 	return nil
 }
 
 func (p *SignedRoundChangePayload) encodePayloadInternal() ([]byte, error) {
-	var prepared = []interface{}{}
+	prepared := []interface{}{}
 	if p.PreparedRound != nil && !common.EmptyHash(p.PreparedDigest) {
 		prepared = []interface{}{p.PreparedRound, p.PreparedDigest, p.HasBadProposal}
 	}
@@ -151,7 +151,8 @@ func (p *SignedRoundChangePayload) encodePayloadInternal() ([]byte, error) {
 		[]interface{}{
 			p.Sequence,
 			p.Round,
-			prepared})
+			prepared,
+		})
 }
 
 func (p *SignedRoundChangePayload) EncodePayloadForSigning() ([]byte, error) {

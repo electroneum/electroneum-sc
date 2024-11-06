@@ -38,10 +38,13 @@ func (c *core) sendPreprepareMsg(request *Request) {
 
 	// If I'm the proposer and I have the same sequence with the proposal
 	if c.current.Sequence().Cmp(request.Proposal.Number()) == 0 && c.IsProposer() {
+
 		// Creates PRE-PREPARE message
 		curView := c.currentView()
 		preprepare := qbfttypes.NewPreprepare(curView.Sequence, curView.Round, request.Proposal)
 		preprepare.SetSource(c.Address())
+
+		c.logger.Info("Consensus: Proposing new block", "sequence", curView.Sequence.Uint64())
 
 		// Sign payload
 		encodedPayload, err := preprepare.EncodePayloadForSigning()
@@ -81,7 +84,7 @@ func (c *core) sendPreprepareMsg(request *Request) {
 
 		logger = withMsg(logger, preprepare).New("block.number", preprepare.Proposal.Number().Uint64(), "block.hash", preprepare.Proposal.Hash().String())
 
-		logger.Info("IBFT: broadcast PRE-PREPARE message", "payload", hexutil.Encode(payload))
+		logger.Trace("IBFT: broadcast PRE-PREPARE message", "payload", hexutil.Encode(payload))
 
 		// Broadcast RLP-encoded message
 		if err = c.backend.Broadcast(c.valSet, preprepare.Code(), payload); err != nil {
@@ -91,6 +94,10 @@ func (c *core) sendPreprepareMsg(request *Request) {
 
 		// Set the preprepareSent to the current round
 		c.current.preprepareSent = curView.Round
+	}
+
+	if !c.IsProposer() {
+		c.cleanLogger.Info("Consensus: Handling incoming block proposal", "sequence", c.current.Sequence().Uint64(), "author", c.valSet.GetProposer())
 	}
 }
 
@@ -105,7 +112,7 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 
 	logger = logger.New("proposal.number", preprepare.Proposal.Number().Uint64(), "proposal.hash", preprepare.Proposal.Hash().String())
 
-	c.logger.Info("IBFT: handle PRE-PREPARE message")
+	c.logger.Trace("IBFT: handle PRE-PREPARE message")
 
 	// Validates PRE-PREPARE message comes from current proposer
 	if !c.valSet.IsProposer(preprepare.Source()) {
@@ -125,7 +132,7 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	if duration, err := c.backend.Verify(preprepare.Proposal); err != nil {
 		// if it's a future block, we will handle it again after the duration
 		if err == consensus.ErrFutureBlock {
-			logger.Info("IBFT: PRE-PREPARE block proposal is in the future (will be treated again later)", "duration", duration)
+			logger.Warn("IBFT: PRE-PREPARE block proposal is in the future (will be treated again later)", "duration", duration)
 
 			// start a timer to re-input PRE-PREPARE message as a backlog event
 			c.stopFuturePreprepareTimer()
@@ -145,7 +152,7 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 
 	// Here is about to accept the PRE-PREPARE
 	if c.state == StateAcceptRequest {
-		c.logger.Info("IBFT: accepted PRE-PREPARE message")
+		c.logger.Trace("IBFT: accepted PRE-PREPARE message")
 
 		// Re-initialize ROUND-CHANGE timer
 		c.newRoundChangeTimer()
@@ -154,6 +161,8 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 		// Update current state
 		c.current.SetPreprepare(preprepare)
 		c.setState(StatePreprepared)
+
+		c.cleanLogger.Info("Consensus: Block proposal PRE-PREPARED")
 
 		// Broadcast prepare message to other validators
 		c.broadcastPrepare()

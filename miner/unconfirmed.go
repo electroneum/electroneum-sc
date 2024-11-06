@@ -81,8 +81,6 @@ func (set *unconfirmedBlocks) Insert(index uint64, hash common.Hash) {
 	} else {
 		set.blocks.Move(-1).Link(item)
 	}
-	// Display a log for the user to notify of a new mined block unconfirmed
-	log.Info("🔨 mined potential block", "number", index, "hash", hash)
 }
 
 // Shift drops all unconfirmed blocks from the set which exceed the unconfirmed sets depth
@@ -104,7 +102,7 @@ func (set *unconfirmedBlocks) Shift(height uint64) {
 		case header == nil:
 			log.Warn("Failed to retrieve header of mined block", "number", next.index, "hash", next.hash)
 		case header.Hash() == next.hash:
-			log.Info("🔗 block reached canonical chain", "number", next.index, "hash", next.hash)
+			log.Trace("🔗 block reached canonical chain", "number", next.index, "hash", next.hash)
 		default:
 			// Block is not canonical, check whether we have an uncle or a lost block
 			included := false
@@ -119,9 +117,9 @@ func (set *unconfirmedBlocks) Shift(height uint64) {
 				}
 			}
 			if included {
-				log.Info("⑂ block became an uncle", "number", next.index, "hash", next.hash)
+				log.Error("⑂ block became an uncle", "number", next.index, "hash", next.hash)
 			} else {
-				log.Info("😱 block lost", "number", next.index, "hash", next.hash)
+				log.Error("😱 block lost", "number", next.index, "hash", next.hash)
 			}
 		}
 		// Drop the block out of the ring

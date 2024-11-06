@@ -46,6 +46,7 @@ func New(backend istanbul.Backend, config *istanbul.Config) istanbul.Core {
 		state:              StateAcceptRequest,
 		handlerWg:          new(sync.WaitGroup),
 		logger:             log.New("address", backend.Address()),
+		cleanLogger:        log.New(),
 		backend:            backend,
 		backlogs:           make(map[common.Address]*prque.Prque),
 		backlogsMu:         new(sync.Mutex),
@@ -61,10 +62,11 @@ func New(backend istanbul.Backend, config *istanbul.Config) istanbul.Core {
 // ----------------------------------------------------------------------------
 
 type core struct {
-	config  *istanbul.Config
-	address common.Address
-	state   State
-	logger  log.Logger
+	config      *istanbul.Config
+	address     common.Address
+	state       State
+	logger      log.Logger
+	cleanLogger log.Logger
 
 	backend               istanbul.Backend
 	events                *event.TypeMuxSubscription
@@ -129,7 +131,9 @@ func (c *core) startNewRound(round *big.Int) {
 		logger = logger.New("lastProposal.number", lastProposal.Number().Uint64(), "lastProposal.hash", lastProposal.Hash())
 	}
 
-	logger.Info("IBFT: initialize new round")
+	c.cleanLogger.Info("=====================================================")
+
+	logger.Info("Consensus: Initializing new round")
 
 	if c.current == nil {
 		logger.Debug("IBFT: start at the initial round")
@@ -186,6 +190,8 @@ func (c *core) startNewRound(round *big.Int) {
 	c.valSet.CalcProposer(lastProposer, newView.Round.Uint64())
 	c.setState(StateAcceptRequest)
 
+	c.cleanLogger.Info("Consensus: Proposer selected", "proposer", c.valSet.GetProposer().Address())
+
 	if c.current != nil && round.Cmp(c.current.Round()) > 0 {
 		roundMeter.Mark(new(big.Int).Sub(round, c.current.Round()).Int64())
 	}
@@ -204,7 +210,7 @@ func (c *core) startNewRound(round *big.Int) {
 		c.newRoundChangeTimer()
 	}
 
-	oldLogger.Info("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
+	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
 }
 
 // updateRoundState updates round state by checking if locking block is necessary
@@ -220,7 +226,8 @@ func (c *core) setState(state State) {
 	if c.state != state {
 		oldState := c.state
 		c.state = state
-		c.currentLogger(false, nil).Info("IBFT: changed state", "old.state", oldState.String(), "new.state", state.String())
+		c.currentLogger(false, nil).Trace("Consensus: State changed", "from", oldState.String(), "to", state.String())
+
 	}
 	if state == StateAcceptRequest {
 		c.processPendingRequests()

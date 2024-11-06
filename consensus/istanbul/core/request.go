@@ -29,8 +29,6 @@ import (
 func (c *core) handleRequest(request *Request) error {
 	logger := c.currentLogger(true, nil)
 
-	logger.Info("IBFT: handle block proposal request")
-
 	if err := c.checkRequestMsg(request); err != nil {
 		if err == errInvalidMessage {
 			logger.Error("IBFT: invalid request")

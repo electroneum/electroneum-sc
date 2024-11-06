@@ -70,7 +70,7 @@ func (c *core) broadcastCommit() {
 		return
 	}
 
-	withMsg(logger, commit).Info("IBFT: broadcast COMMIT message", "payload", hexutil.Encode(payload))
+	withMsg(logger, commit).Trace("IBFT: broadcast COMMIT message", "payload", hexutil.Encode(payload))
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, commit.Code(), payload); err != nil {
@@ -88,7 +88,7 @@ func (c *core) broadcastCommit() {
 func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 	logger := c.currentLogger(true, commit)
 
-	logger.Info("IBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
+	logger.Trace("IBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
 
 	// Check digest
 	if commit.Digest != c.current.Proposal().Hash() {
@@ -106,7 +106,7 @@ func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 
 	// If we reached thresho
 	if c.current.QBFTCommits.Size() >= c.QuorumSize() {
-		logger.Info("IBFT: received quorum of COMMIT messages")
+		logger.Trace("Consensus: Received quorum of COMMIT messages")
 		c.commitQBFT()
 	} else {
 		logger.Debug("IBFT: accepted new COMMIT messages")
@@ -139,4 +139,5 @@ func (c *core) commitQBFT() {
 			return
 		}
 	}
+	c.cleanLogger.Info("Consensus: Block proposal COMMITTED")
 }
