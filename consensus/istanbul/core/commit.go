@@ -42,7 +42,7 @@ func (c *core) broadcastCommit() {
 	// Create Commit Seal
 	commitSeal, err := c.backend.SignWithoutHashing(PrepareCommittedSeal(header, uint32(c.currentView().Round.Uint64())))
 	if err != nil {
-		logger.Error("IBFT: failed to create COMMIT seal", "sub", sub, "err", err)
+		logger.Error("[Consensus]: Failed to create COMMIT seal", "sub", sub, "err", err)
 		return
 	}
 
@@ -52,13 +52,13 @@ func (c *core) broadcastCommit() {
 	// Sign Message
 	encodedPayload, err := commit.EncodePayloadForSigning()
 	if err != nil {
-		withMsg(logger, commit).Error("IBFT: failed to encode payload of COMMIT message", "err", err)
+		withMsg(logger, commit).Error("[Consensus]: Failed to encode payload of COMMIT message", "err", err)
 		return
 	}
 
 	signature, err := c.backend.Sign(encodedPayload)
 	if err != nil {
-		withMsg(logger, commit).Error("IBFT: failed to sign COMMIT message", "err", err)
+		withMsg(logger, commit).Error("[Consensus]: Failed to sign COMMIT message", "err", err)
 		return
 	}
 	commit.SetSignature(signature)
@@ -66,15 +66,16 @@ func (c *core) broadcastCommit() {
 	// RLP-encode message
 	payload, err := rlp.EncodeToBytes(&commit)
 	if err != nil {
-		withMsg(logger, commit).Error("IBFT: failed to encode COMMIT message", "err", err)
+		withMsg(logger, commit).Error("[Consensus]: Failed to encode COMMIT message", "err", err)
 		return
 	}
 
 	withMsg(logger, commit).Trace("IBFT: broadcast COMMIT message", "payload", hexutil.Encode(payload))
+	c.cleanLogger.Info("[Consensus]: -> Broadcasting COMMIT message to validators")
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, commit.Code(), payload); err != nil {
-		withMsg(logger, commit).Error("IBFT: failed to broadcast COMMIT message", "err", err)
+		withMsg(logger, commit).Error("[Consensus]: Failed to broadcast COMMIT message", "err", err)
 		return
 	}
 }
@@ -106,7 +107,8 @@ func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 
 	// If we reached thresho
 	if c.current.QBFTCommits.Size() >= c.QuorumSize() {
-		logger.Trace("Consensus: Received quorum of COMMIT messages")
+		logger.Trace("[Consensus]: Received quorum of COMMIT messages")
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of COMMIT messages", "count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
 		c.commitQBFT()
 	} else {
 		logger.Debug("IBFT: accepted new COMMIT messages")
@@ -139,5 +141,4 @@ func (c *core) commitQBFT() {
 			return
 		}
 	}
-	c.cleanLogger.Info("Consensus: Block proposal COMMITTED")
 }

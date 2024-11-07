@@ -50,7 +50,7 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 	// Validates new round corresponds to current view
 	cv := c.currentView()
 	if cv.Round.Cmp(round) > 0 {
-		logger.Error("IBFT: invalid past target round", "target", round)
+		logger.Error("[Consensus]: Invalid past target round", "target", round)
 		return
 	}
 
@@ -65,12 +65,12 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 	// Sign message
 	encodedPayload, err := roundChange.EncodePayloadForSigning()
 	if err != nil {
-		withMsg(logger, roundChange).Error("IBFT: failed to encode ROUND-CHANGE message", "err", err)
+		withMsg(logger, roundChange).Error("[Consensus]: Failed to encode ROUND-CHANGE message", "err", err)
 		return
 	}
 	signature, err := c.backend.Sign(encodedPayload)
 	if err != nil {
-		withMsg(logger, roundChange).Error("IBFT: failed to sign ROUND-CHANGE message", "err", err)
+		withMsg(logger, roundChange).Error("[Consensus]: Failed to sign ROUND-CHANGE message", "err", err)
 		return
 	}
 	roundChange.SetSignature(signature)
@@ -78,21 +78,22 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 	// Extend ROUND-CHANGE message with PREPARE justification
 	if c.QBFTPreparedPrepares != nil {
 		roundChange.Justification = c.QBFTPreparedPrepares
-		withMsg(logger, roundChange).Debug("IBFT: extended ROUND-CHANGE message with PREPARE justification", "justification", roundChange.Justification)
+		withMsg(logger, roundChange).Debug("[Consensus]: Extended ROUND-CHANGE message with PREPARE justification", "justification", roundChange.Justification)
 	}
 
 	// RLP-encode message
 	data, err := rlp.EncodeToBytes(roundChange)
 	if err != nil {
-		withMsg(logger, roundChange).Error("IBFT: failed to encode ROUND-CHANGE message", "err", err)
+		withMsg(logger, roundChange).Error("[Consensus]: Failed to encode ROUND-CHANGE message", "err", err)
 		return
 	}
 
-	withMsg(logger, roundChange).Trace("IBFT: broadcast ROUND-CHANGE message", "payload", hexutil.Encode(data))
+	withMsg(logger, roundChange).Trace("[Consensus]: Broadcast ROUND-CHANGE message", "payload", hexutil.Encode(data))
+	c.cleanLogger.Info("[Consensus]: -> Broadcasting ROUND-CHANGE message to validators")
 
 	// Broadcast RLP-encoded message
 	if err = c.backend.Broadcast(c.valSet, roundChange.Code(), data); err != nil {
-		withMsg(logger, roundChange).Error("IBFT: failed to broadcast ROUND-CHANGE message", "err", err)
+		withMsg(logger, roundChange).Error("[Consensus]: Failed to broadcast ROUND-CHANGE message", "err", err)
 		return
 	}
 }
@@ -126,7 +127,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		}
 		err := c.roundChangeSet.Add(view.Round, roundChange, pr, pb, prepareMessages, c.QuorumSize())
 		if err != nil {
-			logger.Warn("IBFT: failed to add ROUND-CHANGE message", "err", err)
+			logger.Warn("[Consensus]: Failed to add ROUND-CHANGE message", "err", err)
 			return err
 		}
 	}
@@ -144,12 +145,14 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		// we start new round and broadcast ROUND-CHANGE message
 		newRound := c.roundChangeSet.getMinRoundChange(currentRound)
 
-		logger.Trace("Consensus: Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
+		logger.Trace("[Consensus]: Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
+		c.cleanLogger.Info("[Consensus]: <- Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
 
 		c.startNewRound(newRound)
 		c.broadcastRoundChange(newRound)
 	} else if currentRoundMessages >= c.QuorumSize() && c.IsProposer() && c.current.preprepareSent.Cmp(currentRound) < 0 {
-		logger.Trace("Consensus: Received quorum of ROUND-CHANGE messages")
+		logger.Trace("[Consensus]: Received quorum of ROUND-CHANGE messages")
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())
 
 		// We received quorum of ROUND-CHANGE for current round and we are proposer
 
@@ -190,7 +193,11 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		}
 		c.sendPreprepareMsg(r)
 	} else {
-		logger.Debug("IBFT: accepted ROUND-CHANGE messages")
+		logger.Trace("IBFT: accepted ROUND-CHANGE messages")
+	}
+
+	if currentRoundMessages >= c.QuorumSize() {
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())
 	}
 	return nil
 }

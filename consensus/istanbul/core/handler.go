@@ -228,9 +228,9 @@ func (c *core) handleTimeoutMsg() {
 	round := c.current.Round()
 	nextRound := new(big.Int).Add(round, common.Big1)
 
-	logger.Warn("IBFT: TIMER CHANGING ROUND", "pr", c.current.preparedRound)
+	logger.Warn("[Consensus]: Round reached timeout", "pr", c.current.preparedRound)
 	c.startNewRound(nextRound)
-	logger.Warn("IBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
+	logger.Trace("IBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
 
 	// Send Round Change
 	c.broadcastRoundChange(nextRound)
