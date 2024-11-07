@@ -121,9 +121,6 @@ func (c *core) startNewRound(round *big.Int) {
 	defer c.currentMutex.Unlock()
 	defer c.newRoundChangeTimer()
 
-	// Stop running timers
-	c.stopTimer()
-
 	var logger log.Logger
 	if c.current == nil {
 		logger = c.logger.New("old.round", -1, "old.seq", 0)
@@ -296,7 +293,7 @@ func (c *core) newRoundChangeTimer() {
 	c.currentLogger(true, nil).Trace("IBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.cleanLogger.Info("[Consensus]: Start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.roundChangeTimer = time.AfterFunc(timeout, func() {
-		c.sendEvent(timeoutEvent{})
+		c.sendEvent(timeoutEvent{round: round})
 	})
 }
 

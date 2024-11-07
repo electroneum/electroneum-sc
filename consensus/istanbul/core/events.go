@@ -26,4 +26,6 @@ type backlogEvent struct {
 	msg qbfttypes.QBFTMessage
 }
 
-type timeoutEvent struct{}
+type timeoutEvent struct {
+	round uint64
+}

@@ -141,12 +141,17 @@ func (c *core) handleEvents() {
 				// if successfully processed, we gossip message to other validators
 				c.backend.Gossip(c.valSet, ev.msg.Code(), data)
 			}
-		case _, ok := <-c.timeoutSub.Chan():
+		case event, ok := <-c.timeoutSub.Chan():
 			// we received a round change timeout
 			if !ok {
 				return
 			}
-			c.handleTimeoutMsg()
+			switch ev := event.Data.(type) {
+			case timeoutEvent:
+				if c.current != nil && c.current.Round().Uint64() == ev.round {
+					c.handleTimeoutMsg()
+				}
+			}
 		case event, ok := <-c.finalCommittedSub.Chan():
 			// our block proposal got committed
 			if !ok {
