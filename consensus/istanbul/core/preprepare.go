@@ -34,6 +34,10 @@ import (
 // - extends PRE-PREPARE message with ROUND-CHANGE and PREPARE justification
 // - broadcast PRE-PREPARE message to other validators
 func (c *core) sendPreprepareMsg(request *Request) {
+	// c.current and c.valSet (checked in IsProposer()) is updated asynchronously in startNewRound(),
+	// need to prevent race condition with mutex
+	c.currentMutex.Lock()
+	defer c.currentMutex.Unlock()
 	logger := c.currentLogger(true, nil)
 
 	// If I'm the proposer and I have the same sequence with the proposal
@@ -95,10 +99,6 @@ func (c *core) sendPreprepareMsg(request *Request) {
 		// Set the preprepareSent to the current round
 		c.current.preprepareSent = curView.Round
 	}
-
-	if !c.IsProposer() {
-		c.cleanLogger.Info("Consensus: Handling incoming block proposal", "sequence", c.current.Sequence().Uint64(), "author", c.valSet.GetProposer())
-	}
 }
 
 // handlePreprepareMsg is called when receiving a PRE-PREPARE message from the proposer
@@ -154,8 +154,7 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	if c.state == StateAcceptRequest {
 		c.logger.Trace("IBFT: accepted PRE-PREPARE message")
 
-		// Re-initialize ROUND-CHANGE timer
-		c.newRoundChangeTimer()
+		// Update consensus timestamp
 		c.consensusTimestamp = time.Now()
 
 		// Update current state

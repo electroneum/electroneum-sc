@@ -53,6 +53,7 @@ func New(backend istanbul.Backend, config *istanbul.Config) istanbul.Core {
 		pendingRequests:    prque.New(),
 		pendingRequestsMu:  new(sync.Mutex),
 		consensusTimestamp: time.Time{},
+		currentMutex:       new(sync.Mutex),
 	}
 
 	c.validateFn = c.checkValidatorSignature
@@ -80,8 +81,9 @@ type core struct {
 	backlogs   map[common.Address]*prque.Prque
 	backlogsMu *sync.Mutex
 
-	current   *roundState
-	handlerWg *sync.WaitGroup
+	current      *roundState
+	currentMutex *sync.Mutex
+	handlerWg    *sync.WaitGroup
 
 	roundChangeSet   *roundChangeSet
 	roundChangeTimer *time.Timer
@@ -115,6 +117,10 @@ func (c *core) IsCurrentProposal(blockHash common.Hash) bool {
 
 // startNewRound starts a new round. if round equals to 0, it means to starts a new sequence
 func (c *core) startNewRound(round *big.Int) {
+	c.currentMutex.Lock()
+	defer c.currentMutex.Unlock()
+	defer c.newRoundChangeTimer()
+
 	var logger log.Logger
 	if c.current == nil {
 		logger = c.logger.New("old.round", -1, "old.seq", 0)
@@ -205,10 +211,6 @@ func (c *core) startNewRound(round *big.Int) {
 		c.roundChangeSet.ClearLowerThan(round)
 	}
 	c.roundChangeSet.NewRound(round)
-
-	if round.Uint64() > 0 {
-		c.newRoundChangeTimer()
-	}
 
 	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
 }

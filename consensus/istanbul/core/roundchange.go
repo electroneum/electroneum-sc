@@ -163,7 +163,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		// If we have received a quorum of PREPARE messages with hadBlockProposal=false,
 		// propose the same block again. If hadBlockProposal=true, propose the block that we generated
 		_, proposal := c.highestPrepared(currentRound)
-		if proposal == nil {
+		if proposal == nil || c.backend.HasBadProposal(proposal.Hash()) {
 			if c.current != nil && c.current.pendingRequest != nil {
 				proposal = c.current.pendingRequest.Proposal
 			} else {

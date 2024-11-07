@@ -40,9 +40,6 @@ func (c *core) handleRequest(request *Request) error {
 
 	c.current.pendingRequest = request
 	if c.state == StateAcceptRequest {
-		// Start ROUND-CHANGE timer
-		c.newRoundChangeTimer()
-
 		// Send PRE-PREPARE message to other validators
 		c.sendPreprepareMsg(request)
 	}
