@@ -94,7 +94,7 @@ func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
 	// and we are in earlier state than "Prepared"
 	if (c.current.QBFTPrepares.Size() >= c.QuorumSize()) && c.state.Cmp(StatePrepared) < 0 {
 		logger.Trace("[Consensus]: Received quorum of PREPARE messages")
-		c.cleanLogger.Info("[Consensus]: <- Received quorum of PREPARED messages", "count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of PREPARE messages", "count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
 
 		// Accumulates PREPARE messages
 		c.current.preparedRound = c.currentView().Round

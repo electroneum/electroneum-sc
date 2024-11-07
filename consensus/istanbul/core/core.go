@@ -121,6 +121,9 @@ func (c *core) startNewRound(round *big.Int) {
 	defer c.currentMutex.Unlock()
 	defer c.newRoundChangeTimer()
 
+	// Stop running timers
+	c.stopTimer()
+
 	var logger log.Logger
 	if c.current == nil {
 		logger = c.logger.New("old.round", -1, "old.seq", 0)
