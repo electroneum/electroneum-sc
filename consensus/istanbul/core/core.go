@@ -229,7 +229,6 @@ func (c *core) setState(state State) {
 		oldState := c.state
 		c.state = state
 		c.currentLogger(false, nil).Trace("[Consensus]: State changed", "from", oldState.String(), "to", state.String())
-
 	}
 	if state == StateAcceptRequest {
 		c.processPendingRequests()

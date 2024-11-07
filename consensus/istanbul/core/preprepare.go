@@ -42,7 +42,6 @@ func (c *core) sendPreprepareMsg(request *Request) {
 
 	// If I'm the proposer and I have the same sequence with the proposal
 	if c.current.Sequence().Cmp(request.Proposal.Number()) == 0 && c.IsProposer() {
-
 		// Creates PRE-PREPARE message
 		curView := c.currentView()
 		preprepare := qbfttypes.NewPreprepare(curView.Sequence, curView.Round, request.Proposal)
