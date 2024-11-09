@@ -33,7 +33,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/log"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 // ErrTrezorPINNeeded is returned if opening the trezor requires a PIN code. In

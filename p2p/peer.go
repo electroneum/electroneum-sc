@@ -34,9 +34,7 @@ import (
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
-var (
-	ErrShuttingDown = errors.New("shutting down")
-)
+var ErrShuttingDown = errors.New("shutting down")
 
 const (
 	baseProtocolVersion    = 5
@@ -416,7 +414,6 @@ outer:
 func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error) {
 	p.wg.Add(len(p.running))
 	for _, proto := range p.running {
-		proto := proto
 		proto.closed = p.closed
 		proto.wstart = writeStart
 		proto.werr = writeErr

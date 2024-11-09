@@ -53,18 +53,18 @@ func (buf *encBuffer) size() int {
 }
 
 // makeBytes creates the encoder output.
-func (w *encBuffer) makeBytes() []byte {
-	out := make([]byte, w.size())
-	w.copyTo(out)
+func (buf *encBuffer) makeBytes() []byte {
+	out := make([]byte, buf.size())
+	buf.copyTo(out)
 	return out
 }
 
-func (w *encBuffer) copyTo(dst []byte) {
+func (buf *encBuffer) copyTo(dst []byte) {
 	strpos := 0
 	pos := 0
-	for _, head := range w.lheads {
+	for _, head := range buf.lheads {
 		// write string data before header
-		n := copy(dst[pos:], w.str[strpos:head.offset])
+		n := copy(dst[pos:], buf.str[strpos:head.offset])
 		pos += n
 		strpos += n
 		// write the header
@@ -72,7 +72,7 @@ func (w *encBuffer) copyTo(dst []byte) {
 		pos += len(enc)
 	}
 	// copy string data after the last list header
-	copy(dst[pos:], w.str[strpos:])
+	copy(dst[pos:], buf.str[strpos:])
 }
 
 // writeTo writes the encoder output to w.
@@ -146,24 +146,24 @@ func (buf *encBuffer) writeString(s string) {
 const wordBytes = (32 << (uint64(^big.Word(0)) >> 63)) / 8
 
 // writeBigInt writes i as an integer.
-func (w *encBuffer) writeBigInt(i *big.Int) {
+func (buf *encBuffer) writeBigInt(i *big.Int) {
 	bitlen := i.BitLen()
 	if bitlen <= 64 {
-		w.writeUint64(i.Uint64())
+		buf.writeUint64(i.Uint64())
 		return
 	}
 	// Integer is larger than 64 bits, encode from i.Bits().
 	// The minimal byte length is bitlen rounded up to the next
 	// multiple of 8, divided by 8.
 	length := ((bitlen + 7) & -8) >> 3
-	w.encodeStringHeader(length)
-	w.str = append(w.str, make([]byte, length)...)
+	buf.encodeStringHeader(length)
+	buf.str = append(buf.str, make([]byte, length)...)
 	index := length
-	buf := w.str[len(w.str)-length:]
+	tBuf := buf.str[len(buf.str)-length:]
 	for _, d := range i.Bits() {
 		for j := 0; j < wordBytes && index > 0; j++ {
 			index--
-			buf[index] = byte(d)
+			tBuf[index] = byte(d)
 			d >>= 8
 		}
 	}

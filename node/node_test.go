@@ -34,9 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	testNodeKey, _ = crypto.GenerateKey()
-)
+var testNodeKey, _ = crypto.GenerateKey()
 
 func testNodeConfig() *Config {
 	return &Config{
@@ -527,7 +525,6 @@ func TestNodeRPCPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		name := fmt.Sprintf("http=%s ws=%s", test.httpPrefix, test.wsPrefix)
 		t.Run(name, func(t *testing.T) {
 			cfg := &Config{

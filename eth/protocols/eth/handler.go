@@ -97,8 +97,6 @@ type TxPool interface {
 func MakeProtocols(backend Backend, network uint64, dnsdisc enode.Iterator) []p2p.Protocol {
 	protocols := make([]p2p.Protocol, len(ProtocolVersions))
 	for i, version := range ProtocolVersions {
-		version := version // Closure
-
 		protocols[i] = p2p.Protocol{
 			Name:    ProtocolName,
 			Version: version,
@@ -158,11 +156,13 @@ func Handle(backend Backend, peer *Peer) error {
 	}
 }
 
-type msgHandler func(backend Backend, msg Decoder, peer *Peer) error
-type Decoder interface {
-	Decode(val interface{}) error
-	Time() time.Time
-}
+type (
+	msgHandler func(backend Backend, msg Decoder, peer *Peer) error
+	Decoder    interface {
+		Decode(val interface{}) error
+		Time() time.Time
+	}
+)
 
 var eth66 = map[uint64]msgHandler{
 	NewBlockHashesMsg:             handleNewBlockhashes,
@@ -194,7 +194,7 @@ func handleMessage(backend Backend, peer *Peer) error {
 	}
 	defer msg.Discard()
 
-	var handlers = eth66
+	handlers := eth66
 	//if peer.Version() >= ETH67 { // Left in as a sample when new protocol is added
 	//	handlers = eth67
 	//}

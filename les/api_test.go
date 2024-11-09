@@ -154,7 +154,6 @@ func testCapacityAPI(t *testing.T, clientCount int) {
 		// Send light request like crazy.
 		for i, c := range clientRpcClients {
 			wg.Add(1)
-			i, c := i, c
 			go func() {
 				defer wg.Done()
 
