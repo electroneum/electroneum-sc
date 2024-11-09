@@ -1,6 +1,6 @@
 # Electroneum Smart Chain
 
-Electroneum Smart Chain implementation based on go-ethereum. 
+Electroneum Smart Chain implementation based on go-ethereum.
 
 Electroneum Smart Chain is EVM-compatible, supports all the existing Ethereum tooling, provides nearly instant transaction verification and 1-block finality with a modified version of the Istanbul Byzantine Fault Torerance (IBFT) consensus protocol.
 
@@ -15,7 +15,7 @@ This state-of-the-art consensus protocol features:
 - **Immediate Finality:** blocks are final, meaning there are no forks or concurrent alt-chains, and valid blocks must be in the main chain
 - **Nearly Instant Confirmations:** blocks are created every 5 seconds
 - **Dynamic Validator Set:** validators can be added or removed from the network by an on-chain voting mechanism
-- **Optimal Byzantine Resilience:** the protocol can withstand up to `(n-1)/3` Byzantine validators, where 
+- **Optimal Byzantine Resilience:** the protocol can withstand up to `(n-1)/3` Byzantine validators, where
 `n` is the number of validators
 
 ### EVM-Compatible
@@ -26,12 +26,11 @@ Electroneum Smart Chain supports all the existing Ethereum tooling, smart contra
 
 Electroneum Smart Chain supports cross-chain transfers between our legacy Electroneum Blockchain and the Smart Chain. All users, exchanges and other services providers can seemlessly transfer their funds over to the Electroneum Smart Chain, free of charge.
 
-
 ## Building the source
 
 For prerequisites and detailed build instructions please read the [Installation Instructions](https://github.com/electroneum/electroneum-sc/wiki/Install-and-Build).
 
-Building `etn-sc` requires both a Go (version 1.19 or later) and a C compiler. You can install
+Building `etn-sc` requires both a Go (version 1.22 or later) and a C compiler. You can install
 them using your favourite package manager. Once the dependencies are installed, run
 
 ```shell
@@ -71,16 +70,16 @@ on how you can run your own `etn-sc` instance.
 
 Minimum:
 
-* CPU with 2+ cores
-* 4GB RAM
-* 8 MBit/sec download Internet service
+- CPU with 2+ cores
+- 4GB RAM
+- 8 MBit/sec download Internet service
 
 Recommended:
 
-* Fast CPU with 4+ cores
-* 16GB+ RAM
-* High Performance SSD
-* 25+ MBit/sec download Internet service
+- Fast CPU with 4+ cores
+- 16GB+ RAM
+- High Performance SSD
+- 25+ MBit/sec download Internet service
 
 ### Full node on the main Electroneum Smart Chain network
 
@@ -90,20 +89,21 @@ particular use-case the user doesn't care about years-old historical data, so we
 sync quickly to the current state of the network. To do so:
 
 ```shell
-$ etn-sc console
+etn-sc console
 ```
 
 This command will:
- * Start `etn-sc` in snap sync mode (default, can be changed with the `--syncmode` flag),
+
+- Start `etn-sc` in snap sync mode (default, can be changed with the `--syncmode` flag),
    causing it to download more data in exchange for avoiding processing the entire history
    of the Electroneum Smart Chain network, which is very CPU intensive.
- * Start up `etn-sc`'s built-in interactive [JavaScript console](https://geth.ethereum.org/docs/interface/javascript-console),
-   (via the trailing `console` subcommand) through which you can interact using [`web3` methods](https://github.com/ChainSafe/web3.js/blob/0.20.7/DOCUMENTATION.md) 
+- Start up `etn-sc`'s built-in interactive [JavaScript console](https://geth.ethereum.org/docs/interface/javascript-console),
+   (via the trailing `console` subcommand) through which you can interact using [`web3` methods](https://github.com/ChainSafe/web3.js/blob/0.20.7/DOCUMENTATION.md)
    (note: the `web3` version bundled within `etn-sc` is very old, and not up to date with official docs),
    as well as `etn-sc`'s own [management APIs](https://geth.ethereum.org/docs/rpc/server).
    This tool is optional and if you leave it out you can always attach to an already running
    `etn-sc` instance with `etn-sc attach`.
- * Write blockchain data to the default data directory: default data directory (`~/.electroneum-sc` on linux, `C:\Users\<username>\AppData\Roaming\Electroneum-sc` on Windows and `~/Library/Electroneum-sc` on Darwin) 
+- Write blockchain data to the default data directory: default data directory (`~/.electroneum-sc` on linux, `C:\Users\<username>\AppData\Roaming\Electroneum-sc` on Windows and `~/Library/Electroneum-sc` on Darwin)
 
 ### Full node on the test network
 
@@ -114,7 +114,7 @@ network, you want to join the **test** network with your node, which is fully eq
 the main network, but with play-ETN only.
 
 ```shell
-$ etn-sc --testnet console
+etn-sc --testnet console
 ```
 
 The `console` subcommand has the exact same meaning as above and they are equally
@@ -122,9 +122,9 @@ useful on the testnet too. Please, see above for their explanations if you've sk
 
 Specifying the `--testnet` flag, however, will reconfigure your `etn-sc` instance a bit:
 
- * Instead of connecting the main Electroneum Smart Chain network, the client will connect to the test network, which uses different P2P bootnodes, different network IDs and genesis
+- Instead of connecting the main Electroneum Smart Chain network, the client will connect to the test network, which uses different P2P bootnodes, different network IDs and genesis
    states.
- * Instead of using the default data directory (`~/.electroneum-sc` on Linux for example), `etn-sc`
+- Instead of using the default data directory (`~/.electroneum-sc` on Linux for example), `etn-sc`
    will nest itself one level deeper into a `testnet` subfolder (`~/.electroneum-sc/testnet` on
    Linux). Note, on OSX and Linux this also means that attaching to a running testnet node
    requires the use of a custom endpoint since `etn-sc attach` will try to attach to a
@@ -144,15 +144,16 @@ As an alternative to passing the numerous flags to the `etn-sc` binary, you can 
 configuration file via:
 
 ```shell
-$ etn-sc --config /path/to/your_config.toml
+etn-sc --config /path/to/your_config.toml
 ```
 
 To get an idea how the file should look like you can use the `dumpconfig` subcommand to
 export your existing configuration:
 
 ```shell
-$ etn-sc --your-favourite-flags dumpconfig
+etn-sc --your-favourite-flags dumpconfig
 ```
+
 ### Docker quick start
 
 One of the quickest ways to get Electroneum Smart Chain up and running on your machine is by using
@@ -189,19 +190,19 @@ you'd expect.
 
 HTTP based JSON-RPC API options:
 
-  * `--http` Enable the HTTP-RPC server
-  * `--http.addr` HTTP-RPC server listening interface (default: `localhost`)
-  * `--http.port` HTTP-RPC server listening port (default: `8545`)
-  * `--http.api` API's offered over the HTTP-RPC interface (default: `eth,net,web3`)
-  * `--http.corsdomain` Comma separated list of domains from which to accept cross origin requests (browser enforced)
-  * `--ws` Enable the WS-RPC server
-  * `--ws.addr` WS-RPC server listening interface (default: `localhost`)
-  * `--ws.port` WS-RPC server listening port (default: `8546`)
-  * `--ws.api` API's offered over the WS-RPC interface (default: `eth,net,web3`)
-  * `--ws.origins` Origins from which to accept websockets requests
-  * `--ipcdisable` Disable the IPC-RPC server
-  * `--ipcapi` API's offered over the IPC-RPC interface (default: `admin,debug,eth,miner,net,personal,shh,txpool,web3`)
-  * `--ipcpath` Filename for IPC socket/pipe within the datadir (explicit paths escape it)
+- `--http` Enable the HTTP-RPC server
+- `--http.addr` HTTP-RPC server listening interface (default: `localhost`)
+- `--http.port` HTTP-RPC server listening port (default: `8545`)
+- `--http.api` API's offered over the HTTP-RPC interface (default: `eth,net,web3`)
+- `--http.corsdomain` Comma separated list of domains from which to accept cross origin requests (browser enforced)
+- `--ws` Enable the WS-RPC server
+- `--ws.addr` WS-RPC server listening interface (default: `localhost`)
+- `--ws.port` WS-RPC server listening port (default: `8546`)
+- `--ws.api` API's offered over the WS-RPC interface (default: `eth,net,web3`)
+- `--ws.origins` Origins from which to accept websockets requests
+- `--ipcdisable` Disable the IPC-RPC server
+- `--ipcapi` API's offered over the IPC-RPC interface (default: `admin,debug,eth,miner,net,personal,shh,txpool,web3`)
+- `--ipcpath` Filename for IPC socket/pipe within the datadir (explicit paths escape it)
 
 You'll need to use your own programming environments' capabilities (libraries, tools, etc) to
 connect via HTTP, WS or IPC to a `etn-sc` node configured with the above flags and you'll
@@ -228,14 +229,13 @@ and merge procedures quick and simple.
 
 Please make sure your contributions adhere to our coding guidelines:
 
- * Code must adhere to the official Go [formatting](https://golang.org/doc/effective_go.html#formatting)
+- Code must adhere to the official Go [formatting](https://golang.org/doc/effective_go.html#formatting)
    guidelines (i.e. uses [gofmt](https://golang.org/cmd/gofmt/)).
- * Code must be documented adhering to the official Go [commentary](https://golang.org/doc/effective_go.html#commentary)
+- Code must be documented adhering to the official Go [commentary](https://golang.org/doc/effective_go.html#commentary)
    guidelines.
- * Pull requests need to be based on and opened against the `master` branch.
- * Commit messages should be prefixed with the package(s) they modify.
-   * E.g. "etn, rpc: make trace configs optional"
-
+- Pull requests need to be based on and opened against the `master` branch.
+- Commit messages should be prefixed with the package(s) they modify.
+  - E.g. "etn, rpc: make trace configs optional"
 
 ## License
 
