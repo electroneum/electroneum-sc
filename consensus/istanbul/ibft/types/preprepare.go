@@ -1,4 +1,4 @@
-package qbfttypes
+package ibfttypes
 
 import (
 	"fmt"

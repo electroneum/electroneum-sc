@@ -18,12 +18,12 @@ package core
 
 import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 )
 
 type backlogEvent struct {
 	src istanbul.Validator
-	msg qbfttypes.QBFTMessage
+	msg ibfttypes.QBFTMessage
 }
 
 type timeoutEvent struct {

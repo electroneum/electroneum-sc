@@ -22,7 +22,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
@@ -173,13 +173,13 @@ func (c *core) sendEvent(ev interface{}) {
 func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 	logger := c.logger.New("code", code, "data", data)
 
-	if _, ok := qbfttypes.MessageCodes()[code]; !ok {
+	if _, ok := ibfttypes.MessageCodes()[code]; !ok {
 		logger.Error("IBFT: invalid message event code")
 		return fmt.Errorf("invalid message event code %v", code)
 	}
 
 	// Decode data into a QBFTMessage
-	m, err := qbfttypes.Decode(code, data)
+	m, err := ibfttypes.Decode(code, data)
 	if err != nil {
 		logger.Error("IBFT: invalid message", "err", err)
 		return err
@@ -193,7 +193,7 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 	return c.handleDecodedMessage(m)
 }
 
-func (c *core) handleDecodedMessage(m qbfttypes.QBFTMessage) error {
+func (c *core) handleDecodedMessage(m ibfttypes.QBFTMessage) error {
 	view := m.View()
 	if err := c.checkMessage(m.Code(), &view); err != nil {
 		// Store in the backlog it it's a future message
@@ -207,18 +207,18 @@ func (c *core) handleDecodedMessage(m qbfttypes.QBFTMessage) error {
 }
 
 // Deliver to specific message handler
-func (c *core) deliverMessage(m qbfttypes.QBFTMessage) error {
+func (c *core) deliverMessage(m ibfttypes.QBFTMessage) error {
 	var err error
 
 	switch m.Code() {
-	case qbfttypes.PreprepareCode:
-		err = c.handlePreprepareMsg(m.(*qbfttypes.Preprepare))
-	case qbfttypes.PrepareCode:
-		err = c.handlePrepare(m.(*qbfttypes.Prepare))
-	case qbfttypes.CommitCode:
-		err = c.handleCommitMsg(m.(*qbfttypes.Commit))
-	case qbfttypes.RoundChangeCode:
-		err = c.handleRoundChange(m.(*qbfttypes.RoundChange))
+	case ibfttypes.PreprepareCode:
+		err = c.handlePreprepareMsg(m.(*ibfttypes.Preprepare))
+	case ibfttypes.PrepareCode:
+		err = c.handlePrepare(m.(*ibfttypes.Prepare))
+	case ibfttypes.CommitCode:
+		err = c.handleCommitMsg(m.(*ibfttypes.Commit))
+	case ibfttypes.RoundChangeCode:
+		err = c.handleRoundChange(m.(*ibfttypes.RoundChange))
 	default:
 		c.logger.Error("IBFT: invalid message code", "code", m.Code())
 		return errInvalidMessage
@@ -244,11 +244,11 @@ func (c *core) handleTimeoutMsg() {
 // Verifies the signature of the message m and of any justification payloads
 // piggybacked in m, if any. It also sets the source address on the messages
 // and justification payloads.
-func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
+func (c *core) verifySignatures(m ibfttypes.QBFTMessage) error {
 	logger := c.currentLogger(true, m)
 
 	// Anonymous function to verify the signature of a single message or payload
-	verify := func(m qbfttypes.QBFTMessage) error {
+	verify := func(m ibfttypes.QBFTMessage) error {
 		payload, err := m.EncodePayloadForSigning()
 		if err != nil {
 			logger.Error("IBFT: invalid message payload", "err", err)
@@ -270,14 +270,14 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 
 	// Verifies the signature of piggybacked justification payloads.
 	switch msgType := m.(type) {
-	case *qbfttypes.RoundChange:
+	case *ibfttypes.RoundChange:
 		signedPreparePayloads := msgType.Justification
 		for _, p := range signedPreparePayloads {
 			if err := verify(p); err != nil {
 				return err
 			}
 		}
-	case *qbfttypes.Preprepare:
+	case *ibfttypes.Preprepare:
 		signedRoundChangePayloads := msgType.JustificationRoundChanges
 		for _, p := range signedRoundChangePayloads {
 			if err := verify(p); err != nil {
@@ -289,7 +289,7 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 	return nil
 }
 
-func (c *core) currentLogger(state bool, msg qbfttypes.QBFTMessage) log.Logger {
+func (c *core) currentLogger(state bool, msg ibfttypes.QBFTMessage) log.Logger {
 	logCtx := []interface{}{}
 	if c.current != nil {
 		logCtx = append(logCtx,
@@ -315,7 +315,7 @@ func (c *core) currentLogger(state bool, msg qbfttypes.QBFTMessage) log.Logger {
 	return c.logger.New(logCtx...)
 }
 
-func withMsg(logger log.Logger, msg qbfttypes.QBFTMessage) log.Logger {
+func withMsg(logger log.Logger, msg ibfttypes.QBFTMessage) log.Logger {
 	return logger.New(
 		"msg.code", msg.Code(),
 		"msg.source", msg.Source().String(),

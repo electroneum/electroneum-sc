@@ -1,4 +1,4 @@
-package qbfttypes
+package ibfttypes
 
 import (
 	"fmt"
@@ -52,7 +52,8 @@ func (p *Prepare) EncodeRLP(w io.Writer) error {
 			[]interface{}{
 				p.Sequence,
 				p.Round,
-				p.Digest},
+				p.Digest,
+			},
 			p.signature,
 		})
 }

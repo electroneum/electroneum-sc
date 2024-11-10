@@ -1,4 +1,4 @@
-package qbfttypes
+package ibfttypes
 
 import (
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"

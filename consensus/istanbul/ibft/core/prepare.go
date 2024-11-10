@@ -18,7 +18,7 @@ package core
 
 import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -32,7 +32,7 @@ func (c *core) broadcastPrepare() {
 
 	// Create PREPARE message from the current proposal
 	sub := c.current.Subject()
-	prepare := qbfttypes.NewPrepare(sub.View.Sequence, sub.View.Round, sub.Digest)
+	prepare := ibfttypes.NewPrepare(sub.View.Sequence, sub.View.Round, sub.Digest)
 	prepare.SetSource(c.Address())
 
 	// Sign Message
@@ -71,7 +71,7 @@ func (c *core) broadcastPrepare() {
 // - validates PREPARE message digest matches the current block proposal
 // - accumulates valid PREPARE message until reaching quorum
 // - when quorum is reached update states to "Prepared" and broadcast COMMIT
-func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
+func (c *core) handlePrepare(prepare *ibfttypes.Prepare) error {
 	logger := c.currentLogger(true, prepare).New()
 
 	logger.Trace("IBFT: handle PREPARE message", "prepares.count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
@@ -98,12 +98,12 @@ func (c *core) handlePrepare(prepare *qbfttypes.Prepare) error {
 
 		// Accumulates PREPARE messages
 		c.current.preparedRound = c.currentView().Round
-		c.QBFTPreparedPrepares = make([]*qbfttypes.Prepare, 0)
+		c.QBFTPreparedPrepares = make([]*ibfttypes.Prepare, 0)
 		for _, m := range c.current.QBFTPrepares.Values() {
 			c.QBFTPreparedPrepares = append(
 				c.QBFTPreparedPrepares,
-				qbfttypes.NewPrepareWithSigAndSource(
-					m.View().Sequence, m.View().Round, m.(*qbfttypes.Prepare).Digest, m.Signature(), m.Source()))
+				ibfttypes.NewPrepareWithSigAndSource(
+					m.View().Sequence, m.View().Round, m.(*ibfttypes.Prepare).Digest, m.Signature(), m.Source()))
 		}
 
 		if c.current.Proposal() != nil && c.current.Proposal().Hash() == prepare.Digest {

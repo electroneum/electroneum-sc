@@ -21,7 +21,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -44,7 +44,7 @@ func (c *core) sendPreprepareMsg(request *Request) {
 	if c.current.Sequence().Cmp(request.Proposal.Number()) == 0 && c.IsProposer() {
 		// Creates PRE-PREPARE message
 		curView := c.currentView()
-		preprepare := qbfttypes.NewPreprepare(curView.Sequence, curView.Round, request.Proposal)
+		preprepare := ibfttypes.NewPreprepare(curView.Sequence, curView.Round, request.Proposal)
 		preprepare.SetSource(c.Address())
 
 		c.logger.Info("[Consensus]: Proposing new block", "sequence", curView.Sequence.Uint64())
@@ -64,10 +64,10 @@ func (c *core) sendPreprepareMsg(request *Request) {
 
 		// Extend PRE-PREPARE message with ROUND-CHANGE justification
 		if request.RCMessages != nil {
-			preprepare.JustificationRoundChanges = make([]*qbfttypes.SignedRoundChangePayload, 0)
+			preprepare.JustificationRoundChanges = make([]*ibfttypes.SignedRoundChangePayload, 0)
 			for _, m := range request.RCMessages.Values() {
-				preprepare.JustificationRoundChanges = append(preprepare.JustificationRoundChanges, &m.(*qbfttypes.RoundChange).SignedRoundChangePayload)
-				withMsg(logger, preprepare).Trace("IBFT: add ROUND-CHANGE justification", "rc", m.(*qbfttypes.RoundChange).SignedRoundChangePayload)
+				preprepare.JustificationRoundChanges = append(preprepare.JustificationRoundChanges, &m.(*ibfttypes.RoundChange).SignedRoundChangePayload)
+				withMsg(logger, preprepare).Trace("IBFT: add ROUND-CHANGE justification", "rc", m.(*ibfttypes.RoundChange).SignedRoundChangePayload)
 			}
 			withMsg(logger, preprepare).Trace("IBFT: extended PRE-PREPARE message with ROUND-CHANGE justifications", "justifications", preprepare.JustificationRoundChanges)
 		}
@@ -106,7 +106,7 @@ func (c *core) sendPreprepareMsg(request *Request) {
 // - validates PRE-PREPARE message was created by the right proposer node
 // - validates PRE-PREPARE message justification
 // - validates PRE-PREPARE message block proposal
-func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
+func (c *core) handlePreprepareMsg(preprepare *ibfttypes.Preprepare) error {
 	logger := c.currentLogger(true, preprepare)
 
 	logger = logger.New("proposal.number", preprepare.Proposal.Number().Uint64(), "proposal.hash", preprepare.Proposal.Hash().String())

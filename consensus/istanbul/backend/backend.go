@@ -26,9 +26,9 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
-	qbftcore "github.com/electroneum/electroneum-sc/consensus/istanbul/core"
-	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibftcore "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/core"
+	ibftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/engine"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -70,7 +70,7 @@ func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database
 		knownMessages:        knownMessages,
 	}
 
-	sb.qbftEngine = qbftengine.NewEngine(sb.config, sb.address, sb.Sign)
+	sb.ibftEngine = ibftengine.NewEngine(sb.config, sb.address, sb.Sign)
 
 	return sb
 }
@@ -85,7 +85,7 @@ type Backend struct {
 
 	core istanbul.Core
 
-	qbftEngine *qbftengine.Engine
+	ibftEngine *ibftengine.Engine
 
 	istanbulEventMux *event.TypeMux
 
@@ -127,7 +127,7 @@ func (sb *Backend) Engine() istanbul.Engine {
 }
 
 func (sb *Backend) EngineForBlockNumber(blockNumber *big.Int) istanbul.Engine {
-	return sb.qbftEngine
+	return sb.ibftEngine
 }
 
 // zekun: HACK
@@ -188,7 +188,7 @@ func (sb *Backend) Gossip(valSet istanbul.ValidatorSet, code uint64, payload []b
 			sb.recentMessages.Add(addr, m)
 
 			var outboundCode uint64 = istanbulMsg
-			if _, ok := qbfttypes.MessageCodes()[code]; ok {
+			if _, ok := ibfttypes.MessageCodes()[code]; ok {
 				outboundCode = code
 			}
 			go p.SendQBFTConsensus(outboundCode, payload)
@@ -357,7 +357,7 @@ func (sb *Backend) startQBFT() error {
 	sb.logger.Trace("IBFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
 	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
 
-	sb.core = qbftcore.New(sb, sb.config)
+	sb.core = ibftcore.New(sb, sb.config)
 	if err := sb.core.Start(); err != nil {
 		sb.logger.Error("IBFT: failed to activate QBFT", "err", err)
 		return err

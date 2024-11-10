@@ -1,4 +1,4 @@
-package qbfttypes
+package ibfttypes
 
 import (
 	"io"
@@ -38,7 +38,8 @@ func (m *Commit) EncodePayloadForSigning() ([]byte, error) {
 func (m *Commit) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, []interface{}{
 		[]interface{}{m.Sequence, m.Round, m.Digest, m.CommitSeal},
-		m.signature})
+		m.signature,
+	})
 }
 
 func (m *Commit) DecodeRLP(stream *rlp.Stream) error {

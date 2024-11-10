@@ -21,7 +21,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 )
 
 type State uint64
@@ -66,7 +66,7 @@ func (s State) Cmp(y State) int {
 type Request struct {
 	Proposal        istanbul.Proposal
 	RCMessages      *qbftMsgSet
-	PrepareMessages []*qbfttypes.Prepare
+	PrepareMessages []*ibfttypes.Prepare
 }
 
 // Subject represents the message sent when msgPrepare and msgCommit is broadcasted

@@ -1,4 +1,4 @@
-package qbftengine
+package ibftengine
 
 import "github.com/electroneum/electroneum-sc/core/types"
 

@@ -22,17 +22,17 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 )
 
 // newRoundState creates a new roundState instance with the given view and validatorSet
-func newRoundState(view *istanbul.View, validatorSet istanbul.ValidatorSet, preprepare *qbfttypes.Preprepare, preparedRound *big.Int, preparedBlock istanbul.Proposal, pendingRequest *Request, hasBadProposal func(hash common.Hash) bool) *roundState {
+func newRoundState(view *istanbul.View, validatorSet istanbul.ValidatorSet, preprepare *ibfttypes.Preprepare, preparedRound *big.Int, preparedBlock istanbul.Proposal, pendingRequest *Request, hasBadProposal func(hash common.Hash) bool) *roundState {
 	return &roundState{
 		round:      view.Round,
 		sequence:   view.Sequence,
 		Preprepare: preprepare,
-		//Prepares:       newMessageSet(validatorSet),
-		//Commits:        newMessageSet(validatorSet),
+		// Prepares:       newMessageSet(validatorSet),
+		// Commits:        newMessageSet(validatorSet),
 		QBFTPrepares:   newQBFTMsgSet(validatorSet),
 		QBFTCommits:    newQBFTMsgSet(validatorSet),
 		preparedRound:  preparedRound,
@@ -48,7 +48,7 @@ func newRoundState(view *istanbul.View, validatorSet istanbul.ValidatorSet, prep
 type roundState struct {
 	round      *big.Int
 	sequence   *big.Int
-	Preprepare *qbfttypes.Preprepare
+	Preprepare *ibfttypes.Preprepare
 
 	QBFTPrepares *qbftMsgSet
 	QBFTCommits  *qbftMsgSet
@@ -81,7 +81,7 @@ func (s *roundState) Subject() *Subject {
 	}
 }
 
-func (s *roundState) SetPreprepare(preprepare *qbfttypes.Preprepare) {
+func (s *roundState) SetPreprepare(preprepare *ibfttypes.Preprepare) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

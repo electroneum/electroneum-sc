@@ -1,4 +1,4 @@
-package qbftengine
+package ibftengine
 
 import (
 	"bytes"
@@ -17,9 +17,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-var (
-	nilUncleHash = types.CalcUncleHash(nil) // Always Keccak256(RLP([])) as uncles are meaningless outside of PoW.
-)
+var nilUncleHash = types.CalcUncleHash(nil) // Always Keccak256(RLP([])) as uncles are meaningless outside of PoW.
 
 type SignerFn func(data []byte) ([]byte, error)
 

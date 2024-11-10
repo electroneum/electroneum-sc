@@ -25,7 +25,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
@@ -60,7 +60,7 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 		hasBadProposal = c.current.hasBadProposal(c.current.preparedBlock.Hash())
 	}
 
-	roundChange := qbfttypes.NewRoundChange(c.current.Sequence(), round, c.current.preparedRound, c.current.preparedBlock, hasBadProposal)
+	roundChange := ibfttypes.NewRoundChange(c.current.Sequence(), round, c.current.preparedRound, c.current.preparedBlock, hasBadProposal)
 
 	// Sign message
 	encodedPayload, err := roundChange.EncodePayloadForSigning()
@@ -101,7 +101,7 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 // handleRoundChange is called when receiving a ROUND-CHANGE message from another validator
 // - accumulates ROUND-CHANGE messages until reaching quorum for a given round
 // - when quorum of ROUND-CHANGE messages is reached then
-func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
+func (c *core) handleRoundChange(roundChange *ibfttypes.RoundChange) error {
 	logger := c.currentLogger(true, roundChange)
 
 	view := roundChange.View()
@@ -117,7 +117,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
-		var prepareMessages []*qbfttypes.Prepare = nil
+		var prepareMessages []*ibfttypes.Prepare = nil
 		var pr *big.Int = nil
 		var pb *types.Block = nil
 		if roundChange.PreparedRound != nil && roundChange.PreparedBlock != nil && roundChange.Justification != nil && len(roundChange.Justification) > 0 {
@@ -174,9 +174,9 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 
 		// Prepare justification for ROUND-CHANGE messages
 		roundChangeMessages := c.roundChangeSet.roundChanges[currentRound.Uint64()]
-		rcSignedPayloads := make([]*qbfttypes.SignedRoundChangePayload, 0)
+		rcSignedPayloads := make([]*ibfttypes.SignedRoundChangePayload, 0)
 		for _, m := range roundChangeMessages.Values() {
-			rcMsg := m.(*qbfttypes.RoundChange)
+			rcMsg := m.(*ibfttypes.RoundChange)
 			rcSignedPayloads = append(rcSignedPayloads, &rcMsg.SignedRoundChangePayload)
 		}
 
@@ -213,7 +213,7 @@ func newRoundChangeSet(valSet istanbul.ValidatorSet) *roundChangeSet {
 	return &roundChangeSet{
 		validatorSet:         valSet,
 		roundChanges:         make(map[uint64]*qbftMsgSet),
-		prepareMessages:      make(map[uint64][]*qbfttypes.Prepare),
+		prepareMessages:      make(map[uint64][]*ibfttypes.Prepare),
 		highestPreparedRound: make(map[uint64]*big.Int),
 		highestPreparedBlock: make(map[uint64]istanbul.Proposal),
 		mu:                   new(sync.Mutex),
@@ -223,7 +223,7 @@ func newRoundChangeSet(valSet istanbul.ValidatorSet) *roundChangeSet {
 type roundChangeSet struct {
 	validatorSet         istanbul.ValidatorSet
 	roundChanges         map[uint64]*qbftMsgSet
-	prepareMessages      map[uint64][]*qbfttypes.Prepare
+	prepareMessages      map[uint64][]*ibfttypes.Prepare
 	highestPreparedRound map[uint64]*big.Int
 	highestPreparedBlock map[uint64]istanbul.Proposal
 	mu                   *sync.Mutex
@@ -237,12 +237,12 @@ func (rcs *roundChangeSet) NewRound(r *big.Int) {
 		rcs.roundChanges[round] = newQBFTMsgSet(rcs.validatorSet)
 	}
 	if rcs.prepareMessages[round] == nil {
-		rcs.prepareMessages[round] = make([]*qbfttypes.Prepare, 0)
+		rcs.prepareMessages[round] = make([]*ibfttypes.Prepare, 0)
 	}
 }
 
 // Add adds the round and message into round change set
-func (rcs *roundChangeSet) Add(r *big.Int, msg qbfttypes.QBFTMessage, preparedRound *big.Int, preparedBlock istanbul.Proposal, prepareMessages []*qbfttypes.Prepare, quorumSize int) error {
+func (rcs *roundChangeSet) Add(r *big.Int, msg ibfttypes.QBFTMessage, preparedRound *big.Int, preparedBlock istanbul.Proposal, prepareMessages []*ibfttypes.Prepare, quorumSize int) error {
 	rcs.mu.Lock()
 	defer rcs.mu.Unlock()
 
@@ -255,7 +255,7 @@ func (rcs *roundChangeSet) Add(r *big.Int, msg qbfttypes.QBFTMessage, preparedRo
 	}
 
 	if preparedRound != nil && (rcs.highestPreparedRound[round] == nil || preparedRound.Cmp(rcs.highestPreparedRound[round]) > 0) {
-		roundChange := msg.(*qbfttypes.RoundChange)
+		roundChange := msg.(*ibfttypes.RoundChange)
 		if hasMatchingRoundChangeAndPrepares(roundChange, prepareMessages, quorumSize, roundChange.HasBadProposal) == nil {
 			rcs.highestPreparedRound[round] = preparedRound
 			rcs.highestPreparedBlock[round] = preparedBlock

@@ -26,7 +26,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/p2p"
 	lru "github.com/hashicorp/golang-lru"
@@ -62,7 +62,7 @@ func (sb *Backend) decode(msg p2p.Msg) ([]byte, common.Hash, error) {
 func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 	sb.coreMu.Lock()
 	defer sb.coreMu.Unlock()
-	if _, ok := qbfttypes.MessageCodes()[msg.Code]; ok || msg.Code == istanbulMsg {
+	if _, ok := ibfttypes.MessageCodes()[msg.Code]; ok || msg.Code == istanbulMsg {
 		if !sb.coreStarted {
 			return true, istanbul.ErrStoppedEngine
 		}
@@ -94,8 +94,8 @@ func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 		})
 		return true, nil
 	}
-	//https://github.com/ConsenSys/quorum/pull/539
-	//https://github.com/ConsenSys/quorum/issues/389
+	// https://github.com/ConsenSys/quorum/pull/539
+	// https://github.com/ConsenSys/quorum/issues/389
 	if msg.Code == NewBlockMsg && sb.core != nil && sb.core.IsProposer() { // eth.NewBlockMsg: import cycle
 		// this case is to safeguard the race of similar block which gets propagated from other node while this node is proposing
 		// as p2p.Msg can only be decoded once (get EOF for any subsequence read), we need to make sure the payload is restored after we decode it

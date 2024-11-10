@@ -9,7 +9,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
@@ -77,7 +77,8 @@ func testParameterizedCase(
 	rcHigherThanTargetRound int,
 	preparesForTargetRound int,
 	preparesNotForTargetRound int,
-	messageJustified bool) {
+	messageJustified bool,
+) {
 	pp := istanbul.NewRoundRobinProposerPolicy()
 	pp.Use(istanbul.ValidatorSortByByte())
 	validatorSet := validator.NewSet(generateValidators(quorumSize), pp)
@@ -97,9 +98,9 @@ func testParameterizedCase(
 	}
 
 	// ROUND-CHANGE messages
-	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0)
+	roundChangeMessages := make([]*ibfttypes.SignedRoundChangePayload, 0)
 	for index, validator := range validatorSet.List() {
-		var m *qbfttypes.SignedRoundChangePayload
+		var m *ibfttypes.SignedRoundChangePayload
 		if index < rcForNil {
 			m = createRoundChangeMessage(validator.Address(), round, 0, nil)
 		} else if index >= rcForNil && index < rcForNil+rcEqualToTargetRound {
@@ -115,9 +116,9 @@ func testParameterizedCase(
 	}
 
 	// PREPARE messages
-	prepareMessages := make([]*qbfttypes.Prepare, 0)
+	prepareMessages := make([]*ibfttypes.Prepare, 0)
 	for index, validator := range validatorSet.List() {
-		var m *qbfttypes.Prepare
+		var m *ibfttypes.Prepare
 		if index < preparesForTargetRound {
 			m = createPrepareMessage(validator.Address(), targetPreparedRound, block)
 		} else if index >= preparesForTargetRound && index < preparesForTargetRound+preparesNotForTargetRound {
@@ -145,14 +146,14 @@ func testParameterizedCase(
 	}
 }
 
-func createRoundChangeMessage(from common.Address, round int64, preparedRound int64, preparedBlock istanbul.Proposal) *qbfttypes.SignedRoundChangePayload {
-	m := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(preparedRound), preparedBlock, false)
+func createRoundChangeMessage(from common.Address, round int64, preparedRound int64, preparedBlock istanbul.Proposal) *ibfttypes.SignedRoundChangePayload {
+	m := ibfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(preparedRound), preparedBlock, false)
 	m.SetSource(from)
 	return &m.SignedRoundChangePayload
 }
 
-func createPrepareMessage(from common.Address, round int64, preparedBlock istanbul.Proposal) *qbfttypes.Prepare {
-	return qbfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(round), preparedBlock.Hash(), nil, from)
+func createPrepareMessage(from common.Address, round int64, preparedBlock istanbul.Proposal) *ibfttypes.Prepare {
+	return ibfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(round), preparedBlock.Hash(), nil, from)
 }
 
 func generateValidators(n int) []common.Address {

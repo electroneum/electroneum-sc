@@ -18,19 +18,17 @@ package core
 
 import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"gopkg.in/karalabe/cookiejar.v2/collections/prque"
 )
 
-var (
-	// msgPriority is defined for calculating processing priority to speedup consensus
-	// msgPreprepare > msgCommit > msgPrepare
-	msgPriority = map[uint64]int{
-		qbfttypes.PreprepareCode: 1,
-		qbfttypes.CommitCode:     2,
-		qbfttypes.PrepareCode:    3,
-	}
-)
+// msgPriority is defined for calculating processing priority to speedup consensus
+// msgPreprepare > msgCommit > msgPrepare
+var msgPriority = map[uint64]int{
+	ibfttypes.PreprepareCode: 1,
+	ibfttypes.CommitCode:     2,
+	ibfttypes.PrepareCode:    3,
+}
 
 // checkMessage checks that a message matches our current QBFT state
 //
@@ -47,7 +45,7 @@ func (c *core) checkMessage(msgCode uint64, view *istanbul.View) error {
 		return errInvalidMessage
 	}
 
-	if msgCode == qbfttypes.RoundChangeCode {
+	if msgCode == ibfttypes.RoundChangeCode {
 		// if ROUND-CHANGE message
 		// check that
 		// - sequence matches our current sequence
@@ -74,23 +72,23 @@ func (c *core) checkMessage(msgCode uint64, view *istanbul.View) error {
 	case StateAcceptRequest:
 		// StateAcceptRequest only accepts msgPreprepare and msgRoundChange
 		// other messages are future messages
-		if msgCode > qbfttypes.PreprepareCode {
+		if msgCode > ibfttypes.PreprepareCode {
 			return errFutureMessage
 		}
 		return nil
 	case StatePreprepared:
 		// StatePreprepared only accepts msgPrepare and msgRoundChange
 		// message less than msgPrepare are invalid and greater are future messages
-		if msgCode < qbfttypes.PrepareCode {
+		if msgCode < ibfttypes.PrepareCode {
 			return errInvalidMessage
-		} else if msgCode > qbfttypes.PrepareCode {
+		} else if msgCode > ibfttypes.PrepareCode {
 			return errFutureMessage
 		}
 		return nil
 	case StatePrepared:
 		// StatePrepared only accepts msgCommit and msgRoundChange
 		// other messages are invalid messages
-		if msgCode < qbfttypes.CommitCode {
+		if msgCode < ibfttypes.CommitCode {
 			return errInvalidMessage
 		}
 		return nil
@@ -104,7 +102,7 @@ func (c *core) checkMessage(msgCode uint64, view *istanbul.View) error {
 // addToBacklog allows to postpone the processing of future messages
 
 // it adds the message to backlog which is read on every state change
-func (c *core) addToBacklog(msg qbfttypes.QBFTMessage) {
+func (c *core) addToBacklog(msg ibfttypes.QBFTMessage) {
 	logger := c.currentLogger(true, msg)
 
 	src := msg.Source()
@@ -160,7 +158,7 @@ func (c *core) processBacklog() {
 			var view istanbul.View
 			var event backlogEvent
 
-			msg := m.(qbfttypes.QBFTMessage)
+			msg := m.(ibfttypes.QBFTMessage)
 			code = msg.Code()
 			view = msg.View()
 			event.msg = msg
@@ -187,7 +185,7 @@ func (c *core) processBacklog() {
 }
 
 func toPriority(msgCode uint64, view *istanbul.View) float32 {
-	if msgCode == qbfttypes.RoundChangeCode {
+	if msgCode == ibfttypes.RoundChangeCode {
 		// For msgRoundChange, set the message priority based on its sequence
 		return -float32(view.Sequence.Uint64() * 1000)
 	}

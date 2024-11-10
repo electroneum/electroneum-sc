@@ -18,7 +18,7 @@ package core
 
 import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
@@ -46,7 +46,7 @@ func (c *core) broadcastCommit() {
 		return
 	}
 
-	commit := qbfttypes.NewCommit(sub.View.Sequence, sub.View.Round, sub.Digest, commitSeal)
+	commit := ibfttypes.NewCommit(sub.View.Sequence, sub.View.Round, sub.Digest, commitSeal)
 	commit.SetSource(c.Address())
 
 	// Sign Message
@@ -86,7 +86,7 @@ func (c *core) broadcastCommit() {
 // - validates COMMIT message digest matches the current block proposal
 // - accumulates valid COMMIT messages until reaching quorum
 // - when quorum of COMMIT messages is reached then update state and commits
-func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
+func (c *core) handleCommitMsg(commit *ibfttypes.Commit) error {
 	logger := c.currentLogger(true, commit)
 
 	logger.Trace("IBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
@@ -130,7 +130,7 @@ func (c *core) commitQBFT() {
 		committedSeals := make([][]byte, c.current.QBFTCommits.Size())
 		for i, msg := range c.current.QBFTCommits.Values() {
 			committedSeals[i] = make([]byte, types.IstanbulExtraSeal)
-			commitMsg := msg.(*qbfttypes.Commit)
+			commitMsg := msg.(*ibfttypes.Commit)
 			copy(committedSeals[i][:], commitMsg.CommitSeal[:])
 		}
 

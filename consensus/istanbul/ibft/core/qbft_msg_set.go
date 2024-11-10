@@ -25,7 +25,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -37,7 +37,7 @@ func newQBFTMsgSet(valSet istanbul.ValidatorSet) *qbftMsgSet {
 			Sequence: new(big.Int),
 		},
 		messagesMu: new(sync.Mutex),
-		messages:   make(map[common.Address]qbfttypes.QBFTMessage),
+		messages:   make(map[common.Address]ibfttypes.QBFTMessage),
 		valSet:     valSet,
 	}
 }
@@ -48,27 +48,27 @@ type qbftMsgSet struct {
 	view       *istanbul.View
 	valSet     istanbul.ValidatorSet
 	messagesMu *sync.Mutex
-	messages   map[common.Address]qbfttypes.QBFTMessage
+	messages   map[common.Address]ibfttypes.QBFTMessage
 }
 
 // qbftMsgMapAsStruct is a temporary holder struct to convert messages map to a slice when Encoding and Decoding qbftMsgSet
 type qbftMsgMapAsStruct struct {
 	Address common.Address
-	Msg     qbfttypes.QBFTMessage
+	Msg     ibfttypes.QBFTMessage
 }
 
 func (ms *qbftMsgSet) View() *istanbul.View {
 	return ms.view
 }
 
-func (ms *qbftMsgSet) Add(msg qbfttypes.QBFTMessage) error {
+func (ms *qbftMsgSet) Add(msg ibfttypes.QBFTMessage) error {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	ms.messages[msg.Source()] = msg
 	return nil
 }
 
-func (ms *qbftMsgSet) Values() (result []qbfttypes.QBFTMessage) {
+func (ms *qbftMsgSet) Values() (result []ibfttypes.QBFTMessage) {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 
@@ -85,7 +85,7 @@ func (ms *qbftMsgSet) Size() int {
 	return len(ms.messages)
 }
 
-func (ms *qbftMsgSet) Get(addr common.Address) qbfttypes.QBFTMessage {
+func (ms *qbftMsgSet) Get(addr common.Address) ibfttypes.QBFTMessage {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	return ms.messages[addr]
@@ -146,7 +146,7 @@ func (ms *qbftMsgSet) DecodeRLP(stream *rlp.Stream) error {
 	}
 
 	// convert the messages struct slice back to map
-	messages := make(map[common.Address]qbfttypes.QBFTMessage)
+	messages := make(map[common.Address]ibfttypes.QBFTMessage)
 	for _, msgStruct := range msgSet.MessagesSlice {
 		messages[msgStruct.Address] = msgStruct.Msg
 	}

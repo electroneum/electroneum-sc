@@ -1,4 +1,4 @@
-package qbftengine
+package ibftengine
 
 import (
 	"bytes"

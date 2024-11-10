@@ -6,7 +6,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/log"
 )
 
@@ -19,9 +19,10 @@ import (
 //     preparedBlockDigest match the round and block of `quorumSize` PREPARE messages.
 func isJustified(
 	proposal istanbul.Proposal,
-	roundChangeMessages []*qbfttypes.SignedRoundChangePayload,
-	prepareMessages []*qbfttypes.Prepare,
-	quorumSize int) error {
+	roundChangeMessages []*ibfttypes.SignedRoundChangePayload,
+	prepareMessages []*ibfttypes.Prepare,
+	quorumSize int,
+) error {
 	// Check the size of the set of ROUND-CHANGE messages
 	if len(roundChangeMessages) < quorumSize {
 		return errors.New("number of roundchange messages is less than required quorum of messages")
@@ -63,7 +64,7 @@ func isJustified(
 
 // Checks whether a set of ROUND-CHANGE messages has `quorumSize` messages with nil prepared round and
 // prepared block.
-func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, quorumSize int) error {
+func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*ibfttypes.SignedRoundChangePayload, quorumSize int) error {
 	nilCount := 0
 	for _, m := range roundChangeMessages {
 		log.Trace("IBFT: hasQuorumOfRoundChangeMessagesForNil", "rc", m)
@@ -79,7 +80,7 @@ func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*qbfttypes.Signe
 
 // Checks whether a set of ROUND-CHANGE messages has some message with `preparedRound` and `preparedBlockDigest`,
 // and has `quorumSize` messages with prepared round equal to nil or equal or lower than `preparedRound`.
-func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, preparedRound *big.Int, preparedBlock istanbul.Proposal, quorumSize int, hasQuorumOfBadProposal bool) error {
+func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages []*ibfttypes.SignedRoundChangePayload, preparedRound *big.Int, preparedBlock istanbul.Proposal, quorumSize int, hasQuorumOfBadProposal bool) error {
 	lowerOrEqualRoundCount := 0
 	hasMatchingMessage := false
 	for _, m := range roundChangeMessages {
@@ -101,7 +102,8 @@ func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages 
 // Checks whether the round and block of a set of PREPARE messages of at least quorumSize match the
 // preparedRound and preparedBlockDigest of a ROUND-CHANGE qbfttypes.
 func hasMatchingRoundChangeAndPrepares(
-	roundChange *qbfttypes.RoundChange, prepareMessages []*qbfttypes.Prepare, quorumSize int, hasBadProposal bool) error {
+	roundChange *ibfttypes.RoundChange, prepareMessages []*ibfttypes.Prepare, quorumSize int, hasBadProposal bool,
+) error {
 	if len(prepareMessages) < quorumSize {
 		return errors.New("number of prepare messages is less than quorum of messages")
 	}

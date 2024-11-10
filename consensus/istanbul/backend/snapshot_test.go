@@ -26,7 +26,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
-	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
+	ibftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/engine"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/testutils"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
@@ -54,9 +54,9 @@ func newTesterAccountPool() *testerAccountPool {
 }
 
 func (ap *testerAccountPool) writeValidatorVote(header *types.Header, validator string, recipientAddress string, authorize bool) error {
-	return qbftengine.ApplyHeaderQBFTExtra(
+	return ibftengine.ApplyHeaderQBFTExtra(
 		header,
-		qbftengine.WriteVote(ap.address(recipientAddress), authorize),
+		ibftengine.WriteVote(ap.address(recipientAddress), authorize),
 	)
 }
 
@@ -358,9 +358,9 @@ func TestVoting(t *testing.T) {
 				Difficulty: istanbulcommon.DefaultDifficulty,
 				MixDigest:  types.IstanbulDigest,
 			}
-			_ = qbftengine.ApplyHeaderQBFTExtra(
+			_ = ibftengine.ApplyHeaderQBFTExtra(
 				headers[j],
-				qbftengine.WriteValidators(validators),
+				ibftengine.WriteValidators(validators),
 			)
 
 			if j > 0 {

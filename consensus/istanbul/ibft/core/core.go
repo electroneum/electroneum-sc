@@ -24,7 +24,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
@@ -88,7 +88,7 @@ type core struct {
 	roundChangeSet   *roundChangeSet
 	roundChangeTimer *time.Timer
 
-	QBFTPreparedPrepares []*qbfttypes.Prepare
+	QBFTPreparedPrepares []*ibfttypes.Prepare
 
 	pendingRequests   *prque.Prque
 	pendingRequestsMu *sync.Mutex
