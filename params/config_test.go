@@ -104,7 +104,7 @@ func TestCheckTransitionsData(t *testing.T) {
 		stored  *ChainConfig
 		wantErr error
 	}
-	var ibftTransitionsConfig, qbftTransitionsConfig, invalidBlockOrder []Transition
+	var ibftTransitionsConfig, invalidBlockOrder []Transition
 	tranI0 := Transition{big.NewInt(0), 30000, 5, 10, 60, common.Address{}, 0}
 	tranI5 := Transition{big.NewInt(5), 30000, 5, 10, 60, common.Address{}, 0}
 	tranI8 := Transition{big.NewInt(8), 30000, 5, 10, 60, common.Address{}, 0}
@@ -127,15 +127,7 @@ func TestCheckTransitionsData(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: qbftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
 			stored:  &ChainConfig{Transitions: ibftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{Transitions: qbftTransitionsConfig},
 			wantErr: nil,
 		},
 		{

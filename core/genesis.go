@@ -424,8 +424,8 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 }
 
 func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
-	// Initialize a pointer to an instance of types.QBFTExtra
-	extra := &types.QBFTExtra{
+	// Initialize a pointer to an instance of types.IBFTExtra
+	extra := &types.IBFTExtra{
 		VanityData:    make([]byte, 32),
 		Validators:    valset,     // Update as necessary
 		Vote:          nil,        // Nil at genesis
@@ -439,8 +439,8 @@ func GenerateGenesisExtraDataForIBFTValSet(valset []common.Address) []byte {
 		panic("RLP Encoding of genesis extra failed. Unable to create genesis block")
 	}
 
-	//genesisExtraDataHex := hex.EncodeToString(extraBytes)
-	//fmt.Println(genesisExtraDataHex)
+	// genesisExtraDataHex := hex.EncodeToString(extraBytes)
+	// fmt.Println(genesisExtraDataHex)
 
 	return extraBytes
 }
@@ -466,7 +466,7 @@ func DefaultGenesisBlock() *Genesis {
 		Timestamp:  1709141867, // 28 Feb 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
-		GasUsed:    0, //ok unless we add a smart contract in the genesis state
+		GasUsed:    0, // ok unless we add a smart contract in the genesis state
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
@@ -492,7 +492,7 @@ func DefaultTestnetGenesisBlock() *Genesis {
 		Timestamp:  1707989393, // feb 15 2024
 		ExtraData:  GenerateGenesisExtraDataForIBFTValSet(validatorSet),
 		GasLimit:   30000000,
-		GasUsed:    0, //ok unless we add a smart contract in the genesis state
+		GasUsed:    0, // ok unless we add a smart contract in the genesis state
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.HexToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),

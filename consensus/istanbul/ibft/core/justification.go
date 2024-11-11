@@ -100,7 +100,7 @@ func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages 
 }
 
 // Checks whether the round and block of a set of PREPARE messages of at least quorumSize match the
-// preparedRound and preparedBlockDigest of a ROUND-CHANGE qbfttypes.
+// preparedRound and preparedBlockDigest of a ROUND-CHANGE ibfttypes.
 func hasMatchingRoundChangeAndPrepares(
 	roundChange *ibfttypes.RoundChange, prepareMessages []*ibfttypes.Prepare, quorumSize int, hasBadProposal bool,
 ) error {

@@ -33,9 +33,9 @@ import (
 )
 
 var (
-	roundMeter     = metrics.NewRegisteredMeter("consensus/istanbul/qbft/core/round", nil)
-	sequenceMeter  = metrics.NewRegisteredMeter("consensus/istanbul/qbft/core/sequence", nil)
-	consensusTimer = metrics.NewRegisteredTimer("consensus/istanbul/qbft/core/consensus", nil)
+	roundMeter     = metrics.NewRegisteredMeter("consensus/istanbul/ibft/core/round", nil)
+	sequenceMeter  = metrics.NewRegisteredMeter("consensus/istanbul/ibft/core/sequence", nil)
+	consensusTimer = metrics.NewRegisteredTimer("consensus/istanbul/ibft/core/consensus", nil)
 )
 
 // New creates an Istanbul consensus core
@@ -88,7 +88,7 @@ type core struct {
 	roundChangeSet   *roundChangeSet
 	roundChangeTimer *time.Timer
 
-	QBFTPreparedPrepares []*ibfttypes.Prepare
+	IBFTPreparedPrepares []*ibfttypes.Prepare
 
 	pendingRequests   *prque.Prque
 	pendingRequestsMu *sync.Mutex
@@ -204,7 +204,7 @@ func (c *core) startNewRound(round *big.Int) {
 
 	// Update RoundChangeSet by deleting older round messages
 	if round.Uint64() == 0 {
-		c.QBFTPreparedPrepares = nil
+		c.IBFTPreparedPrepares = nil
 		c.roundChangeSet = newRoundChangeSet(c.valSet)
 	} else {
 		// Clear earlier round messages
@@ -279,7 +279,7 @@ func (c *core) newRoundChangeTimer() {
 		}
 		// prevent log storm when unexpected overflow happens
 		if timeout < baseTimeout {
-			c.currentLogger(true, nil).Error("QBFT: Possible request timeout overflow detected, setting timeout value to maxRequestTimeout",
+			c.currentLogger(true, nil).Error("IBFT: Possible request timeout overflow detected, setting timeout value to maxRequestTimeout",
 				"timeout", timeout.Seconds(),
 				"max_request_timeout", maxRequestTimeout.Seconds(),
 			)
@@ -308,5 +308,5 @@ func (c *core) QuorumSize() int {
 // PrepareCommittedSeal returns a committed seal for the given header and takes current round under consideration
 func PrepareCommittedSeal(header *types.Header, round uint32) []byte {
 	h := types.CopyHeader(header)
-	return h.QBFTHashWithRoundNumber(round).Bytes()
+	return h.IBFTHashWithRoundNumber(round).Bytes()
 }

@@ -74,7 +74,7 @@ func (c *core) broadcastPrepare() {
 func (c *core) handlePrepare(prepare *ibfttypes.Prepare) error {
 	logger := c.currentLogger(true, prepare).New()
 
-	logger.Trace("IBFT: handle PREPARE message", "prepares.count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
+	logger.Trace("IBFT: handle PREPARE message", "prepares.count", c.current.IBFTPrepares.Size(), "quorum", c.QuorumSize())
 
 	// Check digest
 	if prepare.Digest != c.current.Proposal().Hash() {
@@ -83,25 +83,25 @@ func (c *core) handlePrepare(prepare *ibfttypes.Prepare) error {
 	}
 
 	// Save PREPARE messages
-	if err := c.current.QBFTPrepares.Add(prepare); err != nil {
+	if err := c.current.IBFTPrepares.Add(prepare); err != nil {
 		logger.Error("[Consensus]: Failed to save PREPARE message", "err", err)
 		return err
 	}
 
-	logger = logger.New("prepares.count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
+	logger = logger.New("prepares.count", c.current.IBFTPrepares.Size(), "quorum", c.QuorumSize())
 
 	// Change to "Prepared" state if we've received quorum of PREPARE messages
 	// and we are in earlier state than "Prepared"
-	if (c.current.QBFTPrepares.Size() >= c.QuorumSize()) && c.state.Cmp(StatePrepared) < 0 {
+	if (c.current.IBFTPrepares.Size() >= c.QuorumSize()) && c.state.Cmp(StatePrepared) < 0 {
 		logger.Trace("[Consensus]: Received quorum of PREPARE messages")
-		c.cleanLogger.Info("[Consensus]: <- Received quorum of PREPARE messages", "count", c.current.QBFTPrepares.Size(), "quorum", c.QuorumSize())
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of PREPARE messages", "count", c.current.IBFTPrepares.Size(), "quorum", c.QuorumSize())
 
 		// Accumulates PREPARE messages
 		c.current.preparedRound = c.currentView().Round
-		c.QBFTPreparedPrepares = make([]*ibfttypes.Prepare, 0)
-		for _, m := range c.current.QBFTPrepares.Values() {
-			c.QBFTPreparedPrepares = append(
-				c.QBFTPreparedPrepares,
+		c.IBFTPreparedPrepares = make([]*ibfttypes.Prepare, 0)
+		for _, m := range c.current.IBFTPrepares.Values() {
+			c.IBFTPreparedPrepares = append(
+				c.IBFTPreparedPrepares,
 				ibfttypes.NewPrepareWithSigAndSource(
 					m.View().Sequence, m.View().Round, m.(*ibfttypes.Prepare).Digest, m.Signature(), m.Source()))
 		}

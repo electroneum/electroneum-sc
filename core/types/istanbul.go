@@ -32,8 +32,8 @@ var (
 	IstanbulExtraVanity = 32 // Fixed number of extra-data bytes reserved for validator vanity
 	IstanbulExtraSeal   = 65 // Fixed number of extra-data bytes reserved for validator seal
 
-	QBFTAuthVote = byte(0xFF) // Magic number to vote on adding a new validator
-	QBFTDropVote = byte(0x00) // Magic number to vote on removing a validator.
+	IBFTAuthVote = byte(0xFF) // Magic number to vote on adding a new validator
+	IBFTDropVote = byte(0x00) // Magic number to vote on removing a validator.
 
 	// ErrInvalidIstanbulHeaderExtra is returned if the length of extra-data is less than 32 bytes
 	ErrInvalidIstanbulHeaderExtra = errors.New("invalid istanbul header extra-data")
@@ -87,13 +87,13 @@ func ExtractIstanbulExtra(h *Header) (*IstanbulExtra, error) {
 
 // FilteredHeader returns a filtered header which some information (like seal, committed seals)
 // are clean to fulfill the Istanbul hash rules. It first check if the extradata can be extracted into IstanbulExtra if that fails,
-// it extracts extradata into QBFTExtra struct
+// it extracts extradata into IBFTExtra struct
 func FilteredHeader(h *Header) *Header {
 	// Check if the header extradata can be decoded in IstanbulExtra, if yes, then call IstanbulFilteredHeader()
-	// if not then call QBFTFilteredHeader()
+	// if not then call IBFTFilteredHeader()
 	_, err := ExtractIstanbulExtra(h)
 	if err != nil {
-		return QBFTFilteredHeader(h)
+		return IBFTFilteredHeader(h)
 	}
 	return IstanbulFilteredHeader(h, true)
 }
@@ -123,8 +123,8 @@ func IstanbulFilteredHeader(h *Header, keepSeal bool) *Header {
 	return newHeader
 }
 
-// QBFTExtra represents header extradata for qbft protocol
-type QBFTExtra struct {
+// IBFTExtra represents header extradata for ibft protocol
+type IBFTExtra struct {
 	VanityData    []byte
 	Validators    []common.Address
 	Vote          *ValidatorVote
@@ -138,7 +138,7 @@ type ValidatorVote struct {
 }
 
 // EncodeRLP serializes qist into the Ethereum RLP format.
-func (qst *QBFTExtra) EncodeRLP(w io.Writer) error {
+func (qst *IBFTExtra) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, []interface{}{
 		qst.VanityData,
 		qst.Validators,
@@ -148,19 +148,19 @@ func (qst *QBFTExtra) EncodeRLP(w io.Writer) error {
 	})
 }
 
-// DecodeRLP implements rlp.Decoder, and load the QBFTExtra fields from a RLP stream.
-func (qst *QBFTExtra) DecodeRLP(s *rlp.Stream) error {
-	var qbftExtra struct {
+// DecodeRLP implements rlp.Decoder, and load the IBFTExtra fields from a RLP stream.
+func (qst *IBFTExtra) DecodeRLP(s *rlp.Stream) error {
+	var ibftExtra struct {
 		VanityData    []byte
 		Validators    []common.Address
 		Vote          *ValidatorVote `rlp:"nil"`
 		Round         uint32
 		CommittedSeal [][]byte
 	}
-	if err := s.Decode(&qbftExtra); err != nil {
+	if err := s.Decode(&ibftExtra); err != nil {
 		return err
 	}
-	qst.VanityData, qst.Validators, qst.Vote, qst.Round, qst.CommittedSeal = qbftExtra.VanityData, qbftExtra.Validators, qbftExtra.Vote, qbftExtra.Round, qbftExtra.CommittedSeal
+	qst.VanityData, qst.Validators, qst.Vote, qst.Round, qst.CommittedSeal = ibftExtra.VanityData, ibftExtra.Validators, ibftExtra.Vote, ibftExtra.Round, ibftExtra.CommittedSeal
 
 	return nil
 }
@@ -186,38 +186,38 @@ func (vv *ValidatorVote) DecodeRLP(s *rlp.Stream) error {
 	return nil
 }
 
-// ExtractQBFTExtra extracts all values of the QBFTExtra from the header. It returns an
+// ExtractIBFTExtra extracts all values of the IBFTExtra from the header. It returns an
 // error if the length of the given extra-data is less than 32 bytes or the extra-data can not
 // be decoded.
-func ExtractQBFTExtra(h *Header) (*QBFTExtra, error) {
-	qbftExtra := new(QBFTExtra)
-	err := rlp.DecodeBytes(h.Extra[:], qbftExtra)
+func ExtractIBFTExtra(h *Header) (*IBFTExtra, error) {
+	ibftExtra := new(IBFTExtra)
+	err := rlp.DecodeBytes(h.Extra[:], ibftExtra)
 	if err != nil {
 		return nil, err
 	}
-	return qbftExtra, nil
+	return ibftExtra, nil
 }
 
-// QBFTFilteredHeader returns a filtered header which some information (like committed seals, round, validator vote)
+// IBFTFilteredHeader returns a filtered header which some information (like committed seals, round, validator vote)
 // are clean to fulfill the Istanbul hash rules. It returns nil if the extra-data cannot be
 // decoded/encoded by rlp.
-func QBFTFilteredHeader(h *Header) *Header {
-	return QBFTFilteredHeaderWithRound(h, 0)
+func IBFTFilteredHeader(h *Header) *Header {
+	return IBFTFilteredHeaderWithRound(h, 0)
 }
 
-// QBFTFilteredHeaderWithRound returns the copy of the header with round number set to the given round number
+// IBFTFilteredHeaderWithRound returns the copy of the header with round number set to the given round number
 // and commit seal set to its null value
-func QBFTFilteredHeaderWithRound(h *Header, round uint32) *Header {
+func IBFTFilteredHeaderWithRound(h *Header, round uint32) *Header {
 	newHeader := CopyHeader(h)
-	qbftExtra, err := ExtractQBFTExtra(newHeader)
+	ibftExtra, err := ExtractIBFTExtra(newHeader)
 	if err != nil {
 		return nil
 	}
 
-	qbftExtra.CommittedSeal = [][]byte{}
-	qbftExtra.Round = round
+	ibftExtra.CommittedSeal = [][]byte{}
+	ibftExtra.Round = round
 
-	payload, err := rlp.EncodeToBytes(&qbftExtra)
+	payload, err := rlp.EncodeToBytes(&ibftExtra)
 	if err != nil {
 		return nil
 	}

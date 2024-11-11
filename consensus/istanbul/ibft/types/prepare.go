@@ -9,7 +9,7 @@ import (
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
-// A QBFT PREPARE message.
+// A IBFT PREPARE message.
 type Prepare struct {
 	CommonPayload
 	Digest common.Hash

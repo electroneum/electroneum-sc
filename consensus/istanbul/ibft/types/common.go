@@ -7,7 +7,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 )
 
-// Data that is common to all QBFT messages. Used for composition.
+// Data that is common to all IBFT messages. Used for composition.
 type CommonPayload struct {
 	code      uint64
 	source    common.Address

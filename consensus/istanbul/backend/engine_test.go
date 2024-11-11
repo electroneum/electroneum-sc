@@ -132,21 +132,6 @@ func TestIBFTPrepare(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
-	header.ParentHash = common.StringToHash("1234567890")
-	err = engine.Prepare(chain, header)
-	if err != consensus.ErrUnknownAncestor {
-		t.Errorf("error mismatch: have %v, want %v", err, consensus.ErrUnknownAncestor)
-	}
-}
-
-func TestQBFTPrepare(t *testing.T) {
-	chain, engine := newBlockChain(1)
-	defer engine.Stop()
-	header := makeHeader(chain.Genesis(), engine.config)
-	err := engine.Prepare(chain, header)
-	if err != nil {
-		t.Errorf("error mismatch: have %v, want nil", err)
-	}
 
 	header.ParentHash = common.StringToHash("1234567890")
 	err = engine.Prepare(chain, header)
@@ -217,7 +202,7 @@ func TestSealCommittedOtherHash(t *testing.T) {
 	case <-blockOutputChannel:
 		t.Error("Wrong block found!")
 	default:
-		//no block found, stop the sealing
+		// no block found, stop the sealing
 		close(stopChannel)
 	}
 
@@ -227,7 +212,7 @@ func TestSealCommittedOtherHash(t *testing.T) {
 	}
 }
 
-func updateQBFTBlock(block *types.Block, addr common.Address) *types.Block {
+func updateIBFTBlock(block *types.Block, addr common.Address) *types.Block {
 	header := block.Header()
 	header.Coinbase = addr
 	return block.WithSeal(header)
@@ -237,12 +222,11 @@ func TestSealCommitted(t *testing.T) {
 	chain, engine := newBlockChain(1)
 	defer engine.Stop()
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-	expectedBlock := updateQBFTBlock(block, engine.Address())
+	expectedBlock := updateIBFTBlock(block, engine.Address())
 
 	resultCh := make(chan *types.Block, 10)
 	go func() {
 		err := engine.Seal(chain, block, resultCh, make(chan struct{}))
-
 		if err != nil {
 			t.Errorf("error mismatch: have %v, want %v", err, expectedBlock)
 		}
@@ -260,7 +244,7 @@ func TestVerifyHeader(t *testing.T) {
 
 	// istanbulcommon.ErrEmptyCommittedSeals case
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-	block = updateQBFTBlock(block, engine.Address())
+	block = updateIBFTBlock(block, engine.Address())
 	err := engine.VerifyHeader(chain, block.Header(), false)
 	if err != istanbulcommon.ErrEmptyCommittedSeals {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrEmptyCommittedSeals)
@@ -332,7 +316,7 @@ func TestVerifyHeader(t *testing.T) {
 	priorValue := engine.config.AllowedFutureBlockTime
 	engine.config.AllowedFutureBlockTime = 5
 	err = engine.VerifyHeader(chain, header, false)
-	engine.config.AllowedFutureBlockTime = priorValue //restore changed value
+	engine.config.AllowedFutureBlockTime = priorValue // restore changed value
 	if err == consensus.ErrFutureBlock {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
@@ -363,10 +347,10 @@ func TestVerifyHeaders(t *testing.T) {
 		var b *types.Block
 		if i == 0 {
 			b = makeBlockWithoutSeal(chain, engine, genesis, false)
-			b = updateQBFTBlock(b, engine.Address())
+			b = updateIBFTBlock(b, engine.Address())
 		} else {
 			b = makeBlockWithoutSeal(chain, engine, blocks[i-1], false)
-			b = updateQBFTBlock(b, engine.Address())
+			b = updateIBFTBlock(b, engine.Address())
 		}
 		blocks = append(blocks, b)
 		headers = append(headers, blocks[i].Header())

@@ -76,6 +76,6 @@ type Backend interface {
 
 	Close() error
 
-	// StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
-	StartQBFTConsensus() error
+	// StartIBFTConsensus stops existing legacy ibft consensus and starts the new ibft consensus
+	StartIBFTConsensus() error
 }

@@ -21,7 +21,7 @@ import (
 )
 
 // handleRequest is called by proposer in reaction to `miner.Seal()`
-// (this is the starting of the QBFT validation process)
+// (this is the starting of the IBFT validation process)
 
 // It
 // - validates block proposal is not empty and number correspond to the current sequence
@@ -76,7 +76,7 @@ func (c *core) storeRequestMsg(request *Request) {
 	c.pendingRequests.Push(request, float32(-request.Proposal.Number().Int64()))
 }
 
-// processPendingRequests is called each time QBFT state is re-initialized
+// processPendingRequests is called each time IBFT state is re-initialized
 // it lookup over pending requests and re-input its so they can be treated
 func (c *core) processPendingRequests() {
 	c.pendingRequestsMu.Lock()

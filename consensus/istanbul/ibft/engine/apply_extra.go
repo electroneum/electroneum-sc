@@ -2,10 +2,10 @@ package ibftengine
 
 import "github.com/electroneum/electroneum-sc/core/types"
 
-type ApplyQBFTExtra func(*types.QBFTExtra) error
+type ApplyIBFTExtra func(*types.IBFTExtra) error
 
-func Combine(applies ...ApplyQBFTExtra) ApplyQBFTExtra {
-	return func(extra *types.QBFTExtra) error {
+func Combine(applies ...ApplyIBFTExtra) ApplyIBFTExtra {
+	return func(extra *types.IBFTExtra) error {
 		for _, apply := range applies {
 			err := apply(extra)
 			if err != nil {
@@ -16,7 +16,7 @@ func Combine(applies ...ApplyQBFTExtra) ApplyQBFTExtra {
 	}
 }
 
-func ApplyHeaderQBFTExtra(header *types.Header, applies ...ApplyQBFTExtra) error {
+func ApplyHeaderIBFTExtra(header *types.Header, applies ...ApplyIBFTExtra) error {
 	extra, err := getExtra(header)
 	if err != nil {
 		return err

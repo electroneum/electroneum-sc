@@ -32,8 +32,8 @@ func Genesis(validators []common.Address) *core.Genesis {
 
 func GenesisAndKeys(n int) (*core.Genesis, []*ecdsa.PrivateKey) {
 	// Setup validators
-	var nodeKeys = make([]*ecdsa.PrivateKey, n)
-	var addrs = make([]common.Address, n)
+	nodeKeys := make([]*ecdsa.PrivateKey, n)
+	addrs := make([]common.Address, n)
 	for i := 0; i < n; i++ {
 		nodeKeys[i], _ = crypto.GenerateKey()
 		addrs[i] = crypto.PubkeyToAddress(nodeKeys[i].PublicKey)
@@ -47,7 +47,7 @@ func GenesisAndKeys(n int) (*core.Genesis, []*ecdsa.PrivateKey) {
 
 func appendValidators(genesis *core.Genesis, addrs []common.Address) {
 	vanity := append(genesis.ExtraData, bytes.Repeat([]byte{0x00}, types.IstanbulExtraVanity-len(genesis.ExtraData))...)
-	ist := &types.QBFTExtra{
+	ist := &types.IBFTExtra{
 		VanityData:    vanity,
 		Validators:    addrs,
 		Vote:          nil,

@@ -5,7 +5,7 @@ import (
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
-func Decode(code uint64, data []byte) (QBFTMessage, error) {
+func Decode(code uint64, data []byte) (IBFTMessage, error) {
 	switch code {
 	case PreprepareCode:
 		var preprepare Preprepare

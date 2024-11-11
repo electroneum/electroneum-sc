@@ -41,7 +41,7 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
-	//Check signature recover
+	// Check signature recover
 	hashData := crypto.Keccak256(data)
 	pubkey, _ := crypto.Ecrecover(hashData, sig)
 	var signer common.Address
@@ -133,7 +133,7 @@ func TestCommit(t *testing.T) {
 			func() *types.Block {
 				chain, engine := newBlockChain(1)
 				block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-				return updateQBFTBlock(block, engine.Address())
+				return updateIBFTBlock(block, engine.Address())
 			},
 		},
 		{
@@ -143,7 +143,7 @@ func TestCommit(t *testing.T) {
 			func() *types.Block {
 				chain, engine := newBlockChain(1)
 				block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-				return updateQBFTBlock(block, engine.Address())
+				return updateIBFTBlock(block, engine.Address())
 			},
 		},
 	}
@@ -217,7 +217,7 @@ func newTestValidatorSet(n int) (istanbul.ValidatorSet, []*ecdsa.PrivateKey) {
 		addrs[i] = crypto.PubkeyToAddress(privateKey.PublicKey)
 	}
 	vset := validator.NewSet(addrs, istanbul.NewRoundRobinProposerPolicy())
-	sort.Sort(keys) //Keys need to be sorted by its public key address
+	sort.Sort(keys) // Keys need to be sorted by its public key address
 	return vset, keys
 }
 

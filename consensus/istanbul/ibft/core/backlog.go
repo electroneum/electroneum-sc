@@ -30,7 +30,7 @@ var msgPriority = map[uint64]int{
 	ibfttypes.PrepareCode:    3,
 }
 
-// checkMessage checks that a message matches our current QBFT state
+// checkMessage checks that a message matches our current IBFT state
 //
 // In particular it ensures that
 // - message has the expected round
@@ -102,7 +102,7 @@ func (c *core) checkMessage(msgCode uint64, view *istanbul.View) error {
 // addToBacklog allows to postpone the processing of future messages
 
 // it adds the message to backlog which is read on every state change
-func (c *core) addToBacklog(msg ibfttypes.QBFTMessage) {
+func (c *core) addToBacklog(msg ibfttypes.IBFTMessage) {
 	logger := c.currentLogger(true, msg)
 
 	src := msg.Source()
@@ -158,7 +158,7 @@ func (c *core) processBacklog() {
 			var view istanbul.View
 			var event backlogEvent
 
-			msg := m.(ibfttypes.QBFTMessage)
+			msg := m.(ibfttypes.IBFTMessage)
 			code = msg.Code()
 			view = msg.View()
 			event.msg = msg

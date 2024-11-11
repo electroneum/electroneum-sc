@@ -54,7 +54,7 @@ func newTesterAccountPool() *testerAccountPool {
 }
 
 func (ap *testerAccountPool) writeValidatorVote(header *types.Header, validator string, recipientAddress string, authorize bool) error {
-	return ibftengine.ApplyHeaderQBFTExtra(
+	return ibftengine.ApplyHeaderIBFTExtra(
 		header,
 		ibftengine.WriteVote(ap.address(recipientAddress), authorize),
 	)
@@ -358,7 +358,7 @@ func TestVoting(t *testing.T) {
 				Difficulty: istanbulcommon.DefaultDifficulty,
 				MixDigest:  types.IstanbulDigest,
 			}
-			_ = ibftengine.ApplyHeaderQBFTExtra(
+			_ = ibftengine.ApplyHeaderIBFTExtra(
 				headers[j],
 				ibftengine.WriteValidators(validators),
 			)

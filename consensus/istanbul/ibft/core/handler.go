@@ -80,8 +80,8 @@ func (c *core) unsubscribeEvents() {
 	c.finalCommittedSub.Unsubscribe()
 }
 
-// handleEvents starts main qbft handler loop that processes all incoming messages
-// sequentially. Each time a message is processed, internal QBFT state is mutated
+// handleEvents starts main ibft handler loop that processes all incoming messages
+// sequentially. Each time a message is processed, internal IBFT state is mutated
 
 // when processing a message it makes sure that the message matches the current state
 // - in case the message is past, either for an older round or a state that already got acknowledge (e.g. a PREPARE message but we
@@ -178,7 +178,7 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 		return fmt.Errorf("invalid message event code %v", code)
 	}
 
-	// Decode data into a QBFTMessage
+	// Decode data into a IBFTMessage
 	m, err := ibfttypes.Decode(code, data)
 	if err != nil {
 		logger.Error("IBFT: invalid message", "err", err)
@@ -193,7 +193,7 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 	return c.handleDecodedMessage(m)
 }
 
-func (c *core) handleDecodedMessage(m ibfttypes.QBFTMessage) error {
+func (c *core) handleDecodedMessage(m ibfttypes.IBFTMessage) error {
 	view := m.View()
 	if err := c.checkMessage(m.Code(), &view); err != nil {
 		// Store in the backlog it it's a future message
@@ -207,7 +207,7 @@ func (c *core) handleDecodedMessage(m ibfttypes.QBFTMessage) error {
 }
 
 // Deliver to specific message handler
-func (c *core) deliverMessage(m ibfttypes.QBFTMessage) error {
+func (c *core) deliverMessage(m ibfttypes.IBFTMessage) error {
 	var err error
 
 	switch m.Code() {
@@ -244,11 +244,11 @@ func (c *core) handleTimeoutMsg() {
 // Verifies the signature of the message m and of any justification payloads
 // piggybacked in m, if any. It also sets the source address on the messages
 // and justification payloads.
-func (c *core) verifySignatures(m ibfttypes.QBFTMessage) error {
+func (c *core) verifySignatures(m ibfttypes.IBFTMessage) error {
 	logger := c.currentLogger(true, m)
 
 	// Anonymous function to verify the signature of a single message or payload
-	verify := func(m ibfttypes.QBFTMessage) error {
+	verify := func(m ibfttypes.IBFTMessage) error {
 		payload, err := m.EncodePayloadForSigning()
 		if err != nil {
 			logger.Error("IBFT: invalid message payload", "err", err)
@@ -289,7 +289,7 @@ func (c *core) verifySignatures(m ibfttypes.QBFTMessage) error {
 	return nil
 }
 
-func (c *core) currentLogger(state bool, msg ibfttypes.QBFTMessage) log.Logger {
+func (c *core) currentLogger(state bool, msg ibfttypes.IBFTMessage) log.Logger {
 	logCtx := []interface{}{}
 	if c.current != nil {
 		logCtx = append(logCtx,
@@ -315,7 +315,7 @@ func (c *core) currentLogger(state bool, msg ibfttypes.QBFTMessage) log.Logger {
 	return c.logger.New(logCtx...)
 }
 
-func withMsg(logger log.Logger, msg ibfttypes.QBFTMessage) log.Logger {
+func withMsg(logger log.Logger, msg ibfttypes.IBFTMessage) log.Logger {
 	return logger.New(
 		"msg.code", msg.Code(),
 		"msg.source", msg.Source().String(),

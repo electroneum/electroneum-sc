@@ -65,7 +65,7 @@ func (s State) Cmp(y State) int {
 // Request is used to construct a Preprepare message
 type Request struct {
 	Proposal        istanbul.Proposal
-	RCMessages      *qbftMsgSet
+	RCMessages      *ibftMsgSet
 	PrepareMessages []*ibfttypes.Prepare
 }
 

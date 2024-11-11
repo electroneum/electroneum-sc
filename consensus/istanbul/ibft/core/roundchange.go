@@ -76,8 +76,8 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 	roundChange.SetSignature(signature)
 
 	// Extend ROUND-CHANGE message with PREPARE justification
-	if c.QBFTPreparedPrepares != nil {
-		roundChange.Justification = c.QBFTPreparedPrepares
+	if c.IBFTPreparedPrepares != nil {
+		roundChange.Justification = c.IBFTPreparedPrepares
 		withMsg(logger, roundChange).Debug("[Consensus]: Extended ROUND-CHANGE message with PREPARE justification", "justification", roundChange.Justification)
 	}
 
@@ -212,7 +212,7 @@ func (c *core) highestPrepared(round *big.Int) (*big.Int, istanbul.Proposal) {
 func newRoundChangeSet(valSet istanbul.ValidatorSet) *roundChangeSet {
 	return &roundChangeSet{
 		validatorSet:         valSet,
-		roundChanges:         make(map[uint64]*qbftMsgSet),
+		roundChanges:         make(map[uint64]*ibftMsgSet),
 		prepareMessages:      make(map[uint64][]*ibfttypes.Prepare),
 		highestPreparedRound: make(map[uint64]*big.Int),
 		highestPreparedBlock: make(map[uint64]istanbul.Proposal),
@@ -222,7 +222,7 @@ func newRoundChangeSet(valSet istanbul.ValidatorSet) *roundChangeSet {
 
 type roundChangeSet struct {
 	validatorSet         istanbul.ValidatorSet
-	roundChanges         map[uint64]*qbftMsgSet
+	roundChanges         map[uint64]*ibftMsgSet
 	prepareMessages      map[uint64][]*ibfttypes.Prepare
 	highestPreparedRound map[uint64]*big.Int
 	highestPreparedBlock map[uint64]istanbul.Proposal
@@ -234,7 +234,7 @@ func (rcs *roundChangeSet) NewRound(r *big.Int) {
 	defer rcs.mu.Unlock()
 	round := r.Uint64()
 	if rcs.roundChanges[round] == nil {
-		rcs.roundChanges[round] = newQBFTMsgSet(rcs.validatorSet)
+		rcs.roundChanges[round] = newIBFTMsgSet(rcs.validatorSet)
 	}
 	if rcs.prepareMessages[round] == nil {
 		rcs.prepareMessages[round] = make([]*ibfttypes.Prepare, 0)
@@ -242,13 +242,13 @@ func (rcs *roundChangeSet) NewRound(r *big.Int) {
 }
 
 // Add adds the round and message into round change set
-func (rcs *roundChangeSet) Add(r *big.Int, msg ibfttypes.QBFTMessage, preparedRound *big.Int, preparedBlock istanbul.Proposal, prepareMessages []*ibfttypes.Prepare, quorumSize int) error {
+func (rcs *roundChangeSet) Add(r *big.Int, msg ibfttypes.IBFTMessage, preparedRound *big.Int, preparedBlock istanbul.Proposal, prepareMessages []*ibfttypes.Prepare, quorumSize int) error {
 	rcs.mu.Lock()
 	defer rcs.mu.Unlock()
 
 	round := r.Uint64()
 	if rcs.roundChanges[round] == nil {
-		rcs.roundChanges[round] = newQBFTMsgSet(rcs.validatorSet)
+		rcs.roundChanges[round] = newIBFTMsgSet(rcs.validatorSet)
 	}
 	if err := rcs.roundChanges[round].Add(msg); err != nil {
 		return err

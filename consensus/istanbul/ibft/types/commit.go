@@ -8,7 +8,7 @@ import (
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
-// A QBFT COMMIT message.
+// A IBFT COMMIT message.
 type Commit struct {
 	CommonPayload
 	Digest     common.Hash

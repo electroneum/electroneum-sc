@@ -5,7 +5,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 )
 
-// QBFT message codes
+// IBFT message codes
 const (
 	PreprepareCode  = 0x12
 	PrepareCode     = 0x13
@@ -13,7 +13,7 @@ const (
 	RoundChangeCode = 0x15
 )
 
-// A set containing the messages codes for all QBFT messages.
+// A set containing the messages codes for all IBFT messages.
 func MessageCodes() map[uint64]struct{} {
 	return map[uint64]struct{}{
 		PreprepareCode:  {},
@@ -23,8 +23,8 @@ func MessageCodes() map[uint64]struct{} {
 	}
 }
 
-// Common interface for all QBFT messages
-type QBFTMessage interface {
+// Common interface for all IBFT messages
+type IBFTMessage interface {
 	Code() uint64
 	View() istanbul.View
 	Source() common.Address

@@ -257,14 +257,14 @@ func (sb *Backend) Seal(chain consensus.ChainHeaderReader, block *types.Block, r
 
 func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header, circulatingSupply *big.Int) *big.Int {
 	// original heights * 24 to make them compatible with 5-second block time
-	var legacyV9ForkHeight = new(big.Int).Mul(chain.Config().LegacyV9ForkHeight, big.NewInt(24))
-	var legacyToSmartchainMigrationHeight = new(big.Int).Mul(chain.Config().LegacyToSmartchainMigrationHeight, big.NewInt(24))
+	legacyV9ForkHeight := new(big.Int).Mul(chain.Config().LegacyV9ForkHeight, big.NewInt(24))
+	legacyToSmartchainMigrationHeight := new(big.Int).Mul(chain.Config().LegacyToSmartchainMigrationHeight, big.NewInt(24))
 
-	var halvingPeriod = big.NewInt(25228800)                                             // 4 years in 5-second block time
-	var baseReward = big.NewInt(4e+18)                                                   // ~100ETN every 120 seconds
-	var offset = new(big.Int).Sub(legacyToSmartchainMigrationHeight, legacyV9ForkHeight) // block height at time of BC migration - legacyV9ForkHeight
-	var offsetBlockNumber = new(big.Int).Add(header.Number, offset)
-	var halvings = new(big.Int).Div(offsetBlockNumber, halvingPeriod) // (blockNumber + offset) / halvingPeriod
+	halvingPeriod := big.NewInt(25228800)                                             // 4 years in 5-second block time
+	baseReward := big.NewInt(4e+18)                                                   // ~100ETN every 120 seconds
+	offset := new(big.Int).Sub(legacyToSmartchainMigrationHeight, legacyV9ForkHeight) // block height at time of BC migration - legacyV9ForkHeight
+	offsetBlockNumber := new(big.Int).Add(header.Number, offset)
+	halvings := new(big.Int).Div(offsetBlockNumber, halvingPeriod) // (blockNumber + offset) / halvingPeriod
 
 	if circulatingSupply == nil {
 		// Get current circulating supply
@@ -324,8 +324,8 @@ func (sb *Backend) Start(chain consensus.ChainHeaderReader, currentBlock func() 
 	sb.currentBlock = currentBlock
 	sb.hasBadBlock = hasBadBlock
 
-	// Check if qbft Consensus needs to be used after chain is set
-	if err := sb.startQBFT(); err != nil {
+	// Check if ibft Consensus needs to be used after chain is set
+	if err := sb.startIBFT(); err != nil {
 		return err
 	}
 

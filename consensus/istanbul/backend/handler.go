@@ -41,7 +41,7 @@ var (
 	// errDecodeFailed is returned when decode message fails
 	errDecodeFailed = errors.New("fail to decode istanbul message")
 
-	// errPayloadReadFailed is returned when qbft message read fails
+	// errPayloadReadFailed is returned when ibft message read fails
 	errPayloadReadFailed = errors.New("unable to read payload from message")
 )
 

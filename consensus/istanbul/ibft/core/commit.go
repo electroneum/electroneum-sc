@@ -89,7 +89,7 @@ func (c *core) broadcastCommit() {
 func (c *core) handleCommitMsg(commit *ibfttypes.Commit) error {
 	logger := c.currentLogger(true, commit)
 
-	logger.Trace("IBFT: handle COMMIT message", "commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
+	logger.Trace("IBFT: handle COMMIT message", "commits.count", c.current.IBFTCommits.Size(), "quorum", c.QuorumSize())
 
 	// Check digest
 	if commit.Digest != c.current.Proposal().Hash() {
@@ -98,18 +98,18 @@ func (c *core) handleCommitMsg(commit *ibfttypes.Commit) error {
 	}
 
 	// Add to received msgs
-	if err := c.current.QBFTCommits.Add(commit); err != nil {
+	if err := c.current.IBFTCommits.Add(commit); err != nil {
 		c.logger.Error("IBFT: failed to save COMMIT message", "err", err)
 		return err
 	}
 
-	logger = logger.New("commits.count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
+	logger = logger.New("commits.count", c.current.IBFTCommits.Size(), "quorum", c.QuorumSize())
 
 	// If we reached thresho
-	if c.current.QBFTCommits.Size() >= c.QuorumSize() {
+	if c.current.IBFTCommits.Size() >= c.QuorumSize() {
 		logger.Trace("[Consensus]: Received quorum of COMMIT messages")
-		c.cleanLogger.Info("[Consensus]: <- Received quorum of COMMIT messages", "count", c.current.QBFTCommits.Size(), "quorum", c.QuorumSize())
-		c.commitQBFT()
+		c.cleanLogger.Info("[Consensus]: <- Received quorum of COMMIT messages", "count", c.current.IBFTCommits.Size(), "quorum", c.QuorumSize())
+		c.commitIBFT()
 	} else {
 		logger.Debug("IBFT: accepted new COMMIT messages")
 	}
@@ -117,18 +117,18 @@ func (c *core) handleCommitMsg(commit *ibfttypes.Commit) error {
 	return nil
 }
 
-// commitQBFT is called once quorum of commits is reached
+// commitIBFT is called once quorum of commits is reached
 // - computes committedSeals from each received commit messages
 // - then commits block proposal to database with committed seals
 // - broadcast round change
-func (c *core) commitQBFT() {
+func (c *core) commitIBFT() {
 	c.setState(StateCommitted)
 
 	proposal := c.current.Proposal()
 	if proposal != nil {
 		// Compute committed seals
-		committedSeals := make([][]byte, c.current.QBFTCommits.Size())
-		for i, msg := range c.current.QBFTCommits.Values() {
+		committedSeals := make([][]byte, c.current.IBFTCommits.Size())
+		for i, msg := range c.current.IBFTCommits.Values() {
 			committedSeals[i] = make([]byte, types.IstanbulExtraSeal)
 			commitMsg := msg.(*ibfttypes.Commit)
 			copy(committedSeals[i][:], commitMsg.CommitSeal[:])

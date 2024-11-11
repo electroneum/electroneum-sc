@@ -30,45 +30,45 @@ import (
 )
 
 // Construct a new message set to accumulate messages for given sequence/view number.
-func newQBFTMsgSet(valSet istanbul.ValidatorSet) *qbftMsgSet {
-	return &qbftMsgSet{
+func newIBFTMsgSet(valSet istanbul.ValidatorSet) *ibftMsgSet {
+	return &ibftMsgSet{
 		view: &istanbul.View{
 			Round:    new(big.Int),
 			Sequence: new(big.Int),
 		},
 		messagesMu: new(sync.Mutex),
-		messages:   make(map[common.Address]ibfttypes.QBFTMessage),
+		messages:   make(map[common.Address]ibfttypes.IBFTMessage),
 		valSet:     valSet,
 	}
 }
 
 // ----------------------------------------------------------------------------
 
-type qbftMsgSet struct {
+type ibftMsgSet struct {
 	view       *istanbul.View
 	valSet     istanbul.ValidatorSet
 	messagesMu *sync.Mutex
-	messages   map[common.Address]ibfttypes.QBFTMessage
+	messages   map[common.Address]ibfttypes.IBFTMessage
 }
 
-// qbftMsgMapAsStruct is a temporary holder struct to convert messages map to a slice when Encoding and Decoding qbftMsgSet
-type qbftMsgMapAsStruct struct {
+// ibftMsgMapAsStruct is a temporary holder struct to convert messages map to a slice when Encoding and Decoding ibftMsgSet
+type ibftMsgMapAsStruct struct {
 	Address common.Address
-	Msg     ibfttypes.QBFTMessage
+	Msg     ibfttypes.IBFTMessage
 }
 
-func (ms *qbftMsgSet) View() *istanbul.View {
+func (ms *ibftMsgSet) View() *istanbul.View {
 	return ms.view
 }
 
-func (ms *qbftMsgSet) Add(msg ibfttypes.QBFTMessage) error {
+func (ms *ibftMsgSet) Add(msg ibfttypes.IBFTMessage) error {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	ms.messages[msg.Source()] = msg
 	return nil
 }
 
-func (ms *qbftMsgSet) Values() (result []ibfttypes.QBFTMessage) {
+func (ms *ibftMsgSet) Values() (result []ibfttypes.IBFTMessage) {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 
@@ -79,13 +79,13 @@ func (ms *qbftMsgSet) Values() (result []ibfttypes.QBFTMessage) {
 	return result
 }
 
-func (ms *qbftMsgSet) Size() int {
+func (ms *ibftMsgSet) Size() int {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	return len(ms.messages)
 }
 
-func (ms *qbftMsgSet) Get(addr common.Address) ibfttypes.QBFTMessage {
+func (ms *ibftMsgSet) Get(addr common.Address) ibfttypes.IBFTMessage {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	return ms.messages[addr]
@@ -93,7 +93,7 @@ func (ms *qbftMsgSet) Get(addr common.Address) ibfttypes.QBFTMessage {
 
 // ----------------------------------------------------------------------------
 
-func (ms *qbftMsgSet) String() string {
+func (ms *ibftMsgSet) String() string {
 	ms.messagesMu.Lock()
 	defer ms.messagesMu.Unlock()
 	addresses := make([]string, 0, len(ms.messages))
@@ -103,9 +103,9 @@ func (ms *qbftMsgSet) String() string {
 	return fmt.Sprintf("[%v]", strings.Join(addresses, ", "))
 }
 
-// EncodeRLP serializes qbftMsgSet into Ethereum RLP format
+// EncodeRLP serializes ibftMsgSet into Ethereum RLP format
 // valSet is currently not being encoded.
-func (ms *qbftMsgSet) EncodeRLP(w io.Writer) error {
+func (ms *ibftMsgSet) EncodeRLP(w io.Writer) error {
 	if ms == nil {
 		return nil
 	}
@@ -113,9 +113,9 @@ func (ms *qbftMsgSet) EncodeRLP(w io.Writer) error {
 	defer ms.messagesMu.Unlock()
 
 	// maps cannot be RLP encoded, convert the map into a slice of struct and then encode it
-	var messagesAsSlice []qbftMsgMapAsStruct
+	var messagesAsSlice []ibftMsgMapAsStruct
 	for k, v := range ms.messages {
-		msgMapAsStruct := qbftMsgMapAsStruct{
+		msgMapAsStruct := ibftMsgMapAsStruct{
 			Address: k,
 			Msg:     v,
 		}
@@ -128,10 +128,10 @@ func (ms *qbftMsgSet) EncodeRLP(w io.Writer) error {
 	})
 }
 
-// DecodeRLP deserializes rlp stream into qbftMsgSet
+// DecodeRLP deserializes rlp stream into ibftMsgSet
 // valSet is currently not being decoded
-func (ms *qbftMsgSet) DecodeRLP(stream *rlp.Stream) error {
-	// Don't decode qbftMsgSet if the size of the stream is 0
+func (ms *ibftMsgSet) DecodeRLP(stream *rlp.Stream) error {
+	// Don't decode ibftMsgSet if the size of the stream is 0
 	_, size, _ := stream.Kind()
 	if size == 0 {
 		return nil
@@ -139,14 +139,14 @@ func (ms *qbftMsgSet) DecodeRLP(stream *rlp.Stream) error {
 	var msgSet struct {
 		MsgView *istanbul.View
 		//		valSet        istanbul.ValidatorSet
-		MessagesSlice []qbftMsgMapAsStruct
+		MessagesSlice []ibftMsgMapAsStruct
 	}
 	if err := stream.Decode(&msgSet); err != nil {
 		return err
 	}
 
 	// convert the messages struct slice back to map
-	messages := make(map[common.Address]ibfttypes.QBFTMessage)
+	messages := make(map[common.Address]ibfttypes.IBFTMessage)
 	for _, msgStruct := range msgSet.MessagesSlice {
 		messages[msgStruct.Address] = msgStruct.Msg
 	}

@@ -191,7 +191,7 @@ func (sb *Backend) Gossip(valSet istanbul.ValidatorSet, code uint64, payload []b
 			if _, ok := ibfttypes.MessageCodes()[code]; ok {
 				outboundCode = code
 			}
-			go p.SendQBFTConsensus(outboundCode, payload)
+			go p.SendIBFTConsensus(outboundCode, payload)
 		}
 	}
 	return nil
@@ -352,14 +352,14 @@ func (sb *Backend) Close() error {
 	return nil
 }
 
-func (sb *Backend) startQBFT() error {
-	sb.logger.Info("IBFT: activate QBFT")
+func (sb *Backend) startIBFT() error {
+	sb.logger.Info("IBFT: activate IBFT")
 	sb.logger.Trace("IBFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
 	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
 
 	sb.core = ibftcore.New(sb, sb.config)
 	if err := sb.core.Start(); err != nil {
-		sb.logger.Error("IBFT: failed to activate QBFT", "err", err)
+		sb.logger.Error("IBFT: failed to activate IBFT", "err", err)
 		return err
 	}
 
@@ -381,11 +381,11 @@ func (sb *Backend) stop() error {
 	return nil
 }
 
-// StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus
-func (sb *Backend) StartQBFTConsensus() error {
+// StartIBFTConsensus stops existing legacy ibft consensus and starts the new ibft consensus
+func (sb *Backend) StartIBFTConsensus() error {
 	if err := sb.stop(); err != nil {
 		return err
 	}
 
-	return sb.startQBFT()
+	return sb.startIBFT()
 }

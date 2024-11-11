@@ -33,8 +33,8 @@ func newRoundState(view *istanbul.View, validatorSet istanbul.ValidatorSet, prep
 		Preprepare: preprepare,
 		// Prepares:       newMessageSet(validatorSet),
 		// Commits:        newMessageSet(validatorSet),
-		QBFTPrepares:   newQBFTMsgSet(validatorSet),
-		QBFTCommits:    newQBFTMsgSet(validatorSet),
+		IBFTPrepares:   newIBFTMsgSet(validatorSet),
+		IBFTCommits:    newIBFTMsgSet(validatorSet),
 		preparedRound:  preparedRound,
 		preparedBlock:  preparedBlock,
 		mu:             new(sync.RWMutex),
@@ -50,8 +50,8 @@ type roundState struct {
 	sequence   *big.Int
 	Preprepare *ibfttypes.Preprepare
 
-	QBFTPrepares *qbftMsgSet
-	QBFTCommits  *qbftMsgSet
+	IBFTPrepares *ibftMsgSet
+	IBFTCommits  *ibftMsgSet
 
 	pendingRequest *Request
 	preparedRound  *big.Int

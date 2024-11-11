@@ -41,7 +41,7 @@ func (e *Engine) Author(header *types.Header) (common.Address, error) {
 }
 
 func (e *Engine) CommitHeader(header *types.Header, seals [][]byte, round *big.Int) error {
-	return ApplyHeaderQBFTExtra(
+	return ApplyHeaderIBFTExtra(
 		header,
 		writeCommittedSeals(seals),
 		writeRoundNumber(round),
@@ -49,8 +49,8 @@ func (e *Engine) CommitHeader(header *types.Header, seals [][]byte, round *big.I
 }
 
 // writeCommittedSeals writes the extra-data field of a block header with given committed seals.
-func writeCommittedSeals(committedSeals [][]byte) ApplyQBFTExtra {
-	return func(qbftExtra *types.QBFTExtra) error {
+func writeCommittedSeals(committedSeals [][]byte) ApplyIBFTExtra {
+	return func(ibftExtra *types.IBFTExtra) error {
 		if len(committedSeals) == 0 {
 			return istanbulcommon.ErrInvalidCommittedSeals
 		}
@@ -61,17 +61,17 @@ func writeCommittedSeals(committedSeals [][]byte) ApplyQBFTExtra {
 			}
 		}
 
-		qbftExtra.CommittedSeal = make([][]byte, len(committedSeals))
-		copy(qbftExtra.CommittedSeal, committedSeals)
+		ibftExtra.CommittedSeal = make([][]byte, len(committedSeals))
+		copy(ibftExtra.CommittedSeal, committedSeals)
 
 		return nil
 	}
 }
 
 // writeRoundNumber writes the extra-data field of a block header with given round.
-func writeRoundNumber(round *big.Int) ApplyQBFTExtra {
-	return func(qbftExtra *types.QBFTExtra) error {
-		qbftExtra.Round = uint32(round.Uint64())
+func writeRoundNumber(round *big.Int) ApplyIBFTExtra {
+	return func(ibftExtra *types.IBFTExtra) error {
+		ibftExtra.Round = uint32(round.Uint64())
 		return nil
 	}
 }
@@ -119,7 +119,7 @@ func (e *Engine) verifyHeader(chain consensus.ChainHeaderReader, header *types.H
 		return consensus.ErrFutureBlock
 	}
 
-	if _, err := types.ExtractQBFTExtra(header); err != nil {
+	if _, err := types.ExtractIBFTExtra(header); err != nil {
 		return istanbulcommon.ErrInvalidExtraDataFormat
 	}
 
@@ -240,7 +240,7 @@ func (e *Engine) verifyCommittedSeals(chain consensus.ChainHeaderReader, header 
 		return nil
 	}
 
-	extra, err := types.ExtractQBFTExtra(header)
+	extra, err := types.ExtractIBFTExtra(header)
 	if err != nil {
 		return err
 	}
@@ -324,15 +324,15 @@ func (e *Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 	}
 
 	// add validators in snapshot to extraData's validators section
-	return ApplyHeaderQBFTExtra(
+	return ApplyHeaderIBFTExtra(
 		header,
 		WriteValidators(validator.SortedAddresses(validators.List())),
 	)
 }
 
-func WriteValidators(validators []common.Address) ApplyQBFTExtra {
-	return func(qbftExtra *types.QBFTExtra) error {
-		qbftExtra.Validators = validators
+func WriteValidators(validators []common.Address) ApplyIBFTExtra {
+	return func(ibftExtra *types.IBFTExtra) error {
+		ibftExtra.Validators = validators
 		return nil
 	}
 }
@@ -384,7 +384,7 @@ func (e *Engine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, 
 }
 
 func (e *Engine) Validators(header *types.Header) ([]common.Address, error) {
-	extra, err := types.ExtractQBFTExtra(header)
+	extra, err := types.ExtractIBFTExtra(header)
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +393,7 @@ func (e *Engine) Validators(header *types.Header) ([]common.Address, error) {
 }
 
 func (e *Engine) Signers(header *types.Header) ([]common.Address, error) {
-	extra, err := types.ExtractQBFTExtra(header)
+	extra, err := types.ExtractIBFTExtra(header)
 	if err != nil {
 		return []common.Address{}, err
 	}
@@ -428,7 +428,7 @@ func (e *Engine) Address() common.Address {
 // or not), which could be abused to produce different hashes for the same header.
 func sigHash(header *types.Header) (hash common.Hash) {
 	hasher := sha3.NewLegacyKeccak256()
-	rlp.Encode(hasher, types.QBFTFilteredHeader(header))
+	rlp.Encode(hasher, types.IBFTFilteredHeader(header))
 	hasher.Sum(hash[:0])
 	return hash
 }
@@ -436,47 +436,47 @@ func sigHash(header *types.Header) (hash common.Hash) {
 // PrepareCommittedSeal returns a committed seal for the given hash
 func PrepareCommittedSeal(header *types.Header, round uint32) []byte {
 	h := types.CopyHeader(header)
-	return h.QBFTHashWithRoundNumber(round).Bytes()
+	return h.IBFTHashWithRoundNumber(round).Bytes()
 }
 
 func (e *Engine) WriteVote(header *types.Header, candidate common.Address, authorize bool) error {
-	return ApplyHeaderQBFTExtra(
+	return ApplyHeaderIBFTExtra(
 		header,
 		WriteVote(candidate, authorize),
 	)
 }
 
-func WriteVote(candidate common.Address, authorize bool) ApplyQBFTExtra {
-	return func(qbftExtra *types.QBFTExtra) error {
-		voteType := types.QBFTDropVote
+func WriteVote(candidate common.Address, authorize bool) ApplyIBFTExtra {
+	return func(ibftExtra *types.IBFTExtra) error {
+		voteType := types.IBFTDropVote
 		if authorize {
-			voteType = types.QBFTAuthVote
+			voteType = types.IBFTAuthVote
 		}
 
 		vote := &types.ValidatorVote{RecipientAddress: candidate, VoteType: voteType}
-		qbftExtra.Vote = vote
+		ibftExtra.Vote = vote
 		return nil
 	}
 }
 
 func (e *Engine) ReadVote(header *types.Header) (candidate common.Address, authorize bool, err error) {
-	qbftExtra, err := getExtra(header)
+	ibftExtra, err := getExtra(header)
 	if err != nil {
 		return common.Address{}, false, err
 	}
 
 	var vote *types.ValidatorVote
-	if qbftExtra.Vote == nil {
-		vote = &types.ValidatorVote{RecipientAddress: common.Address{}, VoteType: types.QBFTDropVote}
+	if ibftExtra.Vote == nil {
+		vote = &types.ValidatorVote{RecipientAddress: common.Address{}, VoteType: types.IBFTDropVote}
 	} else {
-		vote = qbftExtra.Vote
+		vote = ibftExtra.Vote
 	}
 
 	// Tally up the new vote from the validator
 	switch {
-	case vote.VoteType == types.QBFTAuthVote:
+	case vote.VoteType == types.IBFTAuthVote:
 		authorize = true
-	case vote.VoteType == types.QBFTDropVote:
+	case vote.VoteType == types.IBFTDropVote:
 		authorize = false
 	default:
 		return common.Address{}, false, istanbulcommon.ErrInvalidVote
@@ -485,11 +485,11 @@ func (e *Engine) ReadVote(header *types.Header) (candidate common.Address, autho
 	return vote.RecipientAddress, authorize, nil
 }
 
-func getExtra(header *types.Header) (*types.QBFTExtra, error) {
+func getExtra(header *types.Header) (*types.IBFTExtra, error) {
 	if len(header.Extra) < types.IstanbulExtraVanity {
-		// In this scenario, the header extradata only contains client specific information, hence create a new qbftExtra and set vanity
+		// In this scenario, the header extradata only contains client specific information, hence create a new ibftExtra and set vanity
 		vanity := append(header.Extra, bytes.Repeat([]byte{0x00}, types.IstanbulExtraVanity-len(header.Extra))...)
-		return &types.QBFTExtra{
+		return &types.IBFTExtra{
 			VanityData:    vanity,
 			Validators:    []common.Address{},
 			CommittedSeal: [][]byte{},
@@ -499,11 +499,11 @@ func getExtra(header *types.Header) (*types.QBFTExtra, error) {
 	}
 
 	// This is the case when Extra has already been set
-	return types.ExtractQBFTExtra(header)
+	return types.ExtractIBFTExtra(header)
 }
 
-func setExtra(h *types.Header, qbftExtra *types.QBFTExtra) error {
-	payload, err := rlp.EncodeToBytes(qbftExtra)
+func setExtra(h *types.Header, ibftExtra *types.IBFTExtra) error {
+	payload, err := rlp.EncodeToBytes(ibftExtra)
 	if err != nil {
 		return err
 	}

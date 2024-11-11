@@ -275,11 +275,11 @@ func (c *CliqueConfig) String() string {
 // IBFTConfig is the consensus engine configs for Istanbul based sealing.
 type IBFTConfig struct {
 	EpochLength              uint64 `json:"epochlength"`              // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds       uint64 `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds    uint64 `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT or QBFT round in seconds
-	MaxRequestTimeoutSeconds uint64 `json:"maxrequesttimeoutseconds"` // Maximum request timeout for each IBFT or QBFT round in seconds
+	BlockPeriodSeconds       uint64 `json:"blockperiodseconds"`       // Minimum time between two consecutive IBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds    uint64 `json:"requesttimeoutseconds"`    // Minimum request timeout for each IBFT round in seconds
+	MaxRequestTimeoutSeconds uint64 `json:"maxrequesttimeoutseconds"` // Maximum request timeout for each IBFT round in seconds
 	ProposerPolicy           uint64 `json:"policy"`                   // The policy for proposer selection
-	AllowedFutureBlockTime   uint64 `json:"allowedfutureblocktime"`   //Allowed number of seconds a timestamp can be in the future before it's considered a future block'
+	AllowedFutureBlockTime   uint64 `json:"allowedfutureblocktime"`   // Allowed number of seconds a timestamp can be in the future before it's considered a future block'
 }
 
 func (c IBFTConfig) String() string {
@@ -289,9 +289,9 @@ func (c IBFTConfig) String() string {
 type Transition struct {
 	Block                              *big.Int       `json:"block"`
 	EpochLength                        uint64         `json:"epochlength,omitempty"`              // Number of blocks that should pass before pending validator votes are reset
-	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT or QBFT blocks’ timestamps in seconds
-	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT or QBFT round in seconds
-	MaxRequestTimeoutSeconds           uint64         `json:"maxrequesttimeoutseconds,omitempty"` // Maximum request timeout for each IBFT or QBFT round in seconds
+	BlockPeriodSeconds                 uint64         `json:"blockperiodseconds,omitempty"`       // Minimum time between two consecutive IBFT blocks’ timestamps in seconds
+	RequestTimeoutSeconds              uint64         `json:"requesttimeoutseconds,omitempty"`    // Minimum request timeout for each IBFT round in seconds
+	MaxRequestTimeoutSeconds           uint64         `json:"maxrequesttimeoutseconds,omitempty"` // Maximum request timeout for each IBFT round in seconds
 	PriorityTransactorsContractAddress common.Address `json:"prioritytransactorscontractaddress"` // Smart contract address for priority transactors
 	AllowedFutureBlockTime             uint64         `json:"allowedfutureblocktime,omitempty"`
 }
