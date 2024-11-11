@@ -158,6 +158,11 @@ func (h *Header) IBFTHashWithRoundNumber(round uint32) common.Hash {
 	return rlpHash(IBFTFilteredHeaderWithRound(h, round))
 }
 
+// EBFTHashWithRoundNumber gets the hash of the Header with Only commit seal set to its null value
+func (h *Header) EBFTHashWithRoundNumber(round uint32) common.Hash {
+	return rlpHash(EBFTFilteredHeaderWithRound(h, round))
+}
+
 // EmptyBody returns true if there is no additional 'body' to complete the header
 // that is: no transactions and no uncles.
 func (h *Header) EmptyBody() bool {
