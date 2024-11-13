@@ -139,7 +139,7 @@ func (c *core) startNewRound(round *big.Int) {
 
 	c.cleanLogger.Info("=====================================================")
 
-	logger.Info("[Consensus]: Initializing new round")
+	logger.Info("[Consensus|EBFT]: Initializing new round")
 
 	if c.current == nil {
 		logger.Debug("EBFT: start at the initial round")
@@ -196,7 +196,7 @@ func (c *core) startNewRound(round *big.Int) {
 	c.valSet.CalcProposer(lastProposer, newView.Round.Uint64())
 	c.setState(StateAcceptRequest)
 
-	c.cleanLogger.Info("[Consensus]: Proposer selected", "proposer", c.valSet.GetProposer().Address())
+	c.cleanLogger.Info("[Consensus|EBFT]: Proposer selected", "proposer", c.valSet.GetProposer().Address())
 
 	if c.current != nil && round.Cmp(c.current.Round()) > 0 {
 		roundMeter.Mark(new(big.Int).Sub(round, c.current.Round()).Int64())
@@ -228,7 +228,7 @@ func (c *core) setState(state State) {
 	if c.state != state {
 		oldState := c.state
 		c.state = state
-		c.currentLogger(false, nil).Trace("[Consensus]: State changed", "from", oldState.String(), "to", state.String())
+		c.currentLogger(false, nil).Trace("[Consensus|EBFT]: State changed", "from", oldState.String(), "to", state.String())
 	}
 	if state == StateAcceptRequest {
 		c.processPendingRequests()
@@ -291,7 +291,7 @@ func (c *core) newRoundChangeTimer() {
 	}
 
 	c.currentLogger(true, nil).Trace("EBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
-	c.cleanLogger.Info("[Consensus]: Start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
+	c.cleanLogger.Info("[Consensus|EBFT]: Start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.roundChangeTimer = time.AfterFunc(timeout, func() {
 		c.sendEvent(timeoutEvent{round: round})
 	})

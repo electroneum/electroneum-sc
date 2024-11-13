@@ -26,6 +26,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	ebfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ebft/types"
 	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/p2p"
@@ -51,7 +52,7 @@ func (sb *Backend) Protocol() consensus.Protocol {
 }
 
 func (sb *Backend) decode(msg p2p.Msg) ([]byte, common.Hash, error) {
-	var data []byte = make([]byte, msg.Size)
+	data := make([]byte, msg.Size)
 	if _, err := msg.Payload.Read(data); err != nil {
 		return nil, common.Hash{}, errPayloadReadFailed
 	}
@@ -62,7 +63,15 @@ func (sb *Backend) decode(msg p2p.Msg) ([]byte, common.Hash, error) {
 func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 	sb.coreMu.Lock()
 	defer sb.coreMu.Unlock()
-	if _, ok := ibfttypes.MessageCodes()[msg.Code]; ok || msg.Code == istanbulMsg {
+
+	ok := false
+	if sb.IsEBFTConsensus() {
+		_, ok = ebfttypes.MessageCodes()[msg.Code]
+	} else {
+		_, ok = ibfttypes.MessageCodes()[msg.Code]
+	}
+
+	if ok || msg.Code == istanbulMsg {
 		if !sb.coreStarted {
 			return true, istanbul.ErrStoppedEngine
 		}

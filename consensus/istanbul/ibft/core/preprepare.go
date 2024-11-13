@@ -47,7 +47,7 @@ func (c *core) sendPreprepareMsg(request *Request) {
 		preprepare := ibfttypes.NewPreprepare(curView.Sequence, curView.Round, request.Proposal)
 		preprepare.SetSource(c.Address())
 
-		c.logger.Info("[Consensus]: Proposing new block", "sequence", curView.Sequence.Uint64())
+		c.logger.Info("[Consensus|IBFT]: Proposing new block", "sequence", curView.Sequence.Uint64())
 
 		// Sign payload
 		encodedPayload, err := preprepare.EncodePayloadForSigning()
@@ -115,14 +115,14 @@ func (c *core) handlePreprepareMsg(preprepare *ibfttypes.Preprepare) error {
 
 	// Validates PRE-PREPARE message comes from current proposer
 	if !c.valSet.IsProposer(preprepare.Source()) {
-		logger.Warn("[Consensus]: Ignore PRE-PREPARE message from non proposer", "proposer", c.valSet.GetProposer().Address())
+		logger.Warn("[Consensus|IBFT]: Ignore PRE-PREPARE message from non proposer", "proposer", c.valSet.GetProposer().Address())
 		return errNotFromProposer
 	}
 
 	// Validates PRE-PREPARE message justification
 	if preprepare.Round.Uint64() > 0 {
 		if err := isJustified(preprepare.Proposal, preprepare.JustificationRoundChanges, preprepare.JustificationPrepares, c.QuorumSize()); err != nil {
-			logger.Warn("[Consensus]: Invalid PRE-PREPARE message justification", "err", err)
+			logger.Warn("[Consensus|IBFT]: Invalid PRE-PREPARE message justification", "err", err)
 			return errInvalidPreparedBlock
 		}
 	}
@@ -131,7 +131,7 @@ func (c *core) handlePreprepareMsg(preprepare *ibfttypes.Preprepare) error {
 	if duration, err := c.backend.Verify(preprepare.Proposal); err != nil {
 		// if it's a future block, we will handle it again after the duration
 		if err == consensus.ErrFutureBlock {
-			logger.Warn("[Consensus]: PRE-PREPARE block proposal is in the future (will be treated again later)", "duration", duration)
+			logger.Warn("[Consensus|IBFT]: PRE-PREPARE block proposal is in the future (will be treated again later)", "duration", duration)
 
 			// start a timer to re-input PRE-PREPARE message as a backlog event
 			c.stopFuturePreprepareTimer()
@@ -143,7 +143,7 @@ func (c *core) handlePreprepareMsg(preprepare *ibfttypes.Preprepare) error {
 				})
 			})
 		} else {
-			logger.Warn("[Consensus]: Invalid PRE-PREPARE block proposal", "err", err)
+			logger.Warn("[Consensus|IBFT]: Invalid PRE-PREPARE block proposal", "err", err)
 		}
 
 		return err
@@ -160,7 +160,7 @@ func (c *core) handlePreprepareMsg(preprepare *ibfttypes.Preprepare) error {
 		c.current.SetPreprepare(preprepare)
 		c.setState(StatePreprepared)
 
-		c.cleanLogger.Info("[Consensus]: <- Received PRE-PREPARE message from proposer", "author", preprepare.Source())
+		c.cleanLogger.Info("[Consensus|IBFT]: <- Received PRE-PREPARE message from proposer", "author", preprepare.Source())
 
 		// Broadcast prepare message to other validators
 		c.broadcastPrepare()

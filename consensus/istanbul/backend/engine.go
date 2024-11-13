@@ -324,8 +324,20 @@ func (sb *Backend) Start(chain consensus.ChainHeaderReader, currentBlock func() 
 	sb.currentBlock = currentBlock
 	sb.hasBadBlock = hasBadBlock
 
-	// Check if ibft Consensus needs to be used after chain is set
-	if err := sb.startIBFT(); err != nil {
+	// Wait for chain to be set
+	for sb.chain == nil {
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Check if qbft Consensus needs to be used after chain is set
+	var err error
+	if sb.IsEBFTConsensus() {
+		err = sb.startEBFT()
+	} else {
+		err = sb.startIBFT()
+	}
+
+	if err != nil {
 		return err
 	}
 

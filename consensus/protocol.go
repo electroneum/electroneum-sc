@@ -13,15 +13,16 @@ import (
 const (
 	eth66       = 66
 	Istanbul100 = 100
+	Istanbul101 = 101
 )
 
 var (
 	IstanbulProtocol = Protocol{
 		Name:     "etn-istanbul",
-		Versions: []uint{Istanbul100},
+		Versions: []uint{Istanbul100, Istanbul101},
 		// istanbul/100 has to have 22 message to be backwards compatible although at the p2p layer it only has
 		// 1 message with msg.Code 17
-		Lengths: map[uint]uint64{Istanbul100: 22},
+		Lengths: map[uint]uint64{Istanbul100: 22, Istanbul101: 26},
 	}
 
 	CliqueProtocol = Protocol{

@@ -26,6 +26,9 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	ebftcore "github.com/electroneum/electroneum-sc/consensus/istanbul/ebft/core"
+	ebftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/ebft/engine"
+	ebfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ebft/types"
 	ibftcore "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/core"
 	ibftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/engine"
 	ibfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/ibft/types"
@@ -71,6 +74,7 @@ func New(config istanbul.Config, privateKey *ecdsa.PrivateKey, db ethdb.Database
 	}
 
 	sb.ibftEngine = ibftengine.NewEngine(sb.config, sb.address, sb.Sign)
+	sb.ebftEngine = ebftengine.NewEngine(sb.config, sb.address, sb.Sign)
 
 	return sb
 }
@@ -86,6 +90,7 @@ type Backend struct {
 	core istanbul.Core
 
 	ibftEngine *ibftengine.Engine
+	ebftEngine *ebftengine.Engine
 
 	istanbulEventMux *event.TypeMux
 
@@ -120,6 +125,8 @@ type Backend struct {
 
 	recentMessages *lru.ARCCache // the cache of peer's messages
 	knownMessages  *lru.ARCCache // the cache of self messages
+
+	ebftConsensusEnabled bool // whether ebft consensus is enabled
 }
 
 func (sb *Backend) Engine() istanbul.Engine {
@@ -127,7 +134,14 @@ func (sb *Backend) Engine() istanbul.Engine {
 }
 
 func (sb *Backend) EngineForBlockNumber(blockNumber *big.Int) istanbul.Engine {
-	return sb.ibftEngine
+	switch {
+	case blockNumber != nil && sb.IsEBFTConsensusAt(blockNumber):
+		return sb.ebftEngine
+	case blockNumber == nil && sb.IsEBFTConsensus():
+		return sb.ebftEngine
+	default:
+		return sb.ibftEngine
+	}
 }
 
 // zekun: HACK
@@ -188,8 +202,14 @@ func (sb *Backend) Gossip(valSet istanbul.ValidatorSet, code uint64, payload []b
 			sb.recentMessages.Add(addr, m)
 
 			var outboundCode uint64 = istanbulMsg
-			if _, ok := ibfttypes.MessageCodes()[code]; ok {
-				outboundCode = code
+			if sb.IsEBFTConsensus() {
+				if _, ok := ebfttypes.MessageCodes()[code]; ok {
+					outboundCode = code
+				}
+			} else {
+				if _, ok := ibfttypes.MessageCodes()[code]; ok {
+					outboundCode = code
+				}
 			}
 			go p.SendIBFTConsensus(outboundCode, payload)
 		}
@@ -202,7 +222,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// Check if the proposal is a valid block
 	block, ok := proposal.(*types.Block)
 	if !ok {
-		sb.logger.Error("IBFT: invalid block proposal", "proposal", proposal)
+		sb.logger.Error("[Consensus]: Invalid block proposal", "proposal", proposal)
 		return istanbulcommon.ErrInvalidProposal
 	}
 
@@ -219,7 +239,7 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// update block's header
 	block = block.WithSeal(h)
 
-	sb.logger.Trace("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
+	sb.logger.Trace("[Consensus]: Block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
 
 	// - if the proposed and committed blocks are the same, send the proposed hash
 	//   to commit channel, which is being watched inside the engine.Seal() function.
@@ -332,7 +352,7 @@ func (sb *Backend) LastProposal() (istanbul.Proposal, common.Address) {
 		var err error
 		proposer, err = sb.Author(block.Header())
 		if err != nil {
-			sb.logger.Error("IBFT: last block proposal invalid", "err", err)
+			sb.logger.Error("[Consensus]: Last block proposal invalid", "err", err)
 			return nil, common.Address{}
 		}
 	}
@@ -352,14 +372,51 @@ func (sb *Backend) Close() error {
 	return nil
 }
 
+// IsEBFTConsensus returns whether ebft consensus should be used
+func (sb *Backend) IsEBFTConsensus() bool {
+	if sb.ebftConsensusEnabled {
+		return true
+	}
+	if sb.chain != nil {
+		ebftEnabled := sb.IsEBFTConsensusAt(sb.chain.CurrentHeader().Number)
+		sb.ebftConsensusEnabled = ebftEnabled
+		return ebftEnabled
+	}
+	return false
+}
+
+// IsEBFTConsensusForHeader checks if ebft consensus is enabled for the block height identified by the given header
+func (sb *Backend) IsEBFTConsensusAt(blockNumber *big.Int) bool {
+	if sb.chain == nil {
+		return false
+	}
+	return sb.chain.Config().IsBrasilia(blockNumber)
+}
+
 func (sb *Backend) startIBFT() error {
-	sb.logger.Info("IBFT: activate IBFT")
-	sb.logger.Trace("IBFT: set ProposerPolicy sorter to ValidatorSortByByteFunc")
+	sb.logger.Info("[Consensus]: Activate IBFT")
+	sb.logger.Trace("[Consensus]: Set ProposerPolicy sorter to ValidatorSortByByteFunc")
 	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
+	sb.ebftConsensusEnabled = false
 
 	sb.core = ibftcore.New(sb, sb.config)
 	if err := sb.core.Start(); err != nil {
-		sb.logger.Error("IBFT: failed to activate IBFT", "err", err)
+		sb.logger.Error("[Consensus]: Failed to activate IBFT", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+func (sb *Backend) startEBFT() error {
+	sb.logger.Info("[Consensus]: Activate EBFT")
+	sb.logger.Trace("[Consensus]: Set ProposerPolicy sorter to ValidatorSortByByteFunc")
+	sb.config.ProposerPolicy.Use(istanbul.ValidatorSortByByte())
+	sb.ebftConsensusEnabled = true
+
+	sb.core = ebftcore.New(sb, sb.config)
+	if err := sb.core.Start(); err != nil {
+		sb.logger.Error("[Consensus]: Failed to activate EBFT", "err", err)
 		return err
 	}
 
@@ -371,12 +428,14 @@ func (sb *Backend) stop() error {
 	sb.core = nil
 
 	if core != nil {
-		sb.logger.Info("IBFT: deactivate")
+		sb.logger.Info("[Consensus]: Deactivating")
 		if err := core.Stop(); err != nil {
-			sb.logger.Error("IBFT: failed to deactivate", "err", err)
+			sb.logger.Error("[Consensus]: Failed to deactivate", "err", err)
 			return err
 		}
 	}
+
+	sb.ebftConsensusEnabled = false
 
 	return nil
 }
@@ -388,4 +447,14 @@ func (sb *Backend) StartIBFTConsensus() error {
 	}
 
 	return sb.startIBFT()
+}
+
+// StartEBFTConsensus stops existing legacy ibft consensus and starts the new ebft consensus
+func (sb *Backend) StartEBFTConsensus() error {
+	sb.logger.Info("[Consensus]: Switch from IBFT to EBFT")
+	if err := sb.stop(); err != nil {
+		return err
+	}
+
+	return sb.startEBFT()
 }

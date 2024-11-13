@@ -29,7 +29,6 @@ import (
 
 // Start implements core.Engine.Start
 func (c *core) Start() error {
-	c.logger.Info("IBFT: start")
 	// Tests will handle events itself, so we have to make subscribeEvents()
 	// be able to call in test.
 	c.subscribeEvents()
@@ -233,7 +232,7 @@ func (c *core) handleTimeoutMsg() {
 	round := c.current.Round()
 	nextRound := new(big.Int).Add(round, common.Big1)
 
-	logger.Warn("[Consensus]: Round reached timeout", "pr", c.current.preparedRound)
+	logger.Warn("[Consensus|IBFT]: Round reached timeout", "pr", c.current.preparedRound)
 	c.startNewRound(nextRound)
 	logger.Trace("IBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
 

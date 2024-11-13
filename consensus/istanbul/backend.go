@@ -78,4 +78,10 @@ type Backend interface {
 
 	// StartIBFTConsensus stops existing legacy ibft consensus and starts the new ibft consensus
 	StartIBFTConsensus() error
+
+	// StartEBFTConsensus stops existing legacy ebft consensus and starts the new ebft consensus
+	StartEBFTConsensus() error
+
+	// IsEBFTConsensusAt returns whether ebft consensus is enabled for the block height identified by the given header
+	IsEBFTConsensusAt(blockNumber *big.Int) bool
 }

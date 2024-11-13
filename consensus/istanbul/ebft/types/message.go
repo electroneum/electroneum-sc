@@ -7,10 +7,10 @@ import (
 
 // EBFT message codes
 const (
-	PreprepareCode  = 0x12
-	PrepareCode     = 0x13
-	CommitCode      = 0x14
-	RoundChangeCode = 0x15
+	PreprepareCode  = 0x16
+	PrepareCode     = 0x17
+	CommitCode      = 0x18
+	RoundChangeCode = 0x19
 )
 
 // A set containing the messages codes for all EBFT messages.

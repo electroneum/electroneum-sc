@@ -16,14 +16,26 @@
 
 package core
 
-import "github.com/electroneum/electroneum-sc/common"
+import (
+	"math/big"
+
+	"github.com/electroneum/electroneum-sc/common"
+)
 
 func (c *core) handleFinalCommitted() error {
 	c.currentLogger(true, nil).Trace("IBFT: handle final committed")
 
 	// Stopping the timer, so that round changes do not happen
 	c.stopTimer()
-	c.startNewRound(common.Big0)
+
+	nextSeq := new(big.Int).Add(c.currentView().Sequence, big.NewInt(1))
+	// startNewRound() needs to be called asynchronously when the transition to ebft happens
+	// This is required so that the stop() on core can successfully unsubscribe from events
+	if c.backend.IsEBFTConsensusAt(nextSeq) {
+		go c.startNewRound(common.Big0)
+	} else {
+		c.startNewRound(common.Big0)
+	}
 
 	return nil
 }

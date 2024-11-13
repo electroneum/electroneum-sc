@@ -70,50 +70,50 @@ func (p *SignedRoundChangePayload) EncodeRLP(w io.Writer) error {
 func (p *SignedRoundChangePayload) DecodeRLP(stream *rlp.Stream) error {
 	// Signed Payload
 	if _, err := stream.List(); err != nil {
-		log.Trace("[Consensus]: Error List() Signed Payload", "err", err)
+		log.Trace("[Consensus|IBFT]: Error List() Signed Payload", "err", err)
 		return err
 	}
 
 	// Payload
 	encodedPayload, err := stream.Raw()
 	if err != nil {
-		log.Error("[Consensus]: Error Raw()", "err", err)
+		log.Error("[Consensus|IBFT]: Error Raw()", "err", err)
 		return err
 	}
 
 	payloadStream := rlp.NewStream(bytes.NewReader(encodedPayload), 0)
 
 	if _, err = payloadStream.List(); err != nil {
-		log.Error("[Consensus]: Error List() Payload", "err", err)
+		log.Error("[Consensus|IBFT]: Error List() Payload", "err", err)
 		return err
 	}
 
 	if err = payloadStream.Decode(&p.Sequence); err != nil {
-		log.Error("[Consensus]: Error Decode(&m.Sequence)", "err", err)
+		log.Error("[Consensus|IBFT]: Error Decode(&m.Sequence)", "err", err)
 		return err
 	}
 	if err = payloadStream.Decode(&p.Round); err != nil {
-		log.Error("[Consensus]: Error Decode(&m.Round)", "err", err)
+		log.Error("[Consensus|IBFT]: Error Decode(&m.Round)", "err", err)
 		return err
 	}
 
 	// Prepared
 	var size uint64
 	if size, err = payloadStream.List(); err != nil {
-		log.Error("[Consensus]: Error List() Prepared", "err", err)
+		log.Error("[Consensus|IBFT]: Error List() Prepared", "err", err)
 		return err
 	}
 	if size > 0 {
 		if err = payloadStream.Decode(&p.PreparedRound); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.PreparedRound)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.PreparedRound)", "err", err)
 			return err
 		}
 		if err = payloadStream.Decode(&p.PreparedDigest); err != nil {
-			log.Error("[Consensus]: Error Decode(&p.PreparedDigest)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&p.PreparedDigest)", "err", err)
 			return err
 		}
 		if err = payloadStream.Decode(&p.HasBadProposal); err != nil {
-			log.Error("[Consensus]: Error Decode(&p.HasBadProposal)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&p.HasBadProposal)", "err", err)
 			return err
 		}
 	}
@@ -137,7 +137,7 @@ func (p *SignedRoundChangePayload) DecodeRLP(stream *rlp.Stream) error {
 
 	p.code = RoundChangeCode
 
-	log.Trace("[Consensus]: Correctly decoded SignedRoundChangePayload", "p", p)
+	log.Trace("[Consensus|IBFT]: Correctly decoded SignedRoundChangePayload", "p", p)
 
 	return nil
 }
@@ -197,50 +197,50 @@ func (m *RoundChange) DecodeRLP(stream *rlp.Stream) error {
 
 	// Signed Payload
 	if _, err = stream.List(); err != nil {
-		log.Trace("[Consensus]: Error List() Signed Payload", "err", err)
+		log.Trace("[Consensus|IBFT]: Error List() Signed Payload", "err", err)
 		return err
 	}
 
 	// Payload
 	encodedPayload, err := stream.Raw()
 	if err != nil {
-		log.Error("[Consensus]: Error Raw()", "err", err)
+		log.Error("[Consensus|IBFT]: Error Raw()", "err", err)
 		return err
 	}
 
 	payloadStream := rlp.NewStream(bytes.NewReader(encodedPayload), 0)
 
 	if _, err = payloadStream.List(); err != nil {
-		log.Error("[Consensus]: Error List() Payload", "err", err)
+		log.Error("[Consensus|IBFT]: Error List() Payload", "err", err)
 		return err
 	}
 
 	if err = payloadStream.Decode(&m.Sequence); err != nil {
-		log.Error("[Consensus]: Error Decode(&m.Sequence)", "err", err)
+		log.Error("[Consensus|IBFT]: Error Decode(&m.Sequence)", "err", err)
 		return err
 	}
 	if err = payloadStream.Decode(&m.Round); err != nil {
-		log.Error("[Consensus]: Error Decode(&m.Round)", "err", err)
+		log.Error("[Consensus|IBFT]: Error Decode(&m.Round)", "err", err)
 		return err
 	}
 
 	// Prepared
 	var size uint64
 	if size, err = payloadStream.List(); err != nil {
-		log.Error("[Consensus]: Error List() Prepared", "err", err)
+		log.Error("[Consensus|IBFT]: Error List() Prepared", "err", err)
 		return err
 	}
 	if size > 0 {
 		if err = payloadStream.Decode(&m.PreparedRound); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.PreparedRound)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.PreparedRound)", "err", err)
 			return err
 		}
 		if err = payloadStream.Decode(&m.PreparedDigest); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.PreparedDigest)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.PreparedDigest)", "err", err)
 			return err
 		}
 		if err = payloadStream.Decode(&m.HasBadProposal); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.HasBadProposal)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.HasBadProposal)", "err", err)
 			return err
 		}
 	}
@@ -263,37 +263,37 @@ func (m *RoundChange) DecodeRLP(stream *rlp.Stream) error {
 	}
 
 	if _, size, err = stream.Kind(); err != nil {
-		log.Error("[Consensus]: Error Kind()", "err", err)
+		log.Error("[Consensus|IBFT]: Error Kind()", "err", err)
 		return err
 	}
 	if size == 0 {
 		if _, err = stream.Raw(); err != nil {
-			log.Error("[Consensus]: Error Raw()", "err", err)
+			log.Error("[Consensus|IBFT]: Error Raw()", "err", err)
 			return err
 		}
 	} else {
 		if err = stream.Decode(&m.PreparedBlock); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.PreparedDigest)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.PreparedDigest)", "err", err)
 			return err
 		}
 		if m.PreparedBlock.Hash() != m.PreparedDigest {
-			log.Error("[Consensus]: Error m.PreparedDigest.Hash() != digest")
+			log.Error("[Consensus|IBFT]: Error m.PreparedDigest.Hash() != digest")
 			return istanbulcommon.ErrFailedDecodePreprepare
 		}
 	}
 
 	if _, size, err = stream.Kind(); err != nil {
-		log.Error("[Consensus]: Error Kind()", "err", err)
+		log.Error("[Consensus|IBFT]: Error Kind()", "err", err)
 		return err
 	}
 	if size == 0 {
 		if _, err = stream.Raw(); err != nil {
-			log.Error("[Consensus]: Error Raw()", "err", err)
+			log.Error("[Consensus|IBFT]: Error Raw()", "err", err)
 			return err
 		}
 	} else {
 		if err = stream.Decode(&m.Justification); err != nil {
-			log.Error("[Consensus]: Error Decode(&m.Justification)", "err", err)
+			log.Error("[Consensus|IBFT]: Error Decode(&m.Justification)", "err", err)
 			return err
 		}
 	}

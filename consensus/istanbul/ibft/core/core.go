@@ -139,7 +139,7 @@ func (c *core) startNewRound(round *big.Int) {
 
 	c.cleanLogger.Info("=====================================================")
 
-	logger.Info("[Consensus]: Initializing new round")
+	logger.Info("[Consensus|IBFT]: Initializing new round")
 
 	if c.current == nil {
 		logger.Debug("IBFT: start at the initial round")
@@ -189,6 +189,16 @@ func (c *core) startNewRound(round *big.Int) {
 		c.valSet = c.backend.Validators(lastProposal)
 	}
 
+	// If new round is 0, then check if qbftConsensus needs to be enabled
+	if round.Uint64() == 0 && c.backend.IsEBFTConsensusAt(newView.Sequence) {
+		logger.Trace("Starting ebft consensus as ebftBlock has passed")
+		if err := c.backend.StartEBFTConsensus(); err != nil {
+			// If err is returned, then QBFT consensus is started for the next block
+			logger.Error("Unable to start EBFT Consensus, retrying for the next block", "error", err)
+		}
+		return
+	}
+
 	// New snapshot for new round
 	c.updateRoundState(newView, c.valSet, roundChange)
 
@@ -196,7 +206,7 @@ func (c *core) startNewRound(round *big.Int) {
 	c.valSet.CalcProposer(lastProposer, newView.Round.Uint64())
 	c.setState(StateAcceptRequest)
 
-	c.cleanLogger.Info("[Consensus]: Proposer selected", "proposer", c.valSet.GetProposer().Address())
+	c.cleanLogger.Info("[Consensus|IBFT]: Proposer selected", "proposer", c.valSet.GetProposer().Address())
 
 	if c.current != nil && round.Cmp(c.current.Round()) > 0 {
 		roundMeter.Mark(new(big.Int).Sub(round, c.current.Round()).Int64())
@@ -228,7 +238,7 @@ func (c *core) setState(state State) {
 	if c.state != state {
 		oldState := c.state
 		c.state = state
-		c.currentLogger(false, nil).Trace("[Consensus]: State changed", "from", oldState.String(), "to", state.String())
+		c.currentLogger(false, nil).Trace("[Consensus|IBFT]: State changed", "from", oldState.String(), "to", state.String())
 	}
 	if state == StateAcceptRequest {
 		c.processPendingRequests()
@@ -258,6 +268,10 @@ func (c *core) stopTimer() {
 
 func (c *core) newRoundChangeTimer() {
 	c.stopTimer()
+
+	for c.current == nil { // wait because it is asynchronous in handleRequest
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// set timeout based on the round number
 	baseTimeout := time.Duration(c.config.GetConfig(c.current.Sequence()).RequestTimeoutSeconds) * time.Second
@@ -291,7 +305,7 @@ func (c *core) newRoundChangeTimer() {
 	}
 
 	c.currentLogger(true, nil).Trace("IBFT: start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
-	c.cleanLogger.Info("[Consensus]: Start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
+	c.cleanLogger.Info("[Consensus|IBFT]: Start new ROUND-CHANGE timer", "timeout", timeout.Seconds())
 	c.roundChangeTimer = time.AfterFunc(timeout, func() {
 		c.sendEvent(timeoutEvent{round: round})
 	})
