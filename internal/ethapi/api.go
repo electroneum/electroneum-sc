@@ -183,6 +183,19 @@ func (s *PublicEthereumAPI) findBlockHeightForTimestamp(ctx context.Context, tim
 // GetTaxData fetches transactions in the specified time range which Electroneum validated and writes them to a CSV file
 // startTime & endTime are Unix Timestamps
 // excludeThirdPartyValidators is a slice of third party validator pubkeys in all lower case
+// To ensure you dont timeout on the request, use --rpc.evmtimeout 0
+// Example:
+//~/electroneum-sc: curl -X POST --data '{
+//"jsonrpc": "2.0",
+//"method": "eth_getTaxData",
+//"params": [
+//["0x2e4014c4d0038a8018ec44c6ce00bd6ba5da7b1d"],
+//1719788400,
+//1730419199
+//],
+//"id": 1
+//}' -H "Content-Type: application/json" http://localhost:8545
+
 func (s *PublicEthereumAPI) GetTaxData(ctx context.Context, excludeThirdPartyValidators []string, startTime uint64, endTime uint64) (string, error) {
 
 	// First get the start and end blocks for the timeframe and determine their height.
