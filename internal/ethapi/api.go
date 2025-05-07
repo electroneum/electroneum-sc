@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -179,7 +180,6 @@ func (s *PublicEthereumAPI) findBlockHeightForTimestamp(ctx context.Context, tim
 	}
 }
 
-
 // GetTaxData fetches transactions in the specified time range which Electroneum validated and writes them to a CSV file
 // startTime & endTime are Unix Timestamps
 // excludeThirdPartyValidators is a slice of third party validator pubkeys in all lower case
@@ -196,9 +196,14 @@ func (s *PublicEthereumAPI) findBlockHeightForTimestamp(ctx context.Context, tim
 //"id": 1
 //}' -H "Content-Type: application/json" http://localhost:8545
 
-func (s *PublicEthereumAPI) GetTaxData(ctx context.Context, excludeThirdPartyValidators []string, startTime uint64, endTime uint64) (string, error) {
+func (s *PublicEthereumAPI) GetTaxData(
+	ctx context.Context,
+	excludeThirdPartyValidators []string,
+	startTime uint64,
+	endTime uint64,
+) (string, error) {
 
-	// First get the start and end blocks for the timeframe and determine their height.
+	// -------- existing setup -----------------------------------------------
 	startHeight, err := s.findBlockHeightForTimestamp(ctx, startTime, true)
 	if err != nil {
 		return "Error finding start block", err
@@ -216,60 +221,87 @@ func (s *PublicEthereumAPI) GetTaxData(ctx context.Context, excludeThirdPartyVal
 		AmountSent *big.Float
 	}
 
-	// Loop over the blocks, pull all transactions and write their information to a slice of structs ready for csv
+	// -------- NEW: London tz + stats struct ---------------------------------
+	type monthStat struct {
+		Count uint64
+		Fee   *big.Float // running sum in Ether
+	}
+	london, _ := time.LoadLocation("Europe/London")
+	monthlyStats := make(map[string]*monthStat) // "YYYY‑MM" → stats
+	// ------------------------------------------------------------------------
+
 	for i := startHeight; i <= endHeight; i++ {
-		block, err := s.b.BlockByNumber(context.Background(), i)
+		block, err := s.b.BlockByNumber(ctx, i)
 		if err != nil {
 			return "Error fetching block", err
 		}
 
-		// If the coinbase is inside excludeThirdPartyValidators, skip this block
-		exclude := false
-		for _, validator := range excludeThirdPartyValidators{
-			if strings.ToLower(block.Header().Coinbase.Hex()) == validator{
-				exclude = true
+		skip := false
+		for _, v := range excludeThirdPartyValidators {
+			if strings.ToLower(block.Header().Coinbase.Hex()) == v {
+				skip = true
+				break
 			}
 		}
-		if exclude {
+		if skip {
 			continue
 		}
 
 		baseFee := block.BaseFee()
+		monthKey := time.Unix(int64(block.Time()), 0).In(london).Format("2006-01")
 
 		for _, tx := range block.Transactions() {
-			if tx.To() == nil {
-				continue // Skip coinbase transactions
+			if tx.To() == nil { // coinbase tx
+				continue
+			}
+			if tx.EffectiveGasTipValue(baseFee).Sign() == 0 {
+				continue
 			}
 
-			if tx.EffectiveGasTipValue(baseFee).Cmp(big.NewInt(0)) != 0 { //  we only want tx with tips
-				allDetails = append(allDetails, struct {
-					Height     uint64
-					Timestamp  string
-					TxID       common.Hash
-					Fee        *big.Float
-					AmountSent *big.Float
-				}{
-					Height:     block.NumberU64(),
-					Timestamp:  time.Unix(int64(block.Time()), 0).Format(time.RFC3339), // Convert and format the timestamp
-					TxID:       tx.Hash(),
-					Fee:        new(big.Float).Quo(new(big.Float).SetInt(tx.EffectiveGasTipValue(baseFee)), big.NewFloat(1e18)), // Convert Wei to Ether
-					AmountSent: new(big.Float).Quo(new(big.Float).SetInt(tx.Value()), big.NewFloat(1e18)),                       // Convert Wei to Ether
-				})
+			// Calculate tip in Ether once so we reuse it
+			feeEth := new(big.Float).Quo(
+				new(big.Float).SetInt(tx.EffectiveGasTipValue(baseFee)),
+				big.NewFloat(1e18),
+			)
+
+			// ------------- NEW: update monthly stats -----------------------
+			stat, ok := monthlyStats[monthKey]
+			if !ok {
+				stat = &monthStat{Fee: new(big.Float)}
+				monthlyStats[monthKey] = stat
 			}
+			stat.Count++
+			stat.Fee.Add(stat.Fee, feeEth) // accumulate fee
+			// ----------------------------------------------------------------
+
+			// keep building CSV data (unchanged)
+			allDetails = append(allDetails, struct {
+				Height     uint64
+				Timestamp  string
+				TxID       common.Hash
+				Fee        *big.Float
+				AmountSent *big.Float
+			}{
+				Height:     block.NumberU64(),
+				Timestamp:  time.Unix(int64(block.Time()), 0).Format(time.RFC3339),
+				TxID:       tx.Hash(),
+				Fee:        feeEth,
+				AmountSent: new(big.Float).Quo(new(big.Float).SetInt(tx.Value()), big.NewFloat(1e18)),
+			})
 		}
 	}
 
-	file, err := os.Create("transactions.csv")
+	// -------- existing CSV dump (unchanged) ---------------------------------
+	csvFile, err := os.Create("transactions.csv")
 	if err != nil {
 		return "Error creating CSV file", err
 	}
-	defer file.Close()
+	defer csvFile.Close()
 
-	writer := csv.NewWriter(file)
+	writer := csv.NewWriter(csvFile)
 	defer writer.Flush()
 
 	writer.Write([]string{"Height", "Timestamp", "TxID", "Fee", "AmountSent"})
-
 	for _, d := range allDetails {
 		writer.Write([]string{
 			fmt.Sprintf("%d", d.Height),
@@ -280,7 +312,29 @@ func (s *PublicEthereumAPI) GetTaxData(ctx context.Context, excludeThirdPartyVal
 		})
 	}
 
-	return "CSV file created successfully", nil
+	// -------- NEW: accounting statistics file -------------------------------
+	statsFile, err := os.Create("accountingstatistics.txt")
+	if err != nil {
+		return "Error creating accounting statistics file", err
+	}
+	defer statsFile.Close()
+
+	// write in chronological order
+	var months []string
+	for m := range monthlyStats {
+		months = append(months, m)
+	}
+	sort.Strings(months)
+
+	// header row (optional—remove if accountant doesn't want it)
+	fmt.Fprintln(statsFile, "Month,TxCount,TotalTips(Ether)")
+
+	for _, m := range months {
+		s := monthlyStats[m]
+		fmt.Fprintf(statsFile, "%s,%d,%s\n", m, s.Count, s.Fee.Text('f', 9))
+	}
+
+	return "CSV file and accounting statistics created successfully", nil
 }
 
 // Syncing returns false in case the node is currently not syncing with the network. It can be up to date or has not
