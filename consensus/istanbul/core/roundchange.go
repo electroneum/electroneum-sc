@@ -103,17 +103,12 @@ func (c *core) broadcastRoundChange(round *big.Int) {
 // - when quorum of ROUND-CHANGE messages is reached then
 func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 	logger := c.currentLogger(true, roundChange)
-
 	view := roundChange.View()
 	currentRound := c.currentView().Round
 
-	// number of validators we received ROUND-CHANGE from for a round higher than the current one
-	num := c.roundChangeSet.higherRoundMessages(currentRound)
-
 	// number of validators we received ROUND-CHANGE from for the current round
 	currentRoundMessages := c.roundChangeSet.getRCMessagesForGivenRound(currentRound)
-
-	logger.Trace("IBFT: handle ROUND-CHANGE message", "higherRoundChanges.count", num, "currentRoundChanges.count", currentRoundMessages)
+	logger.Trace("IBFT: handle ROUND-CHANGE message", "currentRoundChanges.count", currentRoundMessages)
 
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
@@ -132,24 +127,20 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		}
 	}
 
-	// number of validators we received ROUND-CHANGE from for a round higher than the current one
-	num = c.roundChangeSet.higherRoundMessages(currentRound)
-
 	// number of validators we received ROUND-CHANGE from for the current round
 	currentRoundMessages = c.roundChangeSet.getRCMessagesForGivenRound(currentRound)
+	logger = logger.New("currentRoundChanges.count", currentRoundMessages)
 
-	logger = logger.New("higherRoundChanges.count", num, "currentRoundChanges.count", currentRoundMessages)
-
-	if num == c.valSet.F()+1 {
-		// We received F+1 ROUND-CHANGE messages (this may happen before our timeout exprired)
-		// we start new round and broadcast ROUND-CHANGE message
-		newRound := c.roundChangeSet.getMinRoundChange(currentRound)
-
-		logger.Trace("[Consensus]: Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
-		c.cleanLogger.Info("[Consensus]: <- Received F+1 ROUND-CHANGE messages", "F", c.valSet.F())
-
-		c.startNewRound(newRound)
-		c.broadcastRoundChange(newRound)
+	// If there exists some round > currentRound with at least F+1 RCs,
+	// jump to the MINIMUM such round (do not aggregate heterogeneous higher rounds).
+	target := c.roundChangeSet.MinRoundAboveWithAtLeast(currentRound, c.valSet.F()+1)
+	if target != nil {
+		logger.Trace("[Consensus]: Received >=F+1 ROUND-CHANGE messages for target round",
+			"F", c.valSet.F(), "target", target)
+		c.cleanLogger.Info("[Consensus]: <- Received >=F+1 ROUND-CHANGE messages for round",
+			"round", target, "threshold", c.valSet.F()+1)
+		c.startNewRound(target)
+		c.broadcastRoundChange(target)
 	} else if currentRoundMessages >= c.QuorumSize() && c.IsProposer() && c.current.preprepareSent.Cmp(currentRound) < 0 {
 		logger.Trace("[Consensus]: Received quorum of ROUND-CHANGE messages")
 		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())
@@ -200,6 +191,24 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())
 	}
 	return nil
+}
+
+// MinRoundAboveWithAtLeast returns the minimum round above the given round with enough supporting ROUND-CHANGE messages
+func (rcs *roundChangeSet) MinRoundAboveWithAtLeast(cur *big.Int, num int) *big.Int {
+	rcs.mu.Lock()
+	defer rcs.mu.Unlock()
+
+	var candidates []uint64
+	for k, rms := range rcs.roundChanges {
+		if cur.Uint64() < k && rms.Size() >= num {
+			candidates = append(candidates, k)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
+	return big.NewInt(int64(candidates[0]))
 }
 
 // highestPrepared returns the highest Prepared Round and the corresponding Prepared Block
@@ -266,23 +275,6 @@ func (rcs *roundChangeSet) Add(r *big.Int, msg qbfttypes.QBFTMessage, preparedRo
 	return nil
 }
 
-// higherRoundMessages returns the count of validators we received a ROUND-CHANGE message from
-// for any round greater than the given round
-func (rcs *roundChangeSet) higherRoundMessages(round *big.Int) int {
-	rcs.mu.Lock()
-	defer rcs.mu.Unlock()
-
-	addresses := make(map[common.Address]struct{})
-	for k, rms := range rcs.roundChanges {
-		if k > round.Uint64() {
-			for addr := range rms.messages {
-				addresses[addr] = struct{}{}
-			}
-		}
-	}
-	return len(addresses)
-}
-
 // getRCMessagesForGivenRound return the count ROUND-CHANGE messages
 // received for a given round
 func (rcs *roundChangeSet) getRCMessagesForGivenRound(round *big.Int) int {
@@ -293,24 +285,6 @@ func (rcs *roundChangeSet) getRCMessagesForGivenRound(round *big.Int) int {
 		return len(rms.messages)
 	}
 	return 0
-}
-
-// getMinRoundChange returns the minimum round greater than the given round
-func (rcs *roundChangeSet) getMinRoundChange(round *big.Int) *big.Int {
-	rcs.mu.Lock()
-	defer rcs.mu.Unlock()
-
-	var keys []int
-	for k := range rcs.roundChanges {
-		if k > round.Uint64() {
-			keys = append(keys, int(k))
-		}
-	}
-	sort.Ints(keys)
-	if len(keys) == 0 {
-		return round
-	}
-	return big.NewInt(int64(keys[0]))
 }
 
 // ClearLowerThan deletes the messages for round earlier than the given round
