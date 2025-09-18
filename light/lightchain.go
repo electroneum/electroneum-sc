@@ -483,8 +483,8 @@ func (lc *LightChain) HasHeader(hash common.Hash, number uint64) bool {
 }
 
 // GetCanonicalHash returns the canonical hash for a given block number
-func (bc *LightChain) GetCanonicalHash(number uint64) common.Hash {
-	return bc.hc.GetCanonicalHash(number)
+func (lc *LightChain) GetCanonicalHash(number uint64) common.Hash {
+	return lc.hc.GetCanonicalHash(number)
 }
 
 // GetAncestor retrieves the Nth ancestor of a given block. It assumes that either the given block or

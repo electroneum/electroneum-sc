@@ -234,12 +234,12 @@ func (b *basketItem) DecodeRLP(s *rlp.Stream) error {
 }
 
 // EncodeRLP implements rlp.Encoder
-func (r *requestBasket) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, []interface{}{r.items, r.exp})
+func (b *requestBasket) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, []interface{}{b.items, b.exp})
 }
 
 // DecodeRLP implements rlp.Decoder
-func (r *requestBasket) DecodeRLP(s *rlp.Stream) error {
+func (b *requestBasket) DecodeRLP(s *rlp.Stream) error {
 	var enc struct {
 		Items []basketItem
 		Exp   uint64
@@ -247,7 +247,7 @@ func (r *requestBasket) DecodeRLP(s *rlp.Stream) error {
 	if err := s.Decode(&enc); err != nil {
 		return err
 	}
-	r.items, r.exp = enc.Items, enc.Exp
+	b.items, b.exp = enc.Items, enc.Exp
 	return nil
 }
 
@@ -256,7 +256,7 @@ func (r *requestBasket) DecodeRLP(s *rlp.Stream) error {
 // the one used when saving the basket then this function reorders old fields and fills
 // in previously unknown fields by scaling up amounts and values taken from the
 // initialization basket.
-func (r requestBasket) convertMapping(oldMapping, newMapping []string, initBasket requestBasket) requestBasket {
+func (b requestBasket) convertMapping(oldMapping, newMapping []string, initBasket requestBasket) requestBasket {
 	nameMap := make(map[string]int)
 	for i, name := range oldMapping {
 		nameMap[name] = i
@@ -265,7 +265,7 @@ func (r requestBasket) convertMapping(oldMapping, newMapping []string, initBaske
 	var scale, oldScale, newScale float64
 	for i, name := range newMapping {
 		if ii, ok := nameMap[name]; ok {
-			rc.items[i] = r.items[ii]
+			rc.items[i] = b.items[ii]
 			oldScale += float64(initBasket.items[i].amount) * float64(initBasket.items[i].amount)
 			newScale += float64(rc.items[i].amount) * float64(initBasket.items[i].amount)
 		}

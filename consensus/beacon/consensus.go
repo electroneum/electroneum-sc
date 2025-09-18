@@ -373,6 +373,6 @@ func IsTTDReached(chain consensus.ChainHeaderReader, parentHash common.Hash, num
 }
 
 // Protocol implements consensus.Engine.Protocol
-func (c *Beacon) Protocol() consensus.Protocol {
+func (beacon *Beacon) Protocol() consensus.Protocol {
 	return consensus.CliqueProtocol
 }
