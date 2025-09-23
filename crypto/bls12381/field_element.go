@@ -39,7 +39,7 @@ type fe6 [3]fe2
 // Representation follows c[0] + c[1] * w encoding order.
 type fe12 [2]fe6
 
-func (fe *fe) setBytes(in []byte) *fe {
+func (e *fe) setBytes(in []byte) *fe {
 	size := 48
 	l := len(in)
 	if l >= size {
@@ -50,19 +50,19 @@ func (fe *fe) setBytes(in []byte) *fe {
 	var a int
 	for i := 0; i < 6; i++ {
 		a = size - i*8
-		fe[i] = uint64(padded[a-1]) | uint64(padded[a-2])<<8 |
+		e[i] = uint64(padded[a-1]) | uint64(padded[a-2])<<8 |
 			uint64(padded[a-3])<<16 | uint64(padded[a-4])<<24 |
 			uint64(padded[a-5])<<32 | uint64(padded[a-6])<<40 |
 			uint64(padded[a-7])<<48 | uint64(padded[a-8])<<56
 	}
-	return fe
+	return e
 }
 
-func (fe *fe) setBig(a *big.Int) *fe {
-	return fe.setBytes(a.Bytes())
+func (e *fe) setBig(a *big.Int) *fe {
+	return e.setBytes(a.Bytes())
 }
 
-func (fe *fe) setString(s string) (*fe, error) {
+func (e *fe) setString(s string) (*fe, error) {
 	if s[:2] == "0x" {
 		s = s[2:]
 	}
@@ -70,104 +70,104 @@ func (fe *fe) setString(s string) (*fe, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fe.setBytes(bytes), nil
+	return e.setBytes(bytes), nil
 }
 
-func (fe *fe) set(fe2 *fe) *fe {
-	fe[0] = fe2[0]
-	fe[1] = fe2[1]
-	fe[2] = fe2[2]
-	fe[3] = fe2[3]
-	fe[4] = fe2[4]
-	fe[5] = fe2[5]
-	return fe
+func (e *fe) set(e2 *fe) *fe {
+	e[0] = e2[0]
+	e[1] = e2[1]
+	e[2] = e2[2]
+	e[3] = e2[3]
+	e[4] = e2[4]
+	e[5] = e2[5]
+	return e
 }
 
-func (fe *fe) bytes() []byte {
+func (e *fe) bytes() []byte {
 	out := make([]byte, 48)
 	var a int
 	for i := 0; i < 6; i++ {
 		a = 48 - i*8
-		out[a-1] = byte(fe[i])
-		out[a-2] = byte(fe[i] >> 8)
-		out[a-3] = byte(fe[i] >> 16)
-		out[a-4] = byte(fe[i] >> 24)
-		out[a-5] = byte(fe[i] >> 32)
-		out[a-6] = byte(fe[i] >> 40)
-		out[a-7] = byte(fe[i] >> 48)
-		out[a-8] = byte(fe[i] >> 56)
+		out[a-1] = byte(e[i])
+		out[a-2] = byte(e[i] >> 8)
+		out[a-3] = byte(e[i] >> 16)
+		out[a-4] = byte(e[i] >> 24)
+		out[a-5] = byte(e[i] >> 32)
+		out[a-6] = byte(e[i] >> 40)
+		out[a-7] = byte(e[i] >> 48)
+		out[a-8] = byte(e[i] >> 56)
 	}
 	return out
 }
 
-func (fe *fe) big() *big.Int {
-	return new(big.Int).SetBytes(fe.bytes())
+func (e *fe) big() *big.Int {
+	return new(big.Int).SetBytes(e.bytes())
 }
 
-func (fe *fe) string() (s string) {
+func (e *fe) string() (s string) {
 	for i := 5; i >= 0; i-- {
-		s = fmt.Sprintf("%s%16.16x", s, fe[i])
+		s = fmt.Sprintf("%s%16.16x", s, e[i])
 	}
 	return "0x" + s
 }
 
-func (fe *fe) zero() *fe {
-	fe[0] = 0
-	fe[1] = 0
-	fe[2] = 0
-	fe[3] = 0
-	fe[4] = 0
-	fe[5] = 0
-	return fe
+func (e *fe) zero() *fe {
+	e[0] = 0
+	e[1] = 0
+	e[2] = 0
+	e[3] = 0
+	e[4] = 0
+	e[5] = 0
+	return e
 }
 
-func (fe *fe) one() *fe {
-	return fe.set(r1)
+func (e *fe) one() *fe {
+	return e.set(r1)
 }
 
-func (fe *fe) rand(r io.Reader) (*fe, error) {
+func (e *fe) rand(r io.Reader) (*fe, error) {
 	bi, err := rand.Int(r, modulus.big())
 	if err != nil {
 		return nil, err
 	}
-	return fe.setBig(bi), nil
+	return e.setBig(bi), nil
 }
 
-func (fe *fe) isValid() bool {
-	return fe.cmp(&modulus) < 0
+func (e *fe) isValid() bool {
+	return e.cmp(&modulus) < 0
 }
 
-func (fe *fe) isOdd() bool {
+func (e *fe) isOdd() bool {
 	var mask uint64 = 1
-	return fe[0]&mask != 0
+	return e[0]&mask != 0
 }
 
-func (fe *fe) isEven() bool {
+func (e *fe) isEven() bool {
 	var mask uint64 = 1
-	return fe[0]&mask == 0
+	return e[0]&mask == 0
 }
 
-func (fe *fe) isZero() bool {
-	return (fe[5] | fe[4] | fe[3] | fe[2] | fe[1] | fe[0]) == 0
+func (e *fe) isZero() bool {
+	return (e[5] | e[4] | e[3] | e[2] | e[1] | e[0]) == 0
 }
 
-func (fe *fe) isOne() bool {
-	return fe.equal(r1)
+func (e *fe) isOne() bool {
+	return e.equal(r1)
 }
 
-func (fe *fe) cmp(fe2 *fe) int {
+func (e *fe) cmp(e2 *fe) int {
 	for i := 5; i >= 0; i-- {
-		if fe[i] > fe2[i] {
+		if e[i] > e2[i] {
 			return 1
-		} else if fe[i] < fe2[i] {
+		} else if e[i] < e2[i] {
 			return -1
 		}
 	}
 	return 0
 }
 
-func (fe *fe) equal(fe2 *fe) bool {
-	return fe2[0] == fe[0] && fe2[1] == fe[1] && fe2[2] == fe[2] && fe2[3] == fe[3] && fe2[4] == fe[4] && fe2[5] == fe[5]
+func (e *fe) equal(e2 *fe) bool {
+	return e2[0] == e[0] && e2[1] == e[1] && e2[2] == e[2] && e2[3] == e[3] && e2[4] == e[4] && e2[5] == e[5]
 }
 
 func (e *fe) sign() bool {
@@ -176,24 +176,24 @@ func (e *fe) sign() bool {
 	return r[0]&1 == 0
 }
 
-func (fe *fe) div2(e uint64) {
-	fe[0] = fe[0]>>1 | fe[1]<<63
-	fe[1] = fe[1]>>1 | fe[2]<<63
-	fe[2] = fe[2]>>1 | fe[3]<<63
-	fe[3] = fe[3]>>1 | fe[4]<<63
-	fe[4] = fe[4]>>1 | fe[5]<<63
-	fe[5] = fe[5]>>1 | e<<63
+func (e *fe) div2(u uint64) {
+	e[0] = e[0]>>1 | e[1]<<63
+	e[1] = e[1]>>1 | e[2]<<63
+	e[2] = e[2]>>1 | e[3]<<63
+	e[3] = e[3]>>1 | e[4]<<63
+	e[4] = e[4]>>1 | e[5]<<63
+	e[5] = e[5]>>1 | u<<63
 }
 
-func (fe *fe) mul2() uint64 {
-	e := fe[5] >> 63
-	fe[5] = fe[5]<<1 | fe[4]>>63
-	fe[4] = fe[4]<<1 | fe[3]>>63
-	fe[3] = fe[3]<<1 | fe[2]>>63
-	fe[2] = fe[2]<<1 | fe[1]>>63
-	fe[1] = fe[1]<<1 | fe[0]>>63
-	fe[0] = fe[0] << 1
-	return e
+func (e *fe) mul2() uint64 {
+	u := e[5] >> 63
+	e[5] = e[5]<<1 | e[4]>>63
+	e[4] = e[4]<<1 | e[3]>>63
+	e[3] = e[3]<<1 | e[2]>>63
+	e[2] = e[2]<<1 | e[1]>>63
+	e[1] = e[1]<<1 | e[0]>>63
+	e[0] = e[0] << 1
+	return u
 }
 
 func (e *fe2) zero() *fe2 {

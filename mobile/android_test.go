@@ -168,7 +168,7 @@ func TestAndroid(t *testing.T) {
 		if _, err := os.Stat(autopath); err != nil {
 			t.Skip("ANDROID_HOME environment var not set, skipping")
 		}
-		os.Setenv("ANDROID_HOME", autopath)
+		t.Setenv("ANDROID_HOME", autopath)
 	}
 	if _, err := exec.Command("which", "gomobile").CombinedOutput(); err != nil {
 		t.Log("gomobile missing, installing it...")
@@ -189,10 +189,8 @@ func TestAndroid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current working directory: %v", err)
 	}
-	if err := os.Chdir(workspace); err != nil {
-		t.Fatalf("failed to switch to temporary workspace: %v", err)
-	}
-	defer os.Chdir(pwd)
+	t.Chdir(workspace)
+	defer t.Chdir(pwd)
 
 	// Create the skeleton of the Android project
 	for _, dir := range []string{"src/main", "src/androidTest/java/org/ethereum/gethtest", "libs"} {

@@ -40,15 +40,15 @@ func (p *testTxRelay) Send(txs types.Transactions) {
 	p.send <- len(txs)
 }
 
-func (self *testTxRelay) NewHead(head common.Hash, mined []common.Hash, rollback []common.Hash) {
+func (p *testTxRelay) NewHead(head common.Hash, mined []common.Hash, rollback []common.Hash) {
 	m := len(mined)
 	if m != 0 {
-		self.mined <- m
+		p.mined <- m
 	}
 }
 
-func (self *testTxRelay) Discard(hashes []common.Hash) {
-	self.discard <- len(hashes)
+func (p *testTxRelay) Discard(hashes []common.Hash) {
+	p.discard <- len(hashes)
 }
 
 const (
