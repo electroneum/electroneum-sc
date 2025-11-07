@@ -270,8 +270,8 @@ func (e *Engine) verifyCommittedSeals(chain consensus.ChainHeaderReader, header 
 		return istanbulcommon.ErrInvalidCommittedSeals
 	}
 
-	// The length of validSeal should be larger than number of faulty node + 1
-	if validSeal <= validators.F() {
+	// IBFT/QBFT finalization requires at least 2F+1 valid committed seals
+	if validSeal < 2*validators.F()+1 {
 		return istanbulcommon.ErrInvalidCommittedSeals
 	}
 
