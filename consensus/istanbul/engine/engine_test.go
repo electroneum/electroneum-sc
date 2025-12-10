@@ -295,6 +295,104 @@ func TestQuorum_DoubleFinalization_MinoritySets(t *testing.T) {
 	}
 }
 
+func TestUnderQuorumBlockIsRejected(t *testing.T) {
+	// We check a couple of validator set sizes to cover F=1 and F=2
+	for _, N := range []int{4, 7} {
+		t.Run("N="+big.NewInt(int64(N)).String(), func(t *testing.T) {
+			F := (N - 1) / 3
+			minority := F + 1 // this is < 2F+1, i.e. under-quorum
+
+			// Sanity: for IBFT we must have 3F+1 validators
+			if 3*F+1 != N {
+				t.Fatalf("invalid test params: N=%d is not 3F+1 (F=%d)", N, F)
+			}
+
+			// --- 1) Generate N validators (keys + addresses) ---
+			keys := make([]*ecdsa.PrivateKey, N)
+			addrs := make([]common.Address, N)
+			for i := 0; i < N; i++ {
+				k, err := crypto.GenerateKey()
+				if err != nil {
+					t.Fatalf("keygen failed: %v", err)
+				}
+				keys[i] = k
+				addrs[i] = crypto.PubkeyToAddress(k.PublicKey)
+			}
+
+			// --- 2) Build a QBFT engine instance ---
+			engine := NewEngine(&istanbul.Config{}, addrs[0], func(data []byte) ([]byte, error) {
+				// signer fn isn't used in this verification-path test
+				return make([]byte, 65), nil
+			})
+
+			// --- 3) Build parent header at height 0 with validator set in extra-data ---
+			parent := &types.Header{
+				Number:     big.NewInt(0),
+				ParentHash: common.Hash{},
+				MixDigest:  types.IstanbulDigest,
+				Difficulty: istanbulcommon.DefaultDifficulty,
+				Coinbase:   addrs[0],
+				UncleHash:  types.EmptyUncleHash,
+				Time:       1,
+				GasLimit:   30_000_000,
+				GasUsed:    0,
+			}
+			if err := ApplyHeaderQBFTExtra(parent, WriteValidators(addrs), writeRoundNumber(big.NewInt(0))); err != nil {
+				t.Fatalf("failed to apply QBFT extra to parent: %v", err)
+			}
+
+			// --- 4) Build child header at height 1 ---
+			hdr := &types.Header{
+				Number:     big.NewInt(1),
+				ParentHash: parent.Hash(),
+				MixDigest:  types.IstanbulDigest,
+				Difficulty: istanbulcommon.DefaultDifficulty,
+				Coinbase:   addrs[0],
+				UncleHash:  types.EmptyUncleHash,
+				Time:       2,
+				GasLimit:   30_000_000,
+				GasUsed:    0,
+			}
+			if err := ApplyHeaderQBFTExtra(hdr, WriteValidators(addrs), writeRoundNumber(big.NewInt(1))); err != nil {
+				t.Fatalf("failed to apply QBFT extra to child header: %v", err)
+			}
+
+			// --- 5) Prepare commit hash and sign it with only F+1 validators (under quorum) ---
+			propSeal := PrepareCommittedSeal(hdr, 1) // round 1 commit hash
+
+			var seals [][]byte
+			for i := 0; i < minority; i++ {
+				sig, err := crypto.Sign(propSeal, keys[i])
+				if err != nil {
+					t.Fatalf("sign failed: %v", err)
+				}
+				seals = append(seals, sig)
+			}
+
+			// Write the under-quorum committed seals into the header extra-data
+			if err := ApplyHeaderQBFTExtra(
+				hdr,
+				WriteValidators(addrs),
+				writeRoundNumber(big.NewInt(1)),
+				writeCommittedSeals(seals),
+			); err != nil {
+				t.Fatalf("failed to write under-quorum committed seals: %v", err)
+			}
+
+			// --- 6) Build validator set and run VerifyHeader ---
+			valSet := validator.NewSet(addrs, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+
+			err := engine.VerifyHeader(nil, hdr, []*types.Header{parent}, valSet)
+			if err == nil {
+				t.Fatalf(
+					"BUG: N=%d (F=%d): block with only F+1 (%d) committed seals was ACCEPTED; should be rejected (requires 2F+1=%d)",
+					N, F, minority, 2*F+1,
+				)
+			}
+		})
+	}
+}
+
 // For N=4 and N=7, constructs a block signed by ≥ 2F+1 validators (the correct IBFT quorum)
 // and checks that VerifyHeader accepts it.
 // Ensures that after fixing the quorum rule, valid blocks still finalize correctly,
