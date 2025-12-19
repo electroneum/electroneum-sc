@@ -121,7 +121,7 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 
 	// Validates PRE-PREPARE message justification
 	if preprepare.Round.Uint64() > 0 {
-		if err := isJustified(preprepare.Proposal, preprepare.JustificationRoundChanges, preprepare.JustificationPrepares, c.QuorumSize()); err != nil {
+		if err := isJustified(preprepare.Proposal, preprepare.JustificationRoundChanges, preprepare.JustificationPrepares, c.QuorumSize(), c.valSet); err != nil {
 			logger.Warn("[Consensus]: Invalid PRE-PREPARE message justification", "err", err)
 			return errInvalidPreparedBlock
 		}

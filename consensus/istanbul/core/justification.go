@@ -21,15 +21,11 @@ func isJustified(
 	proposal istanbul.Proposal,
 	roundChangeMessages []*qbfttypes.SignedRoundChangePayload,
 	prepareMessages []*qbfttypes.Prepare,
-	quorumSize int) error {
+	quorumSize int,
+	validators istanbul.ValidatorSet) error {
 	// Check the size of the set of ROUND-CHANGE messages
 	if len(roundChangeMessages) < quorumSize {
 		return errors.New("number of roundchange messages is less than required quorum of messages")
-	}
-
-	// Check the size of the set of PREPARE messages
-	if len(prepareMessages) != 0 && len(prepareMessages) < quorumSize {
-		return errors.New("number of prepared messages is less than required quorum of messages")
 	}
 
 	// Count round change messages with "bad proposal" reason
@@ -39,18 +35,43 @@ func isJustified(
 			hasBadProposalCount++
 		}
 	}
-
-	// Set hasBadProposal if reached quorum
 	hasBadProposal := hasBadProposalCount >= uint(quorumSize)
 
-	// If there are PREPARE messages, they all need to have the same round and match `proposal`
+	// If there are PREPARE messages, require a quorum of DISTINCT, VALIDATOR-SET signers,
+	// and require round/digest consistency.
 	var preparedRound *big.Int
 	if len(prepareMessages) > 0 {
+		seen := make(map[common.Address]struct{}, len(prepareMessages))
+
 		preparedRound = prepareMessages[0].Round
-		for _, spp := range prepareMessages {
-			if preparedRound.Cmp(spp.Round) != 0 || (proposal.Hash() != spp.Digest && !hasBadProposal) {
+
+		for _, p := range prepareMessages {
+			// Must be same round and match proposal digest (unless bad-proposal quorum)
+			if preparedRound.Cmp(p.Round) != 0 || (proposal.Hash() != p.Digest && !hasBadProposal) {
 				return errors.New("prepared messages do not have same round or do not match proposal")
 			}
+
+			if preparedRound.Cmp(p.Round) != 0 || (proposal.Hash() != p.Digest && !hasBadProposal) {
+				return errors.New("prepared messages do not have same round or do not match proposal")
+			}
+
+			// Must have a verified source set ( verifysignatures() )
+			src := p.Source()
+			if src == (common.Address{}) {
+				return errors.New("prepared message has empty source (signature not verified)")
+			}
+
+			// Must be from a validator
+			if _, v := validators.GetByAddress(src); v == nil {
+				return errors.New("prepared message signer is not in validator set")
+			}
+
+			seen[src] = struct{}{}
+		}
+
+		// Must reach quorum of distinct signers
+		if len(seen) < quorumSize {
+			return errors.New("number of distinct prepared message signers is less than required quorum")
 		}
 	}
 
