@@ -44,8 +44,15 @@ func isJustified(
 		seen := make(map[common.Address]struct{}, len(prepareMessages))
 
 		preparedRound = prepareMessages[0].Round
+		if preparedRound == nil {
+			return errors.New("prepared message has nil round (preparedRound)")
+		}
 
 		for _, p := range prepareMessages {
+			if p.Round == nil {
+				return errors.New("prepared message has nil round")
+			}
+
 			// Must be same round and match proposal digest (unless bad-proposal quorum)
 			if preparedRound.Cmp(p.Round) != 0 || (proposal.Hash() != p.Digest && !hasBadProposal) {
 				return errors.New("prepared messages do not have same round or do not match proposal")
