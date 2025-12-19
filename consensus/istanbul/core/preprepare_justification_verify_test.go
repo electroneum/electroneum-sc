@@ -52,7 +52,7 @@ func TestVerifySignatures_PreprepareRejectsBadJustificationPrepares(t *testing.T
 		big.NewInt(1),
 		big.NewInt(0),
 		block.Hash(),
-		[]byte{0x00}, // invalid per validateFn
+		[]byte{0x00},     // invalid per validateFn
 		common.Address{}, // source is irrelevant; verifySignatures should authenticate it
 	)
 
