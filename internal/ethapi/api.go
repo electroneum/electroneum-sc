@@ -45,7 +45,7 @@ import (
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/rpc"
-	"github.com/tyler-smith/go-bip39"
+	"github.com/cosmos/go-bip39"
 )
 
 // PublicEthereumAPI provides an API to access Ethereum related information.
