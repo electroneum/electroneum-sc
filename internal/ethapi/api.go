@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmos/go-bip39"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/electroneum/electroneum-sc/accounts"
 	"github.com/electroneum/electroneum-sc/accounts/abi"
@@ -45,7 +46,6 @@ import (
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/rpc"
-	"github.com/cosmos/go-bip39"
 )
 
 // PublicEthereumAPI provides an API to access Ethereum related information.

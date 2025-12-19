@@ -139,7 +139,7 @@ func testParameterizedCase(
 		fmt.Printf("PR %v\n", m)
 	}
 	fmt.Println("roundChangeMessages", roundChangeMessages, len(roundChangeMessages))
-	if err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize); err == nil && !messageJustified {
+	if err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err == nil && !messageJustified {
 		t.Errorf("quorumSize = %v, rcForNil = %v, rcEqualToTargetRound = %v, rcLowerThanTargetRound = %v, rcHigherThanTargetRound = %v, preparesForTargetRound = %v, preparesNotForTargetRound = %v (Expected: %v, Actual: %v)",
 			quorumSize, rcForNil, rcEqualToTargetRound, rcLowerThanTargetRound, rcHigherThanTargetRound, preparesForTargetRound, preparesNotForTargetRound, err == nil, !messageJustified)
 	}
@@ -174,4 +174,144 @@ func makeBlock(number int64) *types.Block {
 	}
 	block := &types.Block{}
 	return block.WithSeal(header)
+}
+
+// -----------------------------------------------------------------------------
+// Regression tests for PRE-PREPARE justification PREPAREs
+// -----------------------------------------------------------------------------
+
+func TestIsJustified_AllowsNilPreparedRoundWithoutPrepares(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+
+	// Quorum=3 in a 4-validator set (typical IBFT/QBFT)
+	quorumSize := 3
+
+	// Build quorum ROUND-CHANGE messages indicating "no prepared certificate"
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i, v := range validatorSet.List() {
+		if i == quorumSize {
+			break
+		}
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(v.Address(), 10, 0, nil))
+	}
+
+	// No prepares is valid in the nil-preparedRound justification case
+	prepareMessages := []*qbfttypes.Prepare{}
+
+	if err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err != nil {
+		t.Fatalf("expected justification to succeed with nil preparedRound and no prepares; got: %v", err)
+	}
+}
+
+func TestIsJustified_RejectsPrepareWithEmptySource(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	// Need quorum ROUND-CHANGE messages overall
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i, v := range validatorSet.List() {
+		if i == quorumSize {
+			break
+		}
+		// PreparedRound nil/0 is fine; we’re testing prepareMessages validation.
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(v.Address(), 10, 0, nil))
+	}
+
+	// Create prepares that match round/digest BUT do NOT have Source set
+	// (this simulates "signature was never verified / SetSource never called")
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		p := qbfttypes.NewPrepare(big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash())
+		// Intentionally do NOT call p.SetSource(...)
+		prepareMessages = append(prepareMessages, p)
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected justification to fail due to empty prepare source, but got nil")
+	}
+}
+
+func TestIsJustified_RejectsPrepareSignerNotInValidatorSet(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i, v := range validatorSet.List() {
+		if i == quorumSize {
+			break
+		}
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(v.Address(), 10, 0, nil))
+	}
+
+	// Build quorum prepares but make one signer NOT in validator set
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i, v := range validatorSet.List() {
+		if i == quorumSize-1 {
+			break
+		}
+		prepareMessages = append(prepareMessages, qbfttypes.NewPrepareWithSigAndSource(
+			big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x01}, v.Address(),
+		))
+	}
+
+	// Add a prepare from a random address not in the set
+	privateKey, _ := crypto.GenerateKey()
+	notInSet := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+	prepareMessages = append(prepareMessages, qbfttypes.NewPrepareWithSigAndSource(
+		big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x02}, notInSet,
+	))
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected justification to fail due to non-validator prepare signer, but got nil")
+	}
+}
+
+func TestIsJustified_RejectsDuplicatePrepareSignersNotDistinctQuorum(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i, v := range validatorSet.List() {
+		if i == quorumSize {
+			break
+		}
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(v.Address(), 10, 0, nil))
+	}
+
+	// Use only 2 unique validator addresses but supply 3 prepare messages (quorumSize=3)
+	v0 := validatorSet.List()[0].Address()
+	v1 := validatorSet.List()[1].Address()
+
+	prepareMessages := []*qbfttypes.Prepare{
+		qbfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x01}, v0),
+		qbfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x02}, v0), // duplicate signer
+		qbfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x03}, v1),
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected justification to fail due to insufficient distinct prepare signers, but got nil")
+	}
 }
