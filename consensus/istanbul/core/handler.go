@@ -284,6 +284,13 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 				return err
 			}
 		}
+		// Verify the prepares provided inside the justification
+		signedPreparePayloads := msgType.JustificationPrepares
+		for _, p := range signedPreparePayloads {
+			if err := verify(p); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
