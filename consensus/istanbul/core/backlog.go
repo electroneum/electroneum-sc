@@ -17,9 +17,41 @@
 package core
 
 import (
+	"errors"
+	"math/big"
+
+	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"gopkg.in/karalabe/cookiejar.v2/collections/prque"
+)
+
+const (
+	// === Future Window Limits ===
+
+	// 32 blocks ahead is far beyond any legitimate async delivery.
+	// If you're 32 blocks behind, you need chain sync, not backlog.
+	MaxFutureSequenceGap uint64 = 32
+
+	// 50 rounds covers hours of continuous failed consensus.
+	// No legitimate scenario exceeds this.
+	MaxFutureRoundGap uint64 = 15
+
+	// === Memory Protection Limits ===
+
+	// Per-validator cap: 1024 messages ≈ 1MB per spoofed validator address.
+	// Generous enough for legitimate traffic bursts.
+	MaxBacklogPerValidator = 1024
+
+	// MinBacklogTotal: floor for small validator sets.
+	// Ensures small networks (e.g., 4 validators) still have reasonable capacity.
+	// 4096 messages ≈ 4MB minimum.
+	MinBacklogTotal = 4096
+
+	// MaxBacklogTotalCeiling: hard ceiling regardless of validator count.
+	// Prevents memory exhaustion in very large networks.
+	// 131072 messages ≈ 128MB maximum.
+	MaxBacklogTotalCeiling = 131072
 )
 
 var (
@@ -101,9 +133,51 @@ func (c *core) checkMessage(msgCode uint64, view *istanbul.View) error {
 	return nil
 }
 
-// addToBacklog allows to postpone the processing of future messages
+// isValidatorAddress checks if the given address is a current validator.
+func (c *core) isValidatorAddress(addr common.Address) bool {
+	if c.valSet == nil {
+		return false
+	}
+	_, v := c.valSet.GetByAddress(addr)
+	return v != nil
+}
 
-// it adds the message to backlog which is read on every state change
+// withinBacklogFutureWindow checks if a message is within acceptable future bounds.
+func (c *core) withinBacklogFutureWindow(msgCode uint64, view istanbul.View) bool {
+	if c.current == nil {
+		return false // not ready yet, drop message
+	}
+
+	cur := c.currentView()
+
+	// Same-sequence messages are commonly received early and should be allowed.
+	if view.Sequence.Cmp(cur.Sequence) == 0 {
+		// ROUND-CHANGE at same sequence can be spammed with huge future rounds. Cap it.
+		if msgCode == qbfttypes.RoundChangeCode {
+			maxRound := new(big.Int).Add(cur.Round, new(big.Int).SetUint64(MaxFutureRoundGap))
+			if view.Round.Cmp(maxRound) > 0 {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Not a backlog candidate if it's behind.
+	if view.Sequence.Cmp(cur.Sequence) < 0 {
+		return false
+	}
+
+	// Cap how far ahead by sequence we will backlog.
+	maxSeq := new(big.Int).Add(cur.Sequence, new(big.Int).SetUint64(MaxFutureSequenceGap))
+	if view.Sequence.Cmp(maxSeq) > 0 {
+		return false
+	}
+
+	return true
+}
+
+// addToBacklog stores a future message for later processing, subject to
+// validator verification, future window limits, and capacity caps.
 func (c *core) addToBacklog(msg qbfttypes.QBFTMessage) {
 	logger := c.currentLogger(true, msg)
 
@@ -113,24 +187,60 @@ func (c *core) addToBacklog(msg qbfttypes.QBFTMessage) {
 		return
 	}
 
-	logger.Trace("IBFT: new backlog message", "backlogs_size", len(c.backlogs))
+	// Drop messages that claim to be from non-validators.
+	// This prevents filling the backlogs map with arbitrary addresses.
+	if !c.isValidatorAddress(src) {
+		logger.Trace("IBFT: dropping backlog message from non-validator", "src", src)
+		return
+	}
+
+	view := msg.View()
+
+	// Drop far-future messages (including huge ROUND-CHANGE rounds at current sequence).
+	if !c.withinBacklogFutureWindow(msg.Code(), view) {
+		logger.Trace("IBFT: dropping far-future backlog message",
+			"src", src, "code", msg.Code(),
+			"view_seq", view.Sequence, "view_round", view.Round,
+			"cur_seq", c.currentView().Sequence, "cur_round", c.currentView().Round,
+		)
+		return
+	}
 
 	c.backlogsMu.Lock()
 	defer c.backlogsMu.Unlock()
+
+	// Global cap (dynamic based on validator count)
+	maxTotal := c.maxBacklogTotal()
+	if c.backlogsTotal >= maxTotal {
+		logger.Trace("IBFT: dropping backlog message (global cap reached)",
+			"cap", maxTotal, "total", c.backlogsTotal,
+		)
+		return
+	}
 
 	backlog := c.backlogs[src]
 	if backlog == nil {
 		backlog = prque.New()
 		c.backlogs[src] = backlog
 	}
-	view := msg.View()
+
+	// Per-validator cap
+	if backlog.Size() >= MaxBacklogPerValidator {
+		logger.Trace("IBFT: dropping backlog message (per-validator cap reached)",
+			"src", src, "cap", MaxBacklogPerValidator, "size", backlog.Size(),
+		)
+		return
+	}
+
 	backlog.Push(msg, toPriority(msg.Code(), &view))
+	c.backlogsTotal++
+
+	logger.Trace("IBFT: new backlog message", "backlogs_total", c.backlogsTotal, "src_backlog_size", backlog.Size())
 }
 
-// processBacklog lookup for future messages that have been backlogged and post it on
-// the event channel so main handler loop can handle it
-
-// It is called on every state change
+// processBacklog looks up future messages that have been backlogged and posts them on
+// the event channel so the main handler loop can handle them.
+// It is called on every state change.
 func (c *core) processBacklog() {
 	c.backlogsMu.Lock()
 	defer c.backlogsMu.Unlock()
@@ -139,51 +249,86 @@ func (c *core) processBacklog() {
 		if backlog == nil {
 			continue
 		}
+
+		// If the address is no longer a validator, drop its entire backlog.
 		_, src := c.valSet.GetByAddress(srcAddress)
 		if src == nil {
-			// validator is not available
+			c.backlogsTotal -= backlog.Size()
 			delete(c.backlogs, srcAddress)
 			continue
 		}
-		logger := c.logger.New("from", src, "state", c.state)
-		isFuture := false
 
+		logger := c.logger.New("from", src, "state", c.state)
 		logger.Trace("IBFT: process backlog")
 
-		// We stop processing if
-		//   1. backlog is empty
-		//   2. The first message in queue is a future message
-		for !(backlog.Empty() || isFuture) {
+		// Process until:
+		//  1) backlog is empty, OR
+		//  2) the next message is still a future message (we requeue it and stop)
+		for !backlog.Empty() {
 			m, prio := backlog.Pop()
-
-			var code uint64
-			var view istanbul.View
-			var event backlogEvent
+			c.backlogsTotal--
 
 			msg := m.(qbfttypes.QBFTMessage)
-			code = msg.Code()
-			view = msg.View()
-			event.msg = msg
+			code := msg.Code()
+			view := msg.View()
 
-			// Push back if it's a future message
+			// Push back if it's still a future message
 			err := c.checkMessage(code, &view)
 			if err != nil {
-				if err == errFutureMessage {
-					// this is still a future message
+				// Use errors.Is to be robust to wrapped errors.
+				if errors.Is(err, errFutureMessage) {
 					logger.Trace("IBFT: stop processing backlog", "msg", m)
-					backlog.Push(m, prio)
-					isFuture = true
+
+					// Requeue only if it still fits our window/caps (defensive).
+					if c.withinBacklogFutureWindow(code, view) &&
+						backlog.Size() < MaxBacklogPerValidator &&
+						c.backlogsTotal < c.maxBacklogTotal() {
+
+						backlog.Push(m, prio)
+						c.backlogsTotal++
+					}
 					break
 				}
+
+				// Old/invalid messages are dropped permanently.
 				logger.Trace("IBFT: skip backlog message", "msg", m, "err", err)
 				continue
 			}
+
 			logger.Trace("IBFT: post backlog event", "msg", m)
 
-			event.src = src
+			// Post backlog event for main handler loop
+			event := backlogEvent{
+				src: src,
+				msg: msg,
+			}
 			go c.sendEvent(event)
 		}
+
+		// Clean up empty queues
+		if backlog.Empty() {
+			delete(c.backlogs, srcAddress)
+		}
 	}
+}
+
+// maxBacklogTotal returns the dynamic maximum backlog size based on validator count.
+// This ensures fair allocation per validator while maintaining a hard memory ceiling.
+func (c *core) maxBacklogTotal() int {
+	if c.valSet == nil {
+		return MinBacklogTotal
+	}
+
+	// Allow 2x headroom so validators can burst while others are quiet
+	dynamic := c.valSet.Size() * MaxBacklogPerValidator * 2
+
+	if dynamic < MinBacklogTotal {
+		return MinBacklogTotal
+	}
+	if dynamic > MaxBacklogTotalCeiling {
+		return MaxBacklogTotalCeiling
+	}
+	return dynamic
 }
 
 func toPriority(msgCode uint64, view *istanbul.View) float32 {
