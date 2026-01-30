@@ -135,6 +135,18 @@ func hasMatchingRoundChangeAndPrepares(
 		return errors.New("number of prepare messages is less than quorum of messages")
 	}
 
+	// DoS hardening: justification cannot contain more prepares than there are validators
+	if len(prepareMessages) > validators.Size() {
+		return errors.New("too many prepare messages in justification")
+	}
+
+	if roundChange == nil {
+		return errors.New("roundchange is nil")
+	}
+	if roundChange.PreparedRound == nil {
+		return errors.New("roundchange has nil prepared round")
+	}
+
 	seen := make(map[common.Address]struct{}, len(prepareMessages))
 
 	for _, p := range prepareMessages {
@@ -148,14 +160,14 @@ func hasMatchingRoundChangeAndPrepares(
 		}
 
 		// Must match prepared round
-		if p.Round == nil || roundChange.PreparedRound == nil {
-			return errors.New("prepare/roundchange has nil round")
+		if p.Round == nil {
+			return errors.New("prepare message has nil round")
 		}
 		if p.Round.Cmp(roundChange.PreparedRound) != 0 {
 			return errors.New("round number in prepared message does not match prepared round in roundchange")
 		}
 
-		// Must have a verified source set (i.e., VerifySignatures ran)
+		// Must have a verified source set (i.e., verifySignatures ran)
 		src := p.Source()
 		if src == (common.Address{}) {
 			return errors.New("prepared message has empty source (signature not verified)")
