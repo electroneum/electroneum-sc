@@ -265,7 +265,7 @@ func (rcs *roundChangeSet) Add(r *big.Int, msg qbfttypes.QBFTMessage, preparedRo
 
 	if preparedRound != nil && (rcs.highestPreparedRound[round] == nil || preparedRound.Cmp(rcs.highestPreparedRound[round]) > 0) {
 		roundChange := msg.(*qbfttypes.RoundChange)
-		if hasMatchingRoundChangeAndPrepares(roundChange, prepareMessages, quorumSize, roundChange.HasBadProposal) == nil {
+		if hasMatchingRoundChangeAndPrepares(roundChange, prepareMessages, quorumSize, roundChange.HasBadProposal, rcs.validatorSet) == nil {
 			rcs.highestPreparedRound[round] = preparedRound
 			rcs.highestPreparedBlock[round] = preparedBlock
 			rcs.prepareMessages[round] = prepareMessages
