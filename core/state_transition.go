@@ -256,6 +256,7 @@ func (st *StateTransition) preCheck() error {
 			// as part of header validation.
 			//
 			// st.msg.PrioritySender() is already validated at this point
+			// needs fixing
 			if st.msg.PrioritySender() == (common.PublicKey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)

@@ -54,6 +54,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			MuirGlacierBlock:    big.NewInt(0),
 			BerlinBlock:         big.NewInt(0),
 			LondonBlock:         big.NewInt(0),
+			FutureForkBlock:     big.NewInt(math.MaxInt64),
 			Ethash:              new(params.EthashConfig),
 		}
 		signer  = types.LatestSigner(config)

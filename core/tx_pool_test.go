@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/electroneum/electroneum-sc/common/math"
 	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -106,6 +107,7 @@ func init() {
 	eip1559Config = &cpy
 	eip1559Config.BerlinBlock = common.Big0
 	eip1559Config.LondonBlock = common.Big0
+	eip1559Config.FutureForkBlock = big.NewInt(math.MaxInt64)
 }
 
 type testBlockChain struct {
