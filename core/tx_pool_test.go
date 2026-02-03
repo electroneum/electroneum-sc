@@ -175,6 +175,59 @@ func (bc *testBlockChain) GetPriorityTransactorsForState(header *types.Header, s
 	return priorityTransactorMap
 }
 
+func TestPriorityTxMustObserveBaseFeeWhenNoWaiver(t *testing.T) {
+	t.Parallel()
+
+	// Use the EIP-1559 chain config (London at block 0) and the test pool config
+	// already disables journaling.
+	pool, key := setupTxPoolWithConfig(eip1559Config)
+	defer pool.Stop()
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+
+	// Fund sender enough that only fee-validation can fail.
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	// Choose a base fee and force it into the pool's pricing logic.
+	// In this codebase, the urgent pricer baseFee is what admission/pricing uses.
+	baseFee := big.NewInt(1_000_000_000)
+	pool.priced.urgent.baseFee = new(big.Int).Set(baseFee)
+
+	// ---- Case 1: Non-waiver priority tx with fee cap below base fee should be rejected.
+	feeCapBelow := new(big.Int).Sub(baseFee, big.NewInt(1)) // baseFee - 1
+	txBad := priorityTx(
+		0,                      // nonce
+		21_000,                 // gas
+		feeCapBelow,            // fee cap (below base fee)
+		big.NewInt(1),          // tip (doesn't matter for baseFee rule)
+		key,                    // sender key
+		priorityPrivateKeys[0], // priority key (will be treated as non-waiver by setup)
+	)
+
+	if err := pool.AddRemote(txBad); !errors.Is(err, ErrFeeCapTooLow) {
+		t.Fatalf("expected %v, got %v", ErrFeeCapTooLow, err)
+	}
+
+	// ---- Case 2: Non-waiver priority tx with fee cap >= base fee should be accepted.
+	txGood := priorityTx(
+		0, // nonce (still 0, since txBad was rejected)
+		21_000,
+		new(big.Int).Set(baseFee), // fee cap meets base fee
+		big.NewInt(1),
+		key,
+		priorityPrivateKeys[0],
+	)
+
+	if err := pool.AddRemote(txGood); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	// Check pool invariants after acceptance.
+	if err := validateTxPoolInternals(pool); err != nil {
+		t.Fatalf("pool invariants failed: %v", err)
+	}
+}
+
 func transaction(nonce uint64, gaslimit uint64, key *ecdsa.PrivateKey) *types.Transaction {
 	return pricedTransaction(nonce, gaslimit, big.NewInt(1), key)
 }

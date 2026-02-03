@@ -702,10 +702,23 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPriorityKey
 		}
 		isGasWaiver = transactor.IsGasPriceWaiver
-		// Assure transaction gasprice, fee and tip are > 0 for non gas waiver transactors
-		if !isGasWaiver && tx.HasZeroFee() {
-			return errNoGasPriceWaiver
+		// Assure transaction meets fee requirements for non gas waiver transactors
+		if !isGasWaiver {
+			// keep the original rule: if they don't have waiver, they can't submit a zero-fee tx
+			if tx.HasZeroFee() {
+				return errNoGasPriceWaiver
+			}
+			// If London/EIP-1559 logic is active, enforce base fee when we actually have one
+			if pool.eip1559 {
+				if bf := pool.priced.urgent.baseFee; bf != nil {
+					// Priority senders without waiver must pay at least the base fee
+					if tx.GasFeeCapIntCmp(bf) < 0 {
+						return ErrFeeCapTooLow
+					}
+				}
+			}
 		}
+
 	}
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !local && !isGasWaiver && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
