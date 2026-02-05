@@ -47,6 +47,7 @@ func TestProposerPolicy(t *testing.T) {
 	}
 
 	pp.Use(istanbul.ValidatorSortByString())
+	valSet.SortValidators()
 	for i := 0; i < 6; i++ {
 		assert.Equal(t, addressSortedByString[i].Hex(), valList[i].String(), "validatorSet not string sorted")
 	}
