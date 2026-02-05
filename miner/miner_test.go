@@ -87,8 +87,8 @@ func (bc *testBlockChain) GetPriorityTransactorsCache() common.PriorityTransacto
 	return common.PriorityTransactorMap{}
 }
 
-// MustGetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
-func (bc *testBlockChain) MustGetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
+// GetPriorityTransactorsForState receives the priority transactor list appropriate for the current state
+func (bc *testBlockChain) GetPriorityTransactorsForState(header *types.Header, state *state.StateDB) common.PriorityTransactorMap {
 	return common.PriorityTransactorMap{}
 }
 
