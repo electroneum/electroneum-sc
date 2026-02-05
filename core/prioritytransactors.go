@@ -12,7 +12,6 @@ import (
 )
 
 // GetPriorityTransactors Gets the priority transactor list for the current state using the priority contract address for the block number passed
-// GetPriorityTransactors gets the priority transactor list for the current state using the priority contract address for the block number passed.
 func GetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
 	var (
 		blockNumber = evm.Context.BlockNumber
@@ -71,17 +70,65 @@ func GetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
 		return result
 	}
 
-	transactorsMeta := abi.ConvertType(
-		unpackResult[0],
-		new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta),
-	).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
+	metas, ok := safeConvertTransactorsMeta(unpackResult[0])
+	if !ok {
+		log.Error("PriorityTransactors: unexpected return type; disabling priority list for this block",
+			"address", address, "block", blockNumber)
+		return result
+	}
 
-	for _, t := range *transactorsMeta {
-		result[common.HexToPublicKey(t.PublicKey)] = common.PriorityTransactor{
+	for _, t := range metas {
+		// Validate public key bytes are exactly 65 bytes (your PublicKey type length).
+		pkBytes := common.FromHex(t.PublicKey)
+		if len(pkBytes) != common.PublicKeyLength {
+			log.Warn("PriorityTransactors: invalid public key length in contract data; skipping entry",
+				"len", len(pkBytes),
+				"name", t.Name,
+				"address", address,
+				"block", blockNumber)
+			continue
+		}
+
+		// Optional: reject all-zero pubkeys (prevents silly/garbage entries)
+		allZero := true
+		for _, b := range pkBytes {
+			if b != 0 {
+				allZero = false
+				break
+			}
+		}
+		if allZero {
+			log.Warn("PriorityTransactors: all-zero public key in contract data; skipping entry",
+				"name", t.Name,
+				"address", address,
+				"block", blockNumber)
+			continue
+		}
+
+		pk := common.BytesToPublicKey(pkBytes)
+		result[pk] = common.PriorityTransactor{
 			IsGasPriceWaiver: t.IsGasPriceWaiver,
 			EntityName:       t.Name,
 		}
 	}
 
 	return result
+}
+
+func safeConvertTransactorsMeta(unpack0 any) (metas []prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
+
+	ptr := abi.ConvertType(
+		unpack0,
+		new([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta),
+	).(*[]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta)
+
+	if ptr == nil {
+		return nil, false
+	}
+	return *ptr, true
 }
