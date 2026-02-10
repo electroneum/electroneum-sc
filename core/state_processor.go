@@ -86,14 +86,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errBadPriorityKey)
 			}
 			if !transactor.IsGasPriceWaiver {
-				if p.config.IsFutureFork(blockNumber) {
-					// Post-fork: priority senders without gas price waiver must pay base fee
+				if p.config.IsLondon(blockNumber) {
+					// Priority senders without gas price waiver must pay base fee (EIP-1559).
+					// Enforce FeeCap >= BaseFee to ensure base fee can be paid.
 					if msg.GasFeeCap().Cmp(header.BaseFee) < 0 {
-						return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), ErrFeeCapTooLow)
-					}
-				} else if p.config.IsLondon(blockNumber) {
-					if tx.HasZeroFee() {
-						return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), errNoGasPriceWaiver)
+						return nil, nil, 0, fmt.Errorf(
+							"could not apply tx %d [%v]: %w",
+							i, tx.Hash().Hex(), ErrFeeCapTooLow,
+						)
 					}
 				}
 			}
@@ -185,17 +185,15 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 			return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errBadPriorityKey)
 		}
 		if !transactor.IsGasPriceWaiver {
-			if config.IsFutureFork(header.Number) {
-				// Post-fork: priority senders without gas price waiver must pay base fee
+			if config.IsLondon(header.Number) {
+				// Priority senders without gas price waiver must pay base fee (EIP-1559).
+				// Enforce FeeCap >= BaseFee to ensure base fee can be paid.
 				if msg.GasFeeCap().Cmp(header.BaseFee) < 0 {
 					return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), ErrFeeCapTooLow)
-				}
-			} else if config.IsLondon(header.Number) {
-				if tx.HasZeroFee() {
-					return nil, fmt.Errorf("could not apply tx [%v]: %w", tx.Hash().Hex(), errNoGasPriceWaiver)
 				}
 			}
 		}
 	}
+
 	return applyTransaction(msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }
