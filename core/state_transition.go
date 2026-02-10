@@ -252,14 +252,16 @@ func (st *StateTransition) preCheck() error {
 				return fmt.Errorf("%w: address %v, maxPriorityFeePerGas: %s, maxFeePerGas: %s", ErrTipAboveFeeCap,
 					st.msg.From().Hex(), st.gasTipCap, st.gasFeeCap)
 			}
+			hasGasPriceWaiver, err := validatePriorityGasFields(st.evm, st.msg)
+			if err != nil {
+				return err
+			}
+
 			// This will panic if baseFee is nil, but basefee presence is verified
 			// as part of header validation.
-			//
-			// st.msg.PrioritySender() is already validated at this point
-			// needs fixing
-			if st.msg.PrioritySender() == (common.PublicKey{}) && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
-				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
-					st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
+			if !hasGasPriceWaiver && st.gasFeeCap.Cmp(st.evm.Context.BaseFee) < 0 {
+				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s",
+					ErrFeeCapTooLow, st.msg.From().Hex(), st.gasFeeCap, st.evm.Context.BaseFee)
 			}
 		}
 	}
@@ -289,7 +291,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// 7. Priority txes are signed with a pubkey in the priority key map & have the
 	//    correct gas pricing contingent on the key's gas price waiver status.
 
-	// Check clauses 1-3, buy gas if everything is correct
+	// Check clauses 1-3 and 7, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
 		return nil, err
 	}
@@ -382,4 +384,43 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 // gasUsed returns the amount of gas used up by the state transition.
 func (st *StateTransition) gasUsed() uint64 {
 	return st.initialGas - st.gas
+}
+
+// validatePriorityGasFields validates that a tx's gas fields are consistent with
+// the priority-sender rules, and returns whether the sender has a gas-price waiver.
+func validatePriorityGasFields(evm *vm.EVM, msg Message) (bool, error) {
+	// Not a priority tx
+	ps := msg.PrioritySender()
+	if ps == (common.PublicKey{}) {
+		return false, nil
+	}
+
+	// Look up the sender in the priority transactor map already cached in
+	// statedb (populated by Process/ApplyTransaction before we get here),
+	// rather than making another EVM static call to the contract.
+	transactor, found := evm.StateDB.GetPriorityTransactorByKey(ps)
+	if !found {
+		return false, fmt.Errorf("%w: Bad priority pubkey %v", errBadPriorityKey, ps)
+	}
+
+	// Use the raw fee fields, NOT msg.GasPrice() which is the computed
+	// effective gas price (min(tipCap+baseFee, feeCap)) and will be non-zero
+	// for any valid non-waiver tx.
+	feeCap := msg.GasFeeCap()
+	tipCap := msg.GasTipCap()
+
+	if transactor.IsGasPriceWaiver {
+		// Waiver priority tx: fee cap and tip cap must both be 0
+		if feeCap.Sign() != 0 || tipCap.Sign() != 0 {
+			return true, fmt.Errorf("%w: waiver priority tx must have zero fee fields, pubkey %v", errNoGasPriceWaiver, ps)
+		}
+		return true, nil
+	}
+
+	// Non-waiver priority tx: FeeCap must be > 0 (they must pay)
+	if feeCap.Sign() <= 0 {
+		return false, fmt.Errorf("%w: non-waiver priority tx must have feeCap > 0, pubkey %v", errNoGasPriceWaiver, ps)
+	}
+
+	return false, nil
 }

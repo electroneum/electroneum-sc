@@ -718,7 +718,6 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 				}
 			}
 		}
-
 	}
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !local && !isGasWaiver && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
