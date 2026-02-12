@@ -78,8 +78,9 @@ type core struct {
 	valSet     istanbul.ValidatorSet
 	validateFn func([]byte, []byte) (common.Address, error)
 
-	backlogs   map[common.Address]*prque.Prque
-	backlogsMu *sync.Mutex
+	backlogs      map[common.Address]*prque.Prque
+	backlogsMu    *sync.Mutex
+	backlogsTotal int
 
 	current      *roundState
 	currentMutex *sync.Mutex
