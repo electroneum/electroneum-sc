@@ -40,12 +40,12 @@ type ProposerPolicy struct {
 	registryMU *sync.Mutex         // Mutex to lock access to changes to Registry
 }
 
-// NewRoundRobinProposerPolicy returns a RoundRobin ProposerPolicy with ValidatorSortByString as default sort function
+// NewRoundRobinProposerPolicy returns a RoundRobin ProposerPolicy with ValidatorSortByByte as default sort function
 func NewRoundRobinProposerPolicy() *ProposerPolicy {
 	return NewProposerPolicy(RoundRobin)
 }
 
-// NewStickyProposerPolicy return a Sticky ProposerPolicy with ValidatorSortByString as default sort function
+// NewStickyProposerPolicy return a Sticky ProposerPolicy with ValidatorSortByByte as default sort function
 func NewStickyProposerPolicy() *ProposerPolicy {
 	return NewProposerPolicy(Sticky)
 }
@@ -86,7 +86,7 @@ func (p *ProposerPolicy) UnmarshalTOML(decode func(interface{}) error) error {
 		return err
 	}
 	p.Id = pp.Id
-	p.By = ValidatorSortByString()
+	p.By = ValidatorSortByByte()
 	return nil
 }
 
