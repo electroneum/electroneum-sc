@@ -283,7 +283,6 @@ func (c *core) processBacklog() {
 					if c.withinBacklogFutureWindow(code, view) &&
 						backlog.Size() < MaxBacklogPerValidator &&
 						c.backlogsTotal < c.maxBacklogTotal() {
-
 						backlog.Push(m, prio)
 						c.backlogsTotal++
 					}
