@@ -106,6 +106,13 @@ func GetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
 		}
 
 		pk := common.BytesToPublicKey(pkBytes)
+		if !pk.IsValid() {
+			log.Warn("PriorityTransactors: public key not on secp256k1 curve; skipping entry",
+				"name", t.Name,
+				"address", address,
+				"block", blockNumber)
+			continue
+		}
 		result[pk] = common.PriorityTransactor{
 			IsGasPriceWaiver: t.IsGasPriceWaiver,
 			EntityName:       t.Name,

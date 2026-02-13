@@ -3,6 +3,7 @@ package core
 import (
 	"testing"
 
+	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 )
 
@@ -102,5 +103,42 @@ func TestSafeConvertTransactorsMeta_EmptyStruct(t *testing.T) {
 	}
 	if metas != nil {
 		t.Fatalf("expected nil metas for struct input, got %v", metas)
+	}
+}
+
+// Test that PublicKey.IsValid rejects a 65-byte key that starts with 0x04
+// but whose (x, y) coordinates do not lie on the secp256k1 curve.
+func TestPublicKeyIsValid_InvalidCurvePoint(t *testing.T) {
+	// 65 bytes starting with 0x04, but x=1, y=1 is not on secp256k1
+	var pk common.PublicKey
+	pk[0] = 0x04
+	pk[1] = 0x01  // x = 1
+	pk[33] = 0x01 // y = 1
+
+	if pk.IsValid() {
+		t.Error("expected IsValid=false for point not on secp256k1 curve")
+	}
+}
+
+// Test that PublicKey.IsValid rejects a 65-byte key that does not start
+// with the uncompressed prefix 0x04.
+func TestPublicKeyIsValid_WrongPrefix(t *testing.T) {
+	// Take a known-good key and corrupt the prefix byte
+	validHex := "04efb99d9860f4dec4cb548a5722c27e9ef58e37fbab9719c5b33d55c216db49311221a01f638ce5f255875b194e0acaa58b19a89d2e56a864427298f826a7f887"
+	pk := common.HexToPublicKey(validHex)
+	pk[0] = 0x02 // compressed prefix — invalid for uncompressed key
+
+	if pk.IsValid() {
+		t.Error("expected IsValid=false for key with wrong prefix byte")
+	}
+}
+
+// Test that PublicKey.IsValid accepts a known-good uncompressed secp256k1 key.
+func TestPublicKeyIsValid_ValidKey(t *testing.T) {
+	validHex := "04efb99d9860f4dec4cb548a5722c27e9ef58e37fbab9719c5b33d55c216db49311221a01f638ce5f255875b194e0acaa58b19a89d2e56a864427298f826a7f887"
+	pk := common.HexToPublicKey(validHex)
+
+	if !pk.IsValid() {
+		t.Error("expected IsValid=true for known-good secp256k1 public key")
 	}
 }
