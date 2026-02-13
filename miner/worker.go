@@ -875,7 +875,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	}
 	var coalescedLogs []*types.Log
 
-	transactors := w.chain.MustGetPriorityTransactorsForState(env.header, env.state)
+	transactors := w.chain.GetPriorityTransactorsForState(env.header, env.state)
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1

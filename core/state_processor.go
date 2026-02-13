@@ -72,7 +72,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
-	statedb.SetPriorityTransactors(MustGetPriorityTransactors(vmenv))
+	statedb.SetPriorityTransactors(GetPriorityTransactors(vmenv))
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := tx.AsMessage(types.MakeSigner(p.config, header.Number), header.BaseFee)
@@ -151,7 +151,7 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	// Update the priority transactor map for the next tx application in the block validation loop if this tx
 	// successfully updated the priority transactor list in the EVM/stateDB.
 	if msg.To() != nil && *msg.To() == config.GetPriorityTransactorsContractAddress(blockNumber) {
-		statedb.SetPriorityTransactors(MustGetPriorityTransactors(evm))
+		statedb.SetPriorityTransactors(GetPriorityTransactors(evm))
 	}
 	return receipt, err
 }
