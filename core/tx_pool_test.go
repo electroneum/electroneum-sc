@@ -228,6 +228,106 @@ func TestPriorityTxMustObserveBaseFeeWhenNoWaiver(t *testing.T) {
 	}
 }
 
+// Test that a waiver priority tx (zero fees) is accepted by the pool even when
+// a base fee is set, because waiver senders are exempt from fee requirements.
+func TestWaiverPriorityTxBypassesBaseFee(t *testing.T) {
+	t.Parallel()
+
+	statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	blockchain := &testBlockChain{10000000, statedb, new(event.Feed), WaiverPriorityTx, common.PriorityTransactorMap{}}
+
+	key, _ := crypto.GenerateKey()
+	pool := NewTxPool(testTxPoolConfig, eip1559Config, blockchain)
+	defer pool.Stop()
+	<-pool.initDoneCh
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	baseFee := big.NewInt(1_000_000_000)
+	pool.priced.urgent.baseFee = new(big.Int).Set(baseFee)
+
+	// Zero-fee priority tx from a waiver sender should be accepted.
+	tx := priorityTx(0, 21_000, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); err != nil {
+		t.Fatalf("expected waiver priority tx to be accepted, got %v", err)
+	}
+
+	if err := validateTxPoolInternals(pool); err != nil {
+		t.Fatalf("pool invariants failed: %v", err)
+	}
+}
+
+// Test that a non-waiver priority tx with zero fees is rejected with
+// errNoGasPriceWaiver (the original rule), even before the base fee
+// comparison is reached.
+func TestNonWaiverPriorityTxZeroFeeRejected(t *testing.T) {
+	t.Parallel()
+
+	pool, key := setupTxPoolWithConfig(eip1559Config)
+	defer pool.Stop()
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	// Zero-fee priority tx from a non-waiver sender should be rejected
+	// with errNoGasPriceWaiver (the first fee check).
+	tx := priorityTx(0, 21_000, big.NewInt(0), big.NewInt(0), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); err != errNoGasPriceWaiver {
+		t.Fatalf("expected %v, got %v", errNoGasPriceWaiver, err)
+	}
+}
+
+// Test the exact boundary: a non-waiver priority tx whose fee cap is exactly
+// equal to the base fee should be accepted.
+func TestNonWaiverPriorityTxFeeCapExactlyBaseFee(t *testing.T) {
+	t.Parallel()
+
+	pool, key := setupTxPoolWithConfig(eip1559Config)
+	defer pool.Stop()
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	baseFee := big.NewInt(875_000_000)
+	pool.priced.urgent.baseFee = new(big.Int).Set(baseFee)
+
+	// Fee cap == base fee should be accepted.
+	tx := priorityTx(0, 21_000, new(big.Int).Set(baseFee), big.NewInt(1), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); err != nil {
+		t.Fatalf("expected nil (feeCap == baseFee should pass), got %v", err)
+	}
+
+	if err := validateTxPoolInternals(pool); err != nil {
+		t.Fatalf("pool invariants failed: %v", err)
+	}
+}
+
+// Test that when the pool has no base fee set (nil), non-waiver priority txs
+// with a non-zero fee cap are still accepted (the base fee check is skipped).
+func TestNonWaiverPriorityTxAcceptedWhenNoBaseFee(t *testing.T) {
+	t.Parallel()
+
+	pool, key := setupTxPoolWithConfig(eip1559Config)
+	defer pool.Stop()
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	// Explicitly set baseFee to nil to simulate no base fee available.
+	pool.priced.urgent.baseFee = nil
+
+	// Non-zero fee priority tx should pass since there's no base fee to compare against.
+	tx := priorityTx(0, 21_000, big.NewInt(1), big.NewInt(1), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); err != nil {
+		t.Fatalf("expected nil (no baseFee set), got %v", err)
+	}
+
+	if err := validateTxPoolInternals(pool); err != nil {
+		t.Fatalf("pool invariants failed: %v", err)
+	}
+}
+
 func transaction(nonce uint64, gaslimit uint64, key *ecdsa.PrivateKey) *types.Transaction {
 	return pricedTransaction(nonce, gaslimit, big.NewInt(1), key)
 }
