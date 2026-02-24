@@ -1591,7 +1591,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 		"logsBloom":         receipt.Bloom,
 		"type":              hexutil.Uint(tx.Type()),
 	}
-	// Assign the effective gas price paid
+	// Assign the effective gas price paid.
 	if !s.b.ChainConfig().IsLondon(bigblock) {
 		fields["effectiveGasPrice"] = hexutil.Uint64(tx.GasPrice().Uint64())
 	} else if tx.Type() == types.PriorityTxType && tx.HasZeroFee() { // receipt generated only once tx is mined despite being a 'pool' api
