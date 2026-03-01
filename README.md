@@ -2,7 +2,7 @@
 
 Electroneum Smart Chain implementation based on go-ethereum.
 
-Electroneum Smart Chain is EVM-compatible, supports all the existing Ethereum tooling, provides nearly instant transaction verification and 1-block finality with a modified version of the Istanbul Byzantine Fault Torerance (IBFT) consensus protocol.
+Electroneum Smart Chain is EVM-compatible, supports all the existing Ethereum tooling, provides nearly instant transaction verification and 1-block finality with a modified version of the Istanbul Byzantine Fault Tolerance (IBFT) consensus protocol.
 
 ## Key Features
 
@@ -24,7 +24,7 @@ Electroneum Smart Chain supports all the existing Ethereum tooling, smart contra
 
 ### Cross-chain Bridge
 
-Electroneum Smart Chain supports cross-chain transfers between our legacy Electroneum Blockchain and the Smart Chain. All users, exchanges and other services providers can seemlessly transfer their funds over to the Electroneum Smart Chain, free of charge.
+Electroneum Smart Chain supports cross-chain transfers between our legacy Electroneum Blockchain and the Smart Chain. All users, exchanges and other service providers can seamlessly transfer their funds over to the Electroneum Smart Chain, free of charge.
 
 ## Building the source
 
