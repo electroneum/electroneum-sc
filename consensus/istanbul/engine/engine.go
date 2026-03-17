@@ -271,7 +271,8 @@ func (e *Engine) verifyCommittedSeals(chain consensus.ChainHeaderReader, header 
 		return istanbulcommon.ErrInvalidCommittedSeals
 	}
 
-	// IBFT/QBFT finalization requires at least 2F+1 valid committed seals requiredSeals := int(math.Ceil(float64(2*validators.Size()) / 3))
+	// IBFT/QBFT finalization requires at least 2F+1 valid committed seals
+	requiredSeals := int(math.Ceil(float64(2*validators.Size()) / 3))
 	if validSeal < requiredSeals {
 		return istanbulcommon.ErrInvalidCommittedSeals
 	}
