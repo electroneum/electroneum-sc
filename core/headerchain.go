@@ -306,6 +306,13 @@ func (hc *HeaderChain) writeHeadersAndSetHead(headers []*types.Header, forker *F
 }
 
 func (hc *HeaderChain) ValidateHeaderChain(chain []*types.Header, checkFreq int) (int, error) {
+	// Validate header fields before any processing
+	for i, header := range chain {
+		if err := header.SanityCheck(); err != nil {
+			return i, err
+		}
+	}
+
 	// Do a sanity check that the provided chain is actually ordered and linked
 	for i := 1; i < len(chain); i++ {
 		if chain[i].Number.Uint64() != chain[i-1].Number.Uint64()+1 {
