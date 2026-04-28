@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/prque"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
-	"gopkg.in/karalabe/cookiejar.v2/collections/prque"
 )
 
 // -----------------------------------------------------------------------------
@@ -39,13 +39,15 @@ func newTestCore(valSet istanbul.ValidatorSet, seq, round int64) *core {
 	}
 
 	c := &core{
-		address:    valSet.List()[0].Address(),
-		state:      StateAcceptRequest,
-		logger:     log.New(),
-		valSet:     valSet,
-		backlogs:   make(map[common.Address]*prque.Prque),
-		backlogsMu: new(sync.Mutex),
-		current:    newRoundState(view, valSet, nil, nil, nil, nil, func(common.Hash) bool { return false }),
+		address:           valSet.List()[0].Address(),
+		state:             StateAcceptRequest,
+		logger:            log.New(),
+		valSet:            valSet,
+		backlogs:          make(map[common.Address]*prque.Prque),
+		backlogsMu:        new(sync.Mutex),
+		pendingRequests:   prque.New(nil),
+		pendingRequestsMu: new(sync.Mutex),
+		current:           newRoundState(view, valSet, nil, nil, nil, nil, func(common.Hash) bool { return false }),
 	}
 	return c
 }
