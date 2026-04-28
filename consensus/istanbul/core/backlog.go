@@ -21,9 +21,9 @@ import (
 	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/prque"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
-	"gopkg.in/karalabe/cookiejar.v2/collections/prque"
 )
 
 const (
@@ -220,7 +220,7 @@ func (c *core) addToBacklog(msg qbfttypes.QBFTMessage) {
 
 	backlog := c.backlogs[src]
 	if backlog == nil {
-		backlog = prque.New()
+		backlog = prque.New(nil)
 		c.backlogs[src] = backlog
 	}
 
@@ -330,13 +330,13 @@ func (c *core) maxBacklogTotal() int {
 	return dynamic
 }
 
-func toPriority(msgCode uint64, view *istanbul.View) float32 {
+func toPriority(msgCode uint64, view *istanbul.View) int64 {
 	if msgCode == qbfttypes.RoundChangeCode {
 		// For msgRoundChange, set the message priority based on its sequence
-		return -float32(view.Sequence.Uint64() * 1000)
+		return -int64(view.Sequence.Uint64() * 1000)
 	}
 	// FIXME: round will be reset as 0 while new sequence
 	// 10 * Round limits the range of message code is from 0 to 9
 	// 1000 * Sequence limits the range of round is from 0 to 99
-	return -float32(view.Sequence.Uint64()*1000 + view.Round.Uint64()*10 + uint64(msgPriority[msgCode]))
+	return -int64(view.Sequence.Uint64()*1000 + view.Round.Uint64()*10 + uint64(msgPriority[msgCode]))
 }
