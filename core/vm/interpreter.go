@@ -65,6 +65,7 @@ type EVMInterpreter struct {
 }
 
 // NewEVMInterpreter returns a new instance of the Interpreter.
+// The jump table / instruction set logic is only relevant when a fork changes EVM opcodes—adding new opcodes, modifying gas costs of existing opcodes, or changing opcode behavior.
 func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 	// If jump table was not initialised we set the default one.
 	if cfg.JumpTable == nil {
