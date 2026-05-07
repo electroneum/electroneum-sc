@@ -73,7 +73,7 @@ func (c *core) storeRequestMsg(request *Request) {
 	c.pendingRequestsMu.Lock()
 	defer c.pendingRequestsMu.Unlock()
 
-	c.pendingRequests.Push(request, float32(-request.Proposal.Number().Int64()))
+	c.pendingRequests.Push(request, -request.Proposal.Number().Int64())
 }
 
 // processPendingRequests is called each time QBFT state is re-initialized

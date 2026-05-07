@@ -632,3 +632,301 @@ func TestHasMatchingRoundChangeAndPrepares_RejectsInsufficientPrepares(t *testin
 		t.Fatalf("expected rejection due to insufficient prepare messages, but got nil")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Regression tests for ROUND-CHANGE distinct signer enforcement
+// -----------------------------------------------------------------------------
+
+// createRoundChangeMessageWithBadProposal creates a RC message with HasBadProposal set.
+func createRoundChangeMessageWithBadProposal(from common.Address, round int64, preparedRound int64, preparedBlock istanbul.Proposal) *qbfttypes.SignedRoundChangePayload {
+	m := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(preparedRound), preparedBlock, true)
+	m.SetSource(from)
+	return &m.SignedRoundChangePayload
+}
+
+// Verifies that duplicate ROUND-CHANGE messages from the same signer cannot forge quorum
+// in the nil-prepared-round path. This is the primary attack vector described in the
+// security report: a malicious proposer duplicates a single valid RC to reach quorum.
+func TestIsJustified_RejectsDuplicateRCSignersNilPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+
+	// Use only ONE validator's address but duplicate it quorumSize times
+	singleValidator := validatorSet.List()[0].Address()
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(singleValidator, 10, 0, nil))
+	}
+
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to duplicate RC signers in nil path, but got nil")
+	}
+}
+
+// Verifies that duplicate ROUND-CHANGE messages from the same signer cannot forge quorum
+// in the prepared-round path.
+func TestIsJustified_RejectsDuplicateRCSignersPreparedRoundPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	// Duplicate one validator's RC to fill quorum
+	singleValidator := validatorSet.List()[0].Address()
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(singleValidator, 10, targetPreparedRound, block))
+	}
+
+	// Valid prepares from distinct validators
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to duplicate RC signers in prepared-round path, but got nil")
+	}
+}
+
+// Verifies that the hasBadProposal count cannot be forged by duplicating a single RC
+// with HasBadProposal=true. Without dedup, a single duplicated RC could force hasBadProposal
+// which relaxes digest matching for PREPAREs.
+func TestIsJustified_RejectsDuplicateRCSignersForBadProposalCount(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	// Only ONE validator sends HasBadProposal=true, but we duplicate it to quorumSize
+	badValidator := validatorSet.List()[0].Address()
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessageWithBadProposal(badValidator, 10, targetPreparedRound, block))
+	}
+
+	// This should fail because we can't reach quorum of distinct RC signers
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to duplicate RC signers for bad proposal count, but got nil")
+	}
+}
+
+// Verifies that hasBadProposal is correctly set to true when a genuine quorum of DISTINCT
+// validators flag bad proposal.
+func TestIsJustified_AcceptsBadProposalFromDistinctSigners(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	wrongBlock := makeBlock(2)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	// Quorum of distinct validators all send HasBadProposal=true with matching preparedRound
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessageWithBadProposal(validatorSet.List()[i].Address(), 10, targetPreparedRound, block))
+	}
+
+	// PREPAREs with mismatched digest — should be allowed because hasBadProposal=true
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, wrongBlock))
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err != nil {
+		t.Fatalf("expected justification to succeed with quorum of distinct bad-proposal signers; got: %v", err)
+	}
+}
+
+// Verifies that RC messages exceeding the validator set size are rejected (DoS hardening).
+func TestIsJustified_RejectsTooManyRoundChangeMessages(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+
+	// Create 5 RC messages (more than 4 validators)
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, 5)
+	for i := 0; i < 4; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, 0, nil))
+	}
+	// Add a 5th from a random address
+	extraKey, _ := crypto.GenerateKey()
+	extraAddr := crypto.PubkeyToAddress(extraKey.PublicKey)
+	extraRC := createRoundChangeMessage(extraAddr, 10, 0, nil)
+	roundChangeMessages = append(roundChangeMessages, extraRC)
+
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to too many round change messages, but got nil")
+	}
+}
+
+// Verifies that an RC message with an empty source (signature not verified) is rejected.
+func TestIsJustified_RejectsRCWithEmptySourceNilPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize-1; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, 0, nil))
+	}
+	// Add one RC without calling SetSource (empty source)
+	unsourcedRC := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), nil, false)
+	roundChangeMessages = append(roundChangeMessages, &unsourcedRC.SignedRoundChangePayload)
+
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to empty source on RC message, but got nil")
+	}
+}
+
+// Verifies that an RC message from a non-validator address is rejected.
+func TestIsJustified_RejectsRCFromNonValidatorNilPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize-1; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, 0, nil))
+	}
+	// Add one RC from a random address not in the validator set
+	notInSetKey, _ := crypto.GenerateKey()
+	notInSet := crypto.PubkeyToAddress(notInSetKey.PublicKey)
+	roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(notInSet, 10, 0, nil))
+
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to non-validator RC signer, but got nil")
+	}
+}
+
+// Verifies that an RC message with an empty source is rejected in the prepared-round path.
+func TestIsJustified_RejectsRCWithEmptySourcePreparedRoundPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize-1; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, targetPreparedRound, block))
+	}
+	// Add one RC without calling SetSource
+	unsourcedRC := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(targetPreparedRound), block, false)
+	roundChangeMessages = append(roundChangeMessages, &unsourcedRC.SignedRoundChangePayload)
+
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to empty source on RC message in prepared-round path, but got nil")
+	}
+}
+
+// Verifies that an RC message from a non-validator is rejected in the prepared-round path.
+func TestIsJustified_RejectsRCFromNonValidatorPreparedRoundPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize-1; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, targetPreparedRound, block))
+	}
+	notInSetKey, _ := crypto.GenerateKey()
+	notInSet := crypto.PubkeyToAddress(notInSetKey.PublicKey)
+	roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(notInSet, 10, targetPreparedRound, block))
+
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err == nil {
+		t.Fatalf("expected rejection due to non-validator RC signer in prepared-round path, but got nil")
+	}
+}
+
+// Verifies that valid distinct RC messages still pass both paths after hardening.
+func TestIsJustified_AcceptsDistinctRCSignersNilPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, 0, nil))
+	}
+
+	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	if err != nil {
+		t.Fatalf("expected valid distinct RC signers to pass nil path; got: %v", err)
+	}
+}
+
+// Verifies that valid distinct RC messages still pass the prepared-round path after hardening.
+func TestIsJustified_AcceptsDistinctRCSignersPreparedRoundPath(t *testing.T) {
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	validatorSet := validator.NewSet(generateValidators(4), pp)
+
+	block := makeBlock(1)
+	quorumSize := 3
+	targetPreparedRound := int64(5)
+
+	roundChangeMessages := make([]*qbfttypes.SignedRoundChangePayload, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, targetPreparedRound, block))
+	}
+
+	prepareMessages := make([]*qbfttypes.Prepare, 0, quorumSize)
+	for i := 0; i < quorumSize; i++ {
+		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
+	}
+
+	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	if err != nil {
+		t.Fatalf("expected valid distinct RC signers to pass prepared-round path; got: %v", err)
+	}
+}

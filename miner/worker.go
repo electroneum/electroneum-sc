@@ -875,7 +875,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	}
 	var coalescedLogs []*types.Log
 
-	transactors := w.chain.GetPriorityTransactorsForState(env.header, env.state)
+	env.state.SetPriorityTransactors(w.chain.GetPriorityTransactorsForState(env.header, env.state))
 	for {
 		// In the following three cases, we will interrupt the execution of the transaction.
 		// (1) new head block event arrival, the interrupt signal is 1
@@ -923,7 +923,6 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
-		env.state.SetPriorityTransactors(transactors)
 
 		logs, err := w.commitTransaction(env, tx)
 		switch {
@@ -947,6 +946,12 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 			coalescedLogs = append(coalescedLogs, logs...)
 			env.tcount++
 			txs.Shift()
+
+			// Refresh priority transactors cache if this tx targeted the contract,
+			// mirroring the validator's mid-block refresh in state_processor.go.
+			if tx.To() != nil && *tx.To() == w.chainConfig.GetPriorityTransactorsContractAddress(env.header.Number) {
+				env.state.SetPriorityTransactors(w.chain.GetPriorityTransactorsForState(env.header, env.state))
+			}
 
 		case errors.Is(err, core.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account

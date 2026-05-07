@@ -539,6 +539,117 @@ func TestGetSealingWorkPostMerge(t *testing.T) {
 	testGetSealingWork(t, local, ethash.NewFaker(), true)
 }
 
+// TestCommitTransactionsRefreshesPriorityCache verifies that when a transaction
+// targeting the priority transactors contract is successfully committed, the
+// worker refreshes the priority transactors cache from state. This prevents a
+// miner/validator divergence where the miner uses a stale whitelist snapshot.
+func TestCommitTransactionsRefreshesPriorityCache(t *testing.T) {
+	// --- Setup chain config with priority contract ---
+	priorityContractAddr := common.HexToAddress("0x9999999999999999999999999999999999999999")
+
+	chainConfig := new(params.ChainConfig)
+	*chainConfig = *params.AllEthashProtocolChanges
+	chainConfig.LondonBlock = big.NewInt(0)
+	chainConfig.PriorityTransactorsContractAddress = priorityContractAddr
+
+	engine := ethash.NewFaker()
+	defer engine.Close()
+	db := rawdb.NewMemoryDatabase()
+
+	// EVM bytecode that returns an empty getTransactors() response:
+	// PUSH1 0x20, PUSH1 0x00, MSTORE (mem[0]=0x20), PUSH1 0x40, PUSH1 0x00, RETURN
+	emptyContractCode := common.FromHex("602060005260406000f3")
+
+	senderKey, _ := crypto.GenerateKey()
+	senderAddr := crypto.PubkeyToAddress(senderKey.PublicKey)
+
+	gspec := core.Genesis{
+		Config: chainConfig,
+		Alloc: core.GenesisAlloc{
+			senderAddr:           {Balance: big.NewInt(1e18)},
+			priorityContractAddr: {Code: emptyContractCode, Balance: big.NewInt(0)},
+		},
+	}
+	genesis := gspec.MustCommit(db)
+	chain, _ := core.NewBlockChain(db, &core.CacheConfig{TrieDirtyDisabled: true}, chainConfig, engine, vm.Config{}, nil, nil)
+	defer chain.Stop()
+
+	// --- Build a priority key that we'll pre-seed into the cache ---
+	priorityKey, _ := crypto.GenerateKey()
+	priorityPubBytes := crypto.FromECDSAPub(&priorityKey.PublicKey)
+	priorityPubKey := common.BytesToPublicKey(priorityPubBytes)
+
+	// --- Set up the worker (minimal, just needs chain + chainConfig) ---
+	w := &worker{
+		chain:       chain,
+		chainConfig: chainConfig,
+	}
+
+	// --- Build the environment ---
+	signer := types.LatestSigner(chainConfig)
+	statedb, _ := chain.StateAt(genesis.Root())
+
+	// Pre-seed the cache with our priority key (simulating it was valid before this block)
+	statedb.SetPriorityTransactors(common.PriorityTransactorMap{
+		priorityPubKey: {IsGasPriceWaiver: true, EntityName: "TestEntity"},
+	})
+
+	// Verify the key is present before the transaction
+	if _, found := statedb.GetPriorityTransactorByKey(priorityPubKey); !found {
+		t.Fatal("priority key should be present in cache before commitTransactions")
+	}
+
+	header := &types.Header{
+		Number:     big.NewInt(1),
+		GasLimit:   8_000_000,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
+		ParentHash: genesis.Hash(),
+		Difficulty: big.NewInt(1),
+		Time:       uint64(time.Now().Unix()),
+	}
+
+	env := &environment{
+		signer:   signer,
+		state:    statedb,
+		header:   header,
+		gasPool:  new(core.GasPool).AddGas(header.GasLimit),
+		txs:      make([]*types.Transaction, 0),
+		receipts: make([]*types.Receipt, 0),
+	}
+
+	// --- Create a tx targeting the priority contract address ---
+	// This simulates a whitelist modification (e.g., revoking a key).
+	// The contract returns an empty list, so after refresh, the key should be gone.
+	tx, _ := types.SignNewTx(senderKey, signer, &types.DynamicFeeTx{
+		ChainID:   chainConfig.ChainID,
+		Nonce:     0,
+		GasTipCap: big.NewInt(params.InitialBaseFee),
+		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		Gas:       100_000,
+		To:        &priorityContractAddr,
+		Value:     big.NewInt(0),
+		Data:      []byte{},
+	})
+
+	txsMap := map[common.Address]types.Transactions{senderAddr: {tx}}
+	txsByPrice := types.NewTransactionsByPriceAndNonce(signer, txsMap, header.BaseFee)
+
+	// --- Execute ---
+	if err := w.commitTransactions(env, txsByPrice, nil); err != nil {
+		t.Fatalf("commitTransactions failed: %v", err)
+	}
+
+	if len(env.txs) != 1 {
+		t.Fatalf("expected 1 committed tx, got %d", len(env.txs))
+	}
+
+	// --- Verify the priority cache was refreshed ---
+	// The contract returns an empty list, so the key should no longer be in the cache.
+	if _, found := statedb.GetPriorityTransactorByKey(priorityPubKey); found {
+		t.Fatal("priority key should have been removed from cache after contract-targeting tx, but it is still present (stale cache)")
+	}
+}
+
 func testGetSealingWork(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine, postMerge bool) {
 	defer engine.Close()
 

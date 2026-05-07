@@ -2,6 +2,7 @@ package qbftengine
 
 import (
 	"bytes"
+	"math"
 	"math/big"
 	"time"
 
@@ -271,10 +272,10 @@ func (e *Engine) verifyCommittedSeals(chain consensus.ChainHeaderReader, header 
 	}
 
 	// IBFT/QBFT finalization requires at least 2F+1 valid committed seals
-	if validSeal < 2*validators.F()+1 {
+	requiredSeals := int(math.Ceil(float64(2*validators.Size()) / 3))
+	if validSeal < requiredSeals {
 		return istanbulcommon.ErrInvalidCommittedSeals
 	}
-
 	return nil
 }
 

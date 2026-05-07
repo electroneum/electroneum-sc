@@ -28,10 +28,24 @@ func isJustified(
 		return errors.New("number of roundchange messages is less than required quorum of messages")
 	}
 
-	// Count round change messages with "bad proposal" reason
+	// DoS hardening: justification cannot contain more round-change messages than there are validators
+	if len(roundChangeMessages) > validators.Size() {
+		return errors.New("too many round change messages in justification")
+	}
+
+	// Count round change messages with "bad proposal" reason from DISTINCT signers
+	badProposalSeen := make(map[common.Address]struct{})
 	var hasBadProposalCount uint = 0
 	for _, rcm := range roundChangeMessages {
 		if rcm.HasBadProposal {
+			src := rcm.Source()
+			if src == (common.Address{}) {
+				continue
+			}
+			if _, ok := badProposalSeen[src]; ok {
+				continue
+			}
+			badProposalSeen[src] = struct{}{}
 			hasBadProposalCount++
 		}
 	}
@@ -79,18 +93,32 @@ func isJustified(
 	}
 
 	if preparedRound == nil {
-		return hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages, quorumSize)
+		return hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages, quorumSize, validators)
 	} else {
-		return hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages, preparedRound, proposal, quorumSize, hasBadProposal)
+		return hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages, preparedRound, proposal, quorumSize, hasBadProposal, validators)
 	}
 }
 
-// Checks whether a set of ROUND-CHANGE messages has `quorumSize` messages with nil prepared round and
-// prepared block.
-func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, quorumSize int) error {
+// Checks whether a set of ROUND-CHANGE messages has `quorumSize` messages from DISTINCT validators
+// with nil prepared round and prepared block.
+func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, quorumSize int, validators istanbul.ValidatorSet) error {
+	seen := make(map[common.Address]struct{})
 	nilCount := 0
 	for _, m := range roundChangeMessages {
 		log.Trace("IBFT: hasQuorumOfRoundChangeMessagesForNil", "rc", m)
+
+		src := m.Source()
+		if src == (common.Address{}) {
+			return errors.New("round change message has empty source (signature not verified)")
+		}
+		if _, v := validators.GetByAddress(src); v == nil {
+			return errors.New("round change message signer is not in validator set")
+		}
+		if _, ok := seen[src]; ok {
+			continue // skip duplicate signer
+		}
+		seen[src] = struct{}{}
+
 		if (m.PreparedRound == nil || m.PreparedRound.Cmp(common.Big0) == 0) && common.EmptyHash(m.PreparedDigest) {
 			nilCount++
 			if nilCount == quorumSize {
@@ -101,13 +129,28 @@ func hasQuorumOfRoundChangeMessagesForNil(roundChangeMessages []*qbfttypes.Signe
 	return errors.New("quorum of roundchange messages with nil prepared round not found")
 }
 
-// Checks whether a set of ROUND-CHANGE messages has some message with `preparedRound` and `preparedBlockDigest`,
-// and has `quorumSize` messages with prepared round equal to nil or equal or lower than `preparedRound`.
-func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, preparedRound *big.Int, preparedBlock istanbul.Proposal, quorumSize int, hasQuorumOfBadProposal bool) error {
+// Checks whether a set of ROUND-CHANGE messages from DISTINCT validators has some message with
+// `preparedRound` and `preparedBlockDigest`, and has `quorumSize` messages with prepared round
+// equal to nil or equal or lower than `preparedRound`.
+func hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock(roundChangeMessages []*qbfttypes.SignedRoundChangePayload, preparedRound *big.Int, preparedBlock istanbul.Proposal, quorumSize int, hasQuorumOfBadProposal bool, validators istanbul.ValidatorSet) error {
+	seen := make(map[common.Address]struct{})
 	lowerOrEqualRoundCount := 0
 	hasMatchingMessage := false
 	for _, m := range roundChangeMessages {
 		log.Trace("IBFT: hasQuorumOfRoundChangeMessagesForPreparedRoundAndBlock", "rc", m)
+
+		src := m.Source()
+		if src == (common.Address{}) {
+			return errors.New("round change message has empty source (signature not verified)")
+		}
+		if _, v := validators.GetByAddress(src); v == nil {
+			return errors.New("round change message signer is not in validator set")
+		}
+		if _, ok := seen[src]; ok {
+			continue // skip duplicate signer
+		}
+		seen[src] = struct{}{}
+
 		if m.PreparedRound == nil || m.PreparedRound.Cmp(preparedRound) <= 0 {
 			lowerOrEqualRoundCount++
 			if m.PreparedRound != nil && m.PreparedRound.Cmp(preparedRound) == 0 && (m.PreparedDigest == preparedBlock.Hash() || (m.PreparedDigest != preparedBlock.Hash() && hasQuorumOfBadProposal)) {
