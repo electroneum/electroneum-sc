@@ -266,9 +266,10 @@ type TxPool struct {
 	signer      types.Signer
 	mu          sync.RWMutex
 
-	istanbul bool // Fork indicator whether we are in the istanbul stage.
-	eip2718  bool // Fork indicator whether we are using EIP-2718 type transactions.
-	eip1559  bool // Fork indicator whether we are using EIP-1559 type transactions.
+	istanbul   bool // Fork indicator whether we are in the istanbul stage.
+	eip2718    bool // Fork indicator whether we are using EIP-2718 type transactions.
+	eip1559    bool // Fork indicator whether we are using EIP-1559 type transactions.
+	futureFork bool // Fork indicator whether we are using the future fork rules.
 
 	currentState  *state.StateDB // Current state in the blockchain head
 	pendingNonces *txNoncer      // Pending state tracking virtual nonces
@@ -691,8 +692,14 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	}
 	isGasWaiver := false
 	if tx.Type() == types.PriorityTxType {
-		// Make sure the priority signature checks out
-		priorityPubkey, err := types.PrioritySender(pool.signer, tx)
+		// Make sure the priority signature checks out.
+		// Use the future fork signer when the fork is active so that priority
+		// signatures are verified against the sender-bound hash.
+		prioritySigner := pool.signer
+		if pool.futureFork {
+			prioritySigner = types.NewFutureForkSigner(pool.chainconfig.ChainID)
+		}
+		priorityPubkey, err := types.PrioritySender(prioritySigner, tx)
 		if err != nil {
 			return errBadPrioritySignature
 		}
@@ -1035,8 +1042,12 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		}
 		if IsPriorityTransaction(tx) {
 			// Exclude priority transactions with invalid priority signature as soon
-			// as possible
-			_, err = types.PrioritySender(pool.signer, tx)
+			// as possible. Use the future fork signer when the fork is active.
+			prioritySigner := pool.signer
+			if pool.futureFork {
+				prioritySigner = types.NewFutureForkSigner(pool.chainconfig.ChainID)
+			}
+			_, err = types.PrioritySender(prioritySigner, tx)
 			if err != nil {
 				errs[i] = ErrInvalidPrioritySender
 				invalidTxMeter.Mark(1)
@@ -1445,6 +1456,7 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.istanbul = pool.chainconfig.IsIstanbul(next)
 	pool.eip2718 = pool.chainconfig.IsBerlin(next)
 	pool.eip1559 = pool.chainconfig.IsLondon(next)
+	pool.futureFork = pool.chainconfig.IsFutureFork(next)
 }
 
 // promoteExecutables moves transactions that have become processable from the
