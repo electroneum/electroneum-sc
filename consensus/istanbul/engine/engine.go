@@ -39,6 +39,60 @@ func NewEngine(cfg *istanbul.Config, signer common.Address, sign SignerFn) *Engi
 	}
 }
 
+// Author returns the address of the block's proposer.
+//
+// KNOWN LIMITATION: QBFT headers do not currently contain a proposer seal, so
+// this method returns header.Coinbase on trust. Proposer authenticity is
+// enforced at the consensus message layer (handlePreprepareMsg binds Coinbase
+// to the cryptographically verified PRE-PREPARE source), which prevents forged
+// blocks from being finalised. However, the block itself is not self-proving:
+// anyone inspecting chain history must trust the Coinbase field rather than
+// recovering the author from a signature.
+//
+// TODO(long-term): Add a ProposerSeal to QBFTExtra via a hard fork
+// (FutureForkBlock is already wired as a placeholder). Implementation plan:
+//
+//  1. Add ProposerSeal []byte to QBFTExtra (core/types/istanbul.go).
+//     Update EncodeRLP and DecodeRLP with backward-compatible decoding:
+//     post-fork blocks have 6 RLP fields, pre-fork blocks have 5.
+//
+//  2. Update QBFTFilteredHeaderWithRound (core/types/istanbul.go) to zero out
+//     ProposerSeal before hashing, just as CommittedSeal is zeroed today.
+//     This prevents a circular dependency when the proposer signs the header.
+//
+//  3. In Seal() (this file), after the fork block: compute sigHash of the
+//     header, call e.sign(), and write the resulting signature into
+//     QBFTExtra.ProposerSeal via a new writeProposerSeal ApplyQBFTExtra
+//     helper (following the writeCommittedSeals pattern).
+//
+//  4. In verifySigner() (this file), after the fork block: extract the
+//     ProposerSeal from QBFTExtra, recover the signer address using
+//     istanbul.GetSignatureAddressNoHashing, and verify it matches
+//     header.Coinbase. This replaces the current validator-set membership
+//     check with a cryptographic proof.
+//
+//  5. In this method (Author), after the fork block: recover and return the
+//     proposer address from ProposerSeal instead of returning raw Coinbase.
+//     This makes Author() trustworthy for all callers including snapshot
+//     voting, API queries, and any future slashing or accountability logic.
+//
+//  6. Add a writeProposerSeal ApplyQBFTExtra helper in this file, following
+//     the existing writeCommittedSeals / WriteVote pattern.
+//
+//  7. Set FutureForkBlock to the target activation height in the mainnet,
+//     stagenet, and testnet chain configs (params/config.go).
+//
+// The existing infrastructure that supports this:
+//   - FutureForkBlock / IsFutureFork() / Rules.IsFutureFork: fully wired fork
+//     plumbing with config validation, just needs a real block number.
+//   - e.sign (Engine.sign): signing function already on the Engine struct,
+//     currently unused by Seal().
+//   - ApplyHeaderQBFTExtra / ApplyQBFTExtra: helper pattern for writing
+//     fields into header extra data.
+//   - sigHash() / QBFTFilteredHeader: hashing infrastructure that already
+//     excludes mutable fields (CommittedSeal, Round).
+//   - chain.Config() is accessible in Seal, verifySigner, and VerifyHeader
+//     for fork-gating the new behaviour.
 func (e *Engine) Author(header *types.Header) (common.Address, error) {
 	return header.Coinbase, nil
 }
