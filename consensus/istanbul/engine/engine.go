@@ -215,20 +215,13 @@ func (e *Engine) verifySigner(chain consensus.ChainHeaderReader, header *types.H
 		return istanbulcommon.ErrUnknownBlock
 	}
 
-	// Resolve the authorization key and check against signers
-	signer, err := e.Author(header)
-	if err != nil {
-		return err
-	}
-
-	// Signer should be in the validator set of previous block's extraData.
-	if _, v := validators.GetByAddress(signer); v == nil {
+	// Note: QBFT headers do not contain a proposer seal, so Author() returns
+	// header.Coinbase directly. Proposer authenticity is enforced at the
+	// consensus message layer (handlePreprepareMsg) where the PRE-PREPARE
+	// source is cryptographically verified against the block's Coinbase.
+	// Here we can only verify that Coinbase is a member of the validator set.
+	if _, v := validators.GetByAddress(header.Coinbase); v == nil {
 		return istanbulcommon.ErrUnauthorized
-	}
-
-	// Ensure that Coinbase address is the same as signer's address
-	if header.Number.Uint64() > 0 && header.Coinbase != signer {
-		return istanbulcommon.ErrInvalidCoinbase
 	}
 
 	return nil
