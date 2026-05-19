@@ -34,4 +34,6 @@ var (
 	errInvalidSigner = errors.New("message not signed by the sender")
 	// errInvalidPreparedBlock is returned when prepared block is not validated in round change messages
 	errInvalidPreparedBlock = errors.New("invalid prepared block in round change messages")
+	// errInvalidBlockCoinbase is returned when the block's coinbase does not match the PRE-PREPARE message source
+	errInvalidBlockCoinbase = errors.New("block coinbase does not match PRE-PREPARE source")
 )

@@ -22,6 +22,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -117,6 +118,32 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	if !c.valSet.IsProposer(preprepare.Source()) {
 		logger.Warn("[Consensus]: Ignore PRE-PREPARE message from non proposer", "proposer", c.valSet.GetProposer().Address())
 		return errNotFromProposer
+	}
+
+	// Validates that the block's coinbase matches the authenticated PRE-PREPARE source.
+	// This prevents a malicious proposer from setting header.Coinbase to another validator's
+	// address and forging validator votes under that identity.
+	//
+	// At round 0 the proposer created the block, so Coinbase must equal Source.
+	// At round > 0 the block may have been prepared by a different proposer in an earlier
+	// round and is being re-proposed after a round change. In that case the justification
+	// check below (isJustified) ensures 2F+1 PREPARE messages back this block, so an
+	// attacker cannot forge a coinbase without a quorum of PREPARE signatures. We still
+	// verify that the coinbase belongs to a known validator.
+	if block, ok := preprepare.Proposal.(*types.Block); ok {
+		if preprepare.Round.Uint64() == 0 {
+			if block.Header().Coinbase != preprepare.Source() {
+				logger.Warn("[Consensus]: Block coinbase does not match PRE-PREPARE source",
+					"coinbase", block.Header().Coinbase, "source", preprepare.Source())
+				return errInvalidBlockCoinbase
+			}
+		} else {
+			if _, v := c.valSet.GetByAddress(block.Header().Coinbase); v == nil {
+				logger.Warn("[Consensus]: Block coinbase is not a known validator",
+					"coinbase", block.Header().Coinbase)
+				return errInvalidBlockCoinbase
+			}
+		}
 	}
 
 	// Validates PRE-PREPARE message justification
