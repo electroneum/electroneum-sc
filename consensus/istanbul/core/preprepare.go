@@ -124,23 +124,28 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	// This prevents a malicious proposer from setting header.Coinbase to another validator's
 	// address and forging validator votes under that identity.
 	//
-	// At round 0 the proposer created the block, so Coinbase must equal Source.
-	// At round > 0 the block may have been prepared by a different proposer in an earlier
-	// round and is being re-proposed after a round change. In that case the justification
-	// check below (isJustified) ensures 2F+1 PREPARE messages back this block, so an
-	// attacker cannot forge a coinbase without a quorum of PREPARE signatures. We still
-	// verify that the coinbase belongs to a known validator.
+	// The only legitimate case where Coinbase differs from Source is a round-change
+	// re-proposal of a previously prepared block (round > 0 with PREPARE justifications).
+	// The PREPARE quorum's signatures bind the block hash — which includes Coinbase —
+	// so it cannot be forged. isJustified() below cryptographically validates these.
+	//
+	// In all other cases the proposer created the block and Coinbase must match Source.
+	// We require both round > 0 AND PREPAREs present to take the relaxed path, because
+	// justifications are not covered by the PRE-PREPARE signature and isJustified() is
+	// only called at round > 0. Without both conditions an attacker could stuff fake
+	// PREPAREs into a round-0 message to bypass the strict check.
 	if block, ok := preprepare.Proposal.(*types.Block); ok {
-		if preprepare.Round.Uint64() == 0 {
-			if block.Header().Coinbase != preprepare.Source() {
-				logger.Warn("[Consensus]: Block coinbase does not match PRE-PREPARE source",
-					"coinbase", block.Header().Coinbase, "source", preprepare.Source())
-				return errInvalidBlockCoinbase
-			}
-		} else {
+		isReproposal := preprepare.Round.Uint64() > 0 && len(preprepare.JustificationPrepares) > 0
+		if isReproposal {
 			if _, v := c.valSet.GetByAddress(block.Header().Coinbase); v == nil {
 				logger.Warn("[Consensus]: Block coinbase is not a known validator",
 					"coinbase", block.Header().Coinbase)
+				return errInvalidBlockCoinbase
+			}
+		} else {
+			if block.Header().Coinbase != preprepare.Source() {
+				logger.Warn("[Consensus]: Block coinbase does not match PRE-PREPARE source",
+					"coinbase", block.Header().Coinbase, "source", preprepare.Source())
 				return errInvalidBlockCoinbase
 			}
 		}
