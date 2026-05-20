@@ -1,0 +1,249 @@
+// Copyright 2024 The Electroneum Authors
+// This file is part of the electroneum-sc library.
+//
+// Tests for committed-seal validation on the COMMIT path. These guard against a
+// Byzantine validator getting a malformed CommitSeal counted toward quorum and
+// copied verbatim into the block header by commitQBFT (the receive/verify path
+// already rejects such seals in Engine.verifyCommittedSeals; these tests assert
+// the local commit path is symmetric).
+
+package core
+
+import (
+	"crypto/ecdsa"
+	"math/big"
+	"sync"
+	"testing"
+
+	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/prque"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/rlp"
+)
+
+// newKeyedValidatorSet returns a validator set of n validators along with their
+// private keys, indexed so that keys[addr] gives the signing key for a validator.
+func newKeyedValidatorSet(t *testing.T, n int) (istanbul.ValidatorSet, map[common.Address]*ecdsa.PrivateKey) {
+	t.Helper()
+	addrs := make([]common.Address, n)
+	keys := make(map[common.Address]*ecdsa.PrivateKey, n)
+	for i := 0; i < n; i++ {
+		key, err := crypto.GenerateKey()
+		if err != nil {
+			t.Fatalf("failed to generate key: %v", err)
+		}
+		addr := crypto.PubkeyToAddress(key.PublicKey)
+		addrs[i] = addr
+		keys[addr] = key
+	}
+	pp := istanbul.NewRoundRobinProposerPolicy()
+	pp.Use(istanbul.ValidatorSortByByte())
+	return validator.NewSet(addrs, pp), keys
+}
+
+// makeProposalBlock builds a minimal block carrying a decodable QBFT extra so
+// PrepareCommittedSeal (which RLP-hashes the filtered header) works.
+func makeProposalBlock(t *testing.T, number int64) *types.Block {
+	t.Helper()
+	extra, err := rlp.EncodeToBytes(&types.QBFTExtra{
+		VanityData:    make([]byte, types.IstanbulExtraVanity),
+		Validators:    []common.Address{},
+		Round:         0,
+		CommittedSeal: [][]byte{},
+	})
+	if err != nil {
+		t.Fatalf("failed to encode qbft extra: %v", err)
+	}
+	header := &types.Header{
+		Number:     big.NewInt(number),
+		GasLimit:   8000000,
+		Difficulty: big.NewInt(1),
+		MixDigest:  types.IstanbulDigest,
+		Extra:      extra,
+	}
+	return types.NewBlockWithHeader(header)
+}
+
+// newCommitTestCore builds a core with the given proposal installed as the
+// current round's PRE-PREPARE, at the given round.
+func newCommitTestCore(valSet istanbul.ValidatorSet, proposal istanbul.Proposal, seq, round int64) *core {
+	view := &istanbul.View{Sequence: big.NewInt(seq), Round: big.NewInt(round)}
+	preprepare := qbfttypes.NewPreprepare(big.NewInt(seq), big.NewInt(round), proposal)
+	return &core{
+		address:           valSet.List()[0].Address(),
+		state:             StateAcceptRequest,
+		logger:            log.New(),
+		valSet:            valSet,
+		backlogs:          make(map[common.Address]*prque.Prque),
+		backlogsMu:        new(sync.Mutex),
+		pendingRequests:   prque.New(nil),
+		pendingRequestsMu: new(sync.Mutex),
+		current:           newRoundState(view, valSet, preprepare, nil, nil, nil, func(common.Hash) bool { return false }),
+	}
+}
+
+// signCommitSeal produces a valid committed seal for the proposal at the round.
+func signCommitSeal(t *testing.T, key *ecdsa.PrivateKey, block *types.Block, round uint32) []byte {
+	t.Helper()
+	seal, err := crypto.Sign(PrepareCommittedSeal(block.Header(), round), key)
+	if err != nil {
+		t.Fatalf("failed to sign commit seal: %v", err)
+	}
+	return seal
+}
+
+// makeCommit builds a COMMIT message with the given seal, source already set.
+func makeCommit(seq, round int64, block *types.Block, src common.Address, seal []byte) *qbfttypes.Commit {
+	c := qbfttypes.NewCommit(big.NewInt(seq), big.NewInt(round), block.Hash(), seal)
+	c.SetSource(src)
+	c.SetSignature([]byte{0x01})
+	return c
+}
+
+// TestVerifyCommittedSeal_AcceptsValidSeal confirms an honest, correctly signed
+// seal passes verification at the current round.
+func TestVerifyCommittedSeal_AcceptsValidSeal(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	seal := signCommitSeal(t, keys[src], block, 0)
+	commit := makeCommit(1, 0, block, src, seal)
+
+	if err := c.verifyCommittedSeal(commit); err != nil {
+		t.Fatalf("valid seal was rejected: %v", err)
+	}
+}
+
+// TestVerifyCommittedSeal_RejectsMalformedSeal is the regression test for the
+// reported bug: a validator with a correct outer signature/digest but a
+// malformed CommitSeal must be rejected before counting toward quorum.
+func TestVerifyCommittedSeal_RejectsMalformedSeal(t *testing.T) {
+	valSet, _ := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	malformed := make([]byte, types.IstanbulExtraSeal) // right length, all-zero garbage
+	commit := makeCommit(1, 0, block, src, malformed)
+
+	if err := c.verifyCommittedSeal(commit); err != errInvalidCommittedSeal {
+		t.Fatalf("expected errInvalidCommittedSeal, got %v", err)
+	}
+}
+
+// TestVerifyCommittedSeal_RejectsWrongLength ensures a seal of the wrong length
+// can never reach the header.
+func TestVerifyCommittedSeal_RejectsWrongLength(t *testing.T) {
+	valSet, _ := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	commit := makeCommit(1, 0, block, src, []byte{0x01, 0x02, 0x03})
+
+	if err := c.verifyCommittedSeal(commit); err != errInvalidCommittedSeal {
+		t.Fatalf("expected errInvalidCommittedSeal for short seal, got %v", err)
+	}
+}
+
+// TestVerifyCommittedSeal_RejectsSealFromAnotherValidator ensures a seal that
+// recovers to a validator other than the message source is rejected (a
+// Byzantine validator cannot replay another validator's seal under its own
+// COMMIT to manufacture a vote).
+func TestVerifyCommittedSeal_RejectsSealFromAnotherValidator(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	other := valSet.List()[2].Address()
+	// Seal validly signed by `other`, but attributed to `src`.
+	seal := signCommitSeal(t, keys[other], block, 0)
+	commit := makeCommit(1, 0, block, src, seal)
+
+	if err := c.verifyCommittedSeal(commit); err != errInvalidCommittedSeal {
+		t.Fatalf("expected errInvalidCommittedSeal for mismatched signer, got %v", err)
+	}
+}
+
+// TestVerifyCommittedSeal_RoundChangeSealAccepted guards against a liveness
+// regression: when consensus advances to a higher round, an honest seal is
+// signed over that round and must still be accepted (the check keys off the
+// COMMIT's own round, not round 0).
+func TestVerifyCommittedSeal_RoundChangeSealAccepted(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	const round int64 = 3
+	c := newCommitTestCore(valSet, block, 1, round)
+
+	src := valSet.List()[1].Address()
+	seal := signCommitSeal(t, keys[src], block, uint32(round))
+	commit := makeCommit(1, round, block, src, seal)
+
+	if err := c.verifyCommittedSeal(commit); err != nil {
+		t.Fatalf("valid round-%d seal was rejected: %v", round, err)
+	}
+}
+
+// TestVerifyCommittedSeal_WrongRoundSealRejected confirms a seal signed for a
+// different round than the COMMIT claims is rejected.
+func TestVerifyCommittedSeal_WrongRoundSealRejected(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 2)
+
+	src := valSet.List()[1].Address()
+	// Seal signed for round 0 but the COMMIT is for round 2.
+	seal := signCommitSeal(t, keys[src], block, 0)
+	commit := makeCommit(1, 2, block, src, seal)
+
+	if err := c.verifyCommittedSeal(commit); err != errInvalidCommittedSeal {
+		t.Fatalf("expected errInvalidCommittedSeal for wrong-round seal, got %v", err)
+	}
+}
+
+// TestHandleCommitMsg_RejectsMalformedSeal exercises the full handler path and
+// asserts the malformed COMMIT is neither counted toward quorum nor able to
+// trigger a commit.
+func TestHandleCommitMsg_RejectsMalformedSeal(t *testing.T) {
+	valSet, _ := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	malformed := make([]byte, types.IstanbulExtraSeal)
+	commit := makeCommit(1, 0, block, src, malformed)
+
+	err := c.handleCommitMsg(commit)
+	if err != errInvalidCommittedSeal {
+		t.Fatalf("expected errInvalidCommittedSeal from handleCommitMsg, got %v", err)
+	}
+	if got := c.current.QBFTCommits.Size(); got != 0 {
+		t.Fatalf("malformed COMMIT was counted toward quorum: size=%d", got)
+	}
+}
+
+// TestHandleCommitMsg_AcceptsValidSeal confirms an honest COMMIT is counted.
+func TestHandleCommitMsg_AcceptsValidSeal(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	c := newCommitTestCore(valSet, block, 1, 0)
+
+	src := valSet.List()[1].Address()
+	seal := signCommitSeal(t, keys[src], block, 0)
+	commit := makeCommit(1, 0, block, src, seal)
+
+	if err := c.handleCommitMsg(commit); err != nil {
+		t.Fatalf("valid COMMIT rejected by handler: %v", err)
+	}
+	if got := c.current.QBFTCommits.Size(); got != 1 {
+		t.Fatalf("valid COMMIT not counted: size=%d", got)
+	}
+}

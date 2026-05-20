@@ -32,6 +32,9 @@ var (
 	errInvalidMessage = errors.New("invalid message")
 	// errInvalidSigner is returned when the message is signed by a validator different than message sender
 	errInvalidSigner = errors.New("message not signed by the sender")
+	// errInvalidCommittedSeal is returned when the committed seal embedded in a
+	// COMMIT message does not recover to the sender over the proposal digest.
+	errInvalidCommittedSeal = errors.New("invalid committed seal")
 	// errInvalidPreparedBlock is returned when prepared block is not validated in round change messages
 	errInvalidPreparedBlock = errors.New("invalid prepared block in round change messages")
 )
