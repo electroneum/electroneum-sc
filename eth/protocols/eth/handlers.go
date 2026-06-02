@@ -141,6 +141,13 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 
 func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHeadersPacket) []rlp.RawValue {
 	count := query.Amount
+	if count == 0 {
+		// A zero-amount query returns no headers. Guard against the
+		// underflow of count-1 in hash mode, which would otherwise wrap to
+		// a huge uint64 and be clamped into serving the whole canonical
+		// prefix instead of an empty response.
+		return nil
+	}
 	if count > maxHeadersServe {
 		count = maxHeadersServe
 	}
