@@ -68,7 +68,6 @@ func TestCheckLogQueryLimit(t *testing.T) {
 		{"both within cap is accepted", 1000, 1000, 1000, false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			err := CheckLogQueryLimit(tc.limit, makeAddresses(tc.addresses), makeTopics(tc.topics))
 			if tc.wantErr && !errors.Is(err, ErrExceedLogQueryLimit) {
