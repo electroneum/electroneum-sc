@@ -43,27 +43,59 @@ type filter struct {
 	s        *Subscription // associated subscription in event system
 }
 
+// ErrExceedLogQueryLimit is returned when a log-filter request specifies more
+// addresses or per-position topics than the configured cap allows.
+var ErrExceedLogQueryLimit = errors.New("exceed max addresses or topics per query")
+
 // PublicFilterAPI offers support to create and manage filters. This will allow external clients to retrieve various
 // information related to the Ethereum protocol such als blocks, transactions and logs.
 type PublicFilterAPI struct {
-	backend   Backend
-	events    *EventSystem
-	filtersMu sync.Mutex
-	filters   map[rpc.ID]*filter
-	timeout   time.Duration
+	backend       Backend
+	events        *EventSystem
+	filtersMu     sync.Mutex
+	filters       map[rpc.ID]*filter
+	timeout       time.Duration
+	logQueryLimit int
 }
 
 // NewPublicFilterAPI returns a new PublicFilterAPI instance.
-func NewPublicFilterAPI(backend Backend, lightMode bool, timeout time.Duration) *PublicFilterAPI {
+//
+// logQueryLimit caps the number of addresses and per-position topics accepted
+// by log-filter methods. 0 disables the cap.
+func NewPublicFilterAPI(backend Backend, lightMode bool, timeout time.Duration, logQueryLimit int) *PublicFilterAPI {
 	api := &PublicFilterAPI{
-		backend: backend,
-		events:  NewEventSystem(backend, lightMode),
-		filters: make(map[rpc.ID]*filter),
-		timeout: timeout,
+		backend:       backend,
+		events:        NewEventSystem(backend, lightMode),
+		filters:       make(map[rpc.ID]*filter),
+		timeout:       timeout,
+		logQueryLimit: logQueryLimit,
 	}
 	go api.timeoutLoop(timeout)
 
 	return api
+}
+
+// checkLogQueryLimit verifies that a filter criteria does not exceed the
+// configured cap on addresses or per-position topics.
+func (api *PublicFilterAPI) checkLogQueryLimit(crit FilterCriteria) error {
+	return CheckLogQueryLimit(api.logQueryLimit, crit.Addresses, crit.Topics)
+}
+
+// CheckLogQueryLimit compares an address slice and topic matrix against a cap.
+// A cap of 0 disables the check.
+func CheckLogQueryLimit(limit int, addresses []common.Address, topics [][]common.Hash) error {
+	if limit == 0 {
+		return nil
+	}
+	if len(addresses) > limit {
+		return ErrExceedLogQueryLimit
+	}
+	for _, t := range topics {
+		if len(t) > limit {
+			return ErrExceedLogQueryLimit
+		}
+	}
+	return nil
 }
 
 // timeoutLoop runs at the interval set by 'timeout' and deletes filters
@@ -236,6 +268,9 @@ func (api *PublicFilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, er
 
 // Logs creates a subscription that fires for all new log that match the given filter criteria.
 func (api *PublicFilterAPI) Logs(ctx context.Context, crit FilterCriteria) (*rpc.Subscription, error) {
+	if err := api.checkLogQueryLimit(crit); err != nil {
+		return nil, err
+	}
 	notifier, supported := rpc.NotifierFromContext(ctx)
 	if !supported {
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
@@ -288,6 +323,9 @@ type FilterCriteria electroneum.FilterQuery
 //
 // https://eth.wiki/json-rpc/API#eth_newfilter
 func (api *PublicFilterAPI) NewFilter(crit FilterCriteria) (rpc.ID, error) {
+	if err := api.checkLogQueryLimit(crit); err != nil {
+		return "", err
+	}
 	logs := make(chan []*types.Log)
 	logsSub, err := api.events.SubscribeLogs(electroneum.FilterQuery(crit), logs)
 	if err != nil {
@@ -323,6 +361,9 @@ func (api *PublicFilterAPI) NewFilter(crit FilterCriteria) (rpc.ID, error) {
 //
 // https://eth.wiki/json-rpc/API#eth_getlogs
 func (api *PublicFilterAPI) GetLogs(ctx context.Context, crit FilterCriteria) ([]*types.Log, error) {
+	if err := api.checkLogQueryLimit(crit); err != nil {
+		return nil, err
+	}
 	var filter *Filter
 	if crit.BlockHash != nil {
 		// Block filter requested, construct a single-shot filter
@@ -376,6 +417,9 @@ func (api *PublicFilterAPI) GetFilterLogs(ctx context.Context, id rpc.ID) ([]*ty
 
 	if !found || f.typ != LogsSubscription {
 		return nil, fmt.Errorf("filter not found")
+	}
+	if err := api.checkLogQueryLimit(f.crit); err != nil {
+		return nil, err
 	}
 
 	var filter *Filter

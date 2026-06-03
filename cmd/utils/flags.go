@@ -535,6 +535,11 @@ var (
 		Usage: "Sets a cap on transaction fee (in ether) that can be sent via the RPC APIs (0 = no cap)",
 		Value: ethconfig.Defaults.RPCTxFeeCap,
 	}
+	RPCGlobalLogQueryLimitFlag = cli.IntFlag{
+		Name:  "rpc.logquerylimit",
+		Usage: "Sets a cap on the number of addresses and per-position topics accepted by eth_getLogs, eth_newFilter, eth_subscribe(logs), eth_getFilterLogs, and the GraphQL logs resolvers (0 = no cap)",
+		Value: ethconfig.Defaults.RPCLogQueryLimit,
+	}
 	// Authenticated RPC HTTP settings
 	AuthListenFlag = cli.StringFlag{
 		Name:  "authrpc.addr",
@@ -1675,6 +1680,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if ctx.GlobalIsSet(RPCGlobalTxFeeCapFlag.Name) {
 		cfg.RPCTxFeeCap = ctx.GlobalFloat64(RPCGlobalTxFeeCapFlag.Name)
 	}
+	if ctx.GlobalIsSet(RPCGlobalLogQueryLimitFlag.Name) {
+		cfg.RPCLogQueryLimit = ctx.GlobalInt(RPCGlobalLogQueryLimitFlag.Name)
+	}
 	if ctx.GlobalIsSet(NoDiscoverFlag.Name) {
 		cfg.EthDiscoveryURLs, cfg.SnapDiscoveryURLs = []string{}, []string{}
 	} else if ctx.GlobalIsSet(DNSDiscoveryFlag.Name) {
@@ -1826,8 +1834,8 @@ func RegisterEthStatsService(stack *node.Node, backend ethapi.Backend, url strin
 }
 
 // RegisterGraphQLService is a utility function to construct a new service and register it against a node.
-func RegisterGraphQLService(stack *node.Node, backend ethapi.Backend, cfg node.Config) {
-	if err := graphql.New(stack, backend, cfg.GraphQLCors, cfg.GraphQLVirtualHosts); err != nil {
+func RegisterGraphQLService(stack *node.Node, backend ethapi.Backend, cfg node.Config, logQueryLimit int) {
+	if err := graphql.New(stack, backend, cfg.GraphQLCors, cfg.GraphQLVirtualHosts, logQueryLimit); err != nil {
 		Fatalf("Failed to register the GraphQL service: %v", err)
 	}
 }
