@@ -74,9 +74,11 @@ func (e *Emission) store(db ethdb.Database) error {
 // copy creates a deep copy of the emission snapshot
 func (e *Emission) copy() *Emission {
 	cpy := &Emission{
-		Number:            e.Number,
-		Hash:              e.Hash,
-		CirculatingSupply: e.CirculatingSupply,
+		Number: e.Number,
+		Hash:   e.Hash,
+	}
+	if e.CirculatingSupply != nil {
+		cpy.CirculatingSupply = new(big.Int).Set(e.CirculatingSupply)
 	}
 
 	return cpy

@@ -90,11 +90,12 @@ var Defaults = Config{
 		GasPrice: big.NewInt(params.GWei),
 		Recommit: 3 * time.Second,
 	},
-	TxPool:        core.DefaultTxPoolConfig,
-	RPCGasCap:     50000000,
-	RPCEVMTimeout: 5 * time.Second,
-	GPO:           FullNodeGPO,
-	RPCTxFeeCap:   100000, //  [[ETH($)/ETN($)] / 20(to allow for appreciation, and given that fees will start very low] : correct to jun 2023
+	TxPool:           core.DefaultTxPoolConfig,
+	RPCGasCap:        50000000,
+	RPCEVMTimeout:    5 * time.Second,
+	GPO:              FullNodeGPO,
+	RPCTxFeeCap:      100000, //  [[ETH($)/ETN($)] / 20(to allow for appreciation, and given that fees will start very low] : correct to jun 2023
+	RPCLogQueryLimit: 1000,
 
 	// Quorum
 	Istanbul: *istanbul.DefaultConfig, // Quorum
@@ -206,6 +207,12 @@ type Config struct {
 	// RPCTxFeeCap is the global transaction fee(price * gaslimit) cap for
 	// send-transction variants. The unit is ether.
 	RPCTxFeeCap float64
+
+	// RPCLogQueryLimit caps the number of addresses and per-position topics
+	// accepted by log-filter RPC methods (eth_getLogs, eth_newFilter,
+	// eth_subscribe("logs"), eth_getFilterLogs, and the GraphQL logs resolvers).
+	// 0 disables the cap.
+	RPCLogQueryLimit int
 
 	// Checkpoint is a hardcoded checkpoint which can be nil.
 	Checkpoint *params.TrustedCheckpoint `toml:",omitempty"`

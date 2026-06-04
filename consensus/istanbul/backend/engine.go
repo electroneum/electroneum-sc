@@ -257,8 +257,16 @@ func (sb *Backend) Seal(chain consensus.ChainHeaderReader, block *types.Block, r
 
 func (sb *Backend) GetBaseBlockReward(chain consensus.ChainHeaderReader, header *types.Header, circulatingSupply *big.Int) *big.Int {
 	// original heights * 24 to make them compatible with 5-second block time
-	var legacyV9ForkHeight = new(big.Int).Mul(chain.Config().LegacyV9ForkHeight, big.NewInt(24))
-	var legacyToSmartchainMigrationHeight = new(big.Int).Mul(chain.Config().LegacyToSmartchainMigrationHeight, big.NewInt(24))
+	rawV9 := chain.Config().LegacyV9ForkHeight
+	if rawV9 == nil {
+		rawV9 = big.NewInt(0)
+	}
+	rawMig := chain.Config().LegacyToSmartchainMigrationHeight
+	if rawMig == nil {
+		rawMig = big.NewInt(0)
+	}
+	var legacyV9ForkHeight = new(big.Int).Mul(rawV9, big.NewInt(24))
+	var legacyToSmartchainMigrationHeight = new(big.Int).Mul(rawMig, big.NewInt(24))
 
 	var halvingPeriod = big.NewInt(25228800)                                             // 4 years in 5-second block time
 	var baseReward = big.NewInt(4e+18)                                                   // ~100ETN every 120 seconds
