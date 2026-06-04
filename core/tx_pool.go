@@ -650,6 +650,18 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 	return txs
 }
 
+// prioritySigner returns the signer to use when recovering the priority public
+// key of a priority transaction. Once the future fork is active it returns the
+// sender-bound futureForkSigner; otherwise it returns the pool's default signer.
+// This keeps every priority-signature recovery site on the same fork schedule
+// as the consensus path (types.MakeSigner).
+func (pool *TxPool) prioritySigner() types.Signer {
+	if pool.futureFork {
+		return types.NewFutureForkSigner(pool.chainconfig.ChainID)
+	}
+	return pool.signer
+}
+
 // validateTx checks whether a transaction is valid according to the consensus
 // rules and adheres to some heuristic limits of the local node (price and size).
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
@@ -695,11 +707,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		// Make sure the priority signature checks out.
 		// Use the future fork signer when the fork is active so that priority
 		// signatures are verified against the sender-bound hash.
-		prioritySigner := pool.signer
-		if pool.futureFork {
-			prioritySigner = types.NewFutureForkSigner(pool.chainconfig.ChainID)
-		}
-		priorityPubkey, err := types.PrioritySender(prioritySigner, tx)
+		priorityPubkey, err := types.PrioritySender(pool.prioritySigner(), tx)
 		if err != nil {
 			return errBadPrioritySignature
 		}
@@ -1043,11 +1051,7 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		if IsPriorityTransaction(tx) {
 			// Exclude priority transactions with invalid priority signature as soon
 			// as possible. Use the future fork signer when the fork is active.
-			prioritySigner := pool.signer
-			if pool.futureFork {
-				prioritySigner = types.NewFutureForkSigner(pool.chainconfig.ChainID)
-			}
-			_, err = types.PrioritySender(prioritySigner, tx)
+			_, err = types.PrioritySender(pool.prioritySigner(), tx)
 			if err != nil {
 				errs[i] = ErrInvalidPrioritySender
 				invalidTxMeter.Mark(1)
@@ -1476,7 +1480,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		// kick priority tx that have a key that's expired
 		for _, tx := range list.Flatten() {
 			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
-				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				priorityPubkey, _ := types.PrioritySender(pool.prioritySigner(), tx) // no need to deal with error because this has already been validated once before
 				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
 					pool.all.Remove(tx.Hash())
 				}
@@ -1827,7 +1831,7 @@ func (pool *TxPool) demoteUnexecutables() {
 		// populating the queue unnecessarily and waste an account slot that could be used for another priority sender
 		for _, tx := range list.Flatten() {
 			if tx.Type() == types.PriorityTxType && !pool.locals.containsTx(tx) {
-				priorityPubkey, _ := types.PrioritySender(pool.signer, tx) // no need to deal with error because this has already been validated once before
+				priorityPubkey, _ := types.PrioritySender(pool.prioritySigner(), tx) // no need to deal with error because this has already been validated once before
 				if _, ok := pool.currentPriorityTransactors[priorityPubkey]; !ok {
 					pool.all.Remove(tx.Hash())
 				}
