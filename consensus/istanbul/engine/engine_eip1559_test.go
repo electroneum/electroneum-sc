@@ -40,12 +40,12 @@ type mockChainHeaderReader struct {
 	cfg *params.ChainConfig
 }
 
-func (m *mockChainHeaderReader) Config() *params.ChainConfig            { return m.cfg }
-func (m *mockChainHeaderReader) CurrentHeader() *types.Header           { return nil }
+func (m *mockChainHeaderReader) Config() *params.ChainConfig                 { return m.cfg }
+func (m *mockChainHeaderReader) CurrentHeader() *types.Header                { return nil }
 func (m *mockChainHeaderReader) GetHeader(common.Hash, uint64) *types.Header { return nil }
-func (m *mockChainHeaderReader) GetHeaderByNumber(uint64) *types.Header { return nil }
+func (m *mockChainHeaderReader) GetHeaderByNumber(uint64) *types.Header      { return nil }
 func (m *mockChainHeaderReader) GetHeaderByHash(common.Hash) *types.Header   { return nil }
-func (m *mockChainHeaderReader) GetTd(common.Hash, uint64) *big.Int     { return nil }
+func (m *mockChainHeaderReader) GetTd(common.Hash, uint64) *big.Int          { return nil }
 
 // eip1559TestFixture sets up:
 //   - a 4-validator set,
