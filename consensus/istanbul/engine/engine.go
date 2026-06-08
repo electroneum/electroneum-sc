@@ -2,6 +2,7 @@ package qbftengine
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"math/big"
 	"time"
@@ -11,8 +12,10 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/consensus/misc"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 	"golang.org/x/crypto/sha3"
@@ -198,6 +201,37 @@ func (e *Engine) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 	// Ensure that the block's timestamp isn't too close to it's parent
 	if parent.Time+e.cfg.GetConfig(parent.Number).BlockPeriod > header.Time {
 		return istanbulcommon.ErrInvalidTimestamp
+	}
+
+	// Verify the absolute gas limit cap, matching the check in
+	// beacon/clique/ethash. params.MaxGasLimit is 2^63-1 so this is
+	// effectively unreachable in practice, but kept for parity with the
+	// other engines and to reject pathological headers up front.
+	if header.GasLimit > params.MaxGasLimit {
+		return fmt.Errorf("invalid gasLimit: have %v, max %v", header.GasLimit, params.MaxGasLimit)
+	}
+
+	// Verify EIP-1559 header fields (BaseFee correctness, BaseFee presence,
+	// and the per-block ±1/1024 GasLimit bound via misc.VerifyGaslimit).
+	// Without this, a malicious proposer can ship blocks with an arbitrary
+	// BaseFee (skipping the EIP-1559 burn), nil BaseFee (panic during state
+	// transition), or an oversized GasLimit (block-size DoS). This matches
+	// beacon/clique/ethash, which all call VerifyEip1559Header from their
+	// equivalent of verifyCascadingFields.
+	//
+	// The chain reader is allowed to be nil when callers (typically tests)
+	// supply parents directly — mirroring the existing guard above that uses
+	// parents to avoid chain.GetHeader. In production every call site
+	// (blockchain insert, headerchain, fetchers, backend.Verify) passes a
+	// real ChainHeaderReader, so this nil-skip path is unreachable on a real
+	// node and does not weaken consensus validation.
+	if chain != nil {
+		cfg := chain.Config()
+		if cfg.IsLondon(header.Number) {
+			if err := misc.VerifyEip1559Header(cfg, parent, header); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Verify signer
