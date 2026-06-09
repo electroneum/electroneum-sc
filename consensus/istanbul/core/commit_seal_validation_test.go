@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/prque"
@@ -22,9 +23,55 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
+
+// commitCaptureBackend is a minimal istanbul.Backend stub for driving commitQBFT.
+// It captures the seals handed to Commit so a test can recover them exactly as
+// Engine.Signers does, and records whether Commit/Broadcast were reached so the
+// commitQBFT length guard (which round-changes instead of committing) is observable.
+type commitCaptureBackend struct {
+	addr           common.Address
+	committedSeals [][]byte
+	committed      bool
+	broadcasts     int
+	signKey        *ecdsa.PrivateKey
+}
+
+func (b *commitCaptureBackend) Address() common.Address                            { return b.addr }
+func (b *commitCaptureBackend) Validators(istanbul.Proposal) istanbul.ValidatorSet { return nil }
+func (b *commitCaptureBackend) EventMux() *event.TypeMux                           { return new(event.TypeMux) }
+func (b *commitCaptureBackend) Broadcast(istanbul.ValidatorSet, uint64, []byte) error {
+	b.broadcasts++
+	return nil
+}
+func (b *commitCaptureBackend) Gossip(istanbul.ValidatorSet, uint64, []byte) error { return nil }
+func (b *commitCaptureBackend) Commit(_ istanbul.Proposal, seals [][]byte, _ *big.Int) error {
+	b.committed = true
+	b.committedSeals = seals
+	return nil
+}
+func (b *commitCaptureBackend) Verify(istanbul.Proposal) (time.Duration, error) { return 0, nil }
+func (b *commitCaptureBackend) Sign(data []byte) ([]byte, error) {
+	return crypto.Sign(crypto.Keccak256(data), b.signKey)
+}
+func (b *commitCaptureBackend) SignWithoutHashing(data []byte) ([]byte, error) {
+	return crypto.Sign(data, b.signKey)
+}
+func (b *commitCaptureBackend) CheckSignature([]byte, common.Address, []byte) error { return nil }
+func (b *commitCaptureBackend) LastProposal() (istanbul.Proposal, common.Address) {
+	return nil, common.Address{}
+}
+func (b *commitCaptureBackend) HasPropsal(common.Hash, *big.Int) bool { return false }
+func (b *commitCaptureBackend) GetProposer(uint64) common.Address     { return common.Address{} }
+func (b *commitCaptureBackend) ParentValidators(istanbul.Proposal) istanbul.ValidatorSet {
+	return nil
+}
+func (b *commitCaptureBackend) HasBadProposal(common.Hash) bool { return false }
+func (b *commitCaptureBackend) Close() error                    { return nil }
+func (b *commitCaptureBackend) StartQBFTConsensus() error       { return nil }
 
 // newKeyedValidatorSet returns a validator set of n validators along with their
 // private keys, indexed so that keys[addr] gives the signing key for a validator.
@@ -245,5 +292,118 @@ func TestHandleCommitMsg_AcceptsValidSeal(t *testing.T) {
 	}
 	if got := c.current.QBFTCommits.Size(); got != 1 {
 		t.Fatalf("valid COMMIT not counted: size=%d", got)
+	}
+}
+
+// newCommitQBFTTestCore is like newCommitTestCore but fully wires the fields
+// commitQBFT and broadcastNextRoundChange depend on: a backend (for Commit and
+// the round-change broadcast) and a roundChangeSet/currentMutex.
+func newCommitQBFTTestCore(valSet istanbul.ValidatorSet, backend istanbul.Backend, proposal istanbul.Proposal, seq, round int64) *core {
+	view := &istanbul.View{Sequence: big.NewInt(seq), Round: big.NewInt(round)}
+	preprepare := qbfttypes.NewPreprepare(big.NewInt(seq), big.NewInt(round), proposal)
+	return &core{
+		address:           backend.Address(),
+		state:             StatePrepared,
+		logger:            log.New(),
+		cleanLogger:       log.New(),
+		backend:           backend,
+		valSet:            valSet,
+		backlogs:          make(map[common.Address]*prque.Prque),
+		backlogsMu:        new(sync.Mutex),
+		currentMutex:      new(sync.Mutex),
+		pendingRequests:   prque.New(nil),
+		pendingRequestsMu: new(sync.Mutex),
+		roundChangeSet:    newRoundChangeSet(valSet),
+		current:           newRoundState(view, valSet, preprepare, nil, nil, nil, func(common.Hash) bool { return false }),
+	}
+}
+
+// TestCommitQBFT_SealsMatchNetworkVerification is the end-to-end symmetry proof:
+// a real quorum of validly-signed COMMITs is driven through handleCommitMsg, and
+// the seals commitQBFT hands to backend.Commit are recovered exactly as
+// Engine.Signers does (over PrepareCommittedSeal at the committed round) and must
+// all map to distinct validators. This is what guarantees a block this node
+// builds will pass Engine.verifyCommittedSeals network-wide.
+func TestCommitQBFT_SealsMatchNetworkVerification(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	const round int64 = 0
+
+	proposerKey := keys[valSet.List()[0].Address()]
+	backend := &commitCaptureBackend{addr: valSet.List()[0].Address(), signKey: proposerKey}
+	c := newCommitQBFTTestCore(valSet, backend, block, 1, round)
+
+	// Feed a quorum of valid COMMITs from distinct validators.
+	quorum := c.QuorumSize()
+	signers := make(map[common.Address]struct{})
+	for i := 0; i < quorum; i++ {
+		src := valSet.List()[i].Address()
+		signers[src] = struct{}{}
+		seal := signCommitSeal(t, keys[src], block, uint32(round))
+		if err := c.handleCommitMsg(makeCommit(1, round, block, src, seal)); err != nil {
+			t.Fatalf("valid COMMIT %d rejected: %v", i, err)
+		}
+	}
+
+	if !backend.committed {
+		t.Fatalf("quorum of valid COMMITs did not trigger commit")
+	}
+	if len(backend.committedSeals) != quorum {
+		t.Fatalf("expected %d committed seals, got %d", quorum, len(backend.committedSeals))
+	}
+
+	// Recover each committed seal exactly as Engine.Signers / verifyCommittedSeals
+	// does: over PrepareCommittedSeal(header, committedRound). Each must resolve to
+	// one of the validators that sent a COMMIT.
+	proposalSeal := PrepareCommittedSeal(block.Header(), uint32(round))
+	recovered := make(map[common.Address]struct{})
+	for i, seal := range backend.committedSeals {
+		addr, err := istanbul.GetSignatureAddressNoHashing(proposalSeal, seal)
+		if err != nil {
+			t.Fatalf("committed seal %d failed to recover (would fail verifyCommittedSeals): %v", i, err)
+		}
+		if _, ok := signers[addr]; !ok {
+			t.Fatalf("committed seal %d recovered to %s, not a committing validator", i, addr.Hex())
+		}
+		recovered[addr] = struct{}{}
+	}
+	if len(recovered) != quorum {
+		t.Fatalf("expected %d distinct seal signers, got %d", quorum, len(recovered))
+	}
+}
+
+// TestCommitQBFT_RefusesMalformedSeal exercises the defense-in-depth length guard
+// inside commitQBFT: if a malformed seal somehow reaches QBFTCommits without going
+// through handleCommitMsg's check, commitQBFT must refuse to commit and instead
+// round-change, so a malformed seal can never be copied into the block header.
+func TestCommitQBFT_RefusesMalformedSeal(t *testing.T) {
+	valSet, keys := newKeyedValidatorSet(t, 4)
+	block := makeProposalBlock(t, 1)
+	const round int64 = 0
+
+	backend := &commitCaptureBackend{addr: valSet.List()[0].Address(), signKey: keys[valSet.List()[0].Address()]}
+	c := newCommitQBFTTestCore(valSet, backend, block, 1, round)
+
+	// Add a quorum-worth of COMMITs directly to the set, bypassing handleCommitMsg,
+	// with one carrying a wrong-length (malformed) seal.
+	quorum := c.QuorumSize()
+	for i := 0; i < quorum; i++ {
+		src := valSet.List()[i].Address()
+		seal := signCommitSeal(t, keys[src], block, uint32(round))
+		if i == quorum-1 {
+			seal = []byte{0x01, 0x02, 0x03} // malformed length
+		}
+		if err := c.current.QBFTCommits.Add(makeCommit(1, round, block, src, seal)); err != nil {
+			t.Fatalf("failed to seed QBFTCommits: %v", err)
+		}
+	}
+
+	c.commitQBFT()
+
+	if backend.committed {
+		t.Fatalf("commitQBFT committed a block containing a malformed seal")
+	}
+	if backend.broadcasts == 0 {
+		t.Fatalf("commitQBFT did not round-change after seeing a malformed seal")
 	}
 }
