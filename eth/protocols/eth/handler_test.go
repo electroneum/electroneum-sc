@@ -255,6 +255,16 @@ func testGetBlockHeaders(t *testing.T, protocol uint) {
 			&GetBlockHeadersPacket{Origin: HashOrNumber{Number: backend.chain.CurrentBlock().NumberU64() + 1}, Amount: 1},
 			[]common.Hash{},
 		},
+		// Check that zero-amount queries return no headers in both number and
+		// hash origin modes. In hash mode, count-1 would otherwise underflow to
+		// a huge uint64 and be clamped into serving the whole canonical prefix.
+		{
+			&GetBlockHeadersPacket{Origin: HashOrNumber{Number: limit / 2}, Amount: 0},
+			[]common.Hash{},
+		}, {
+			&GetBlockHeadersPacket{Origin: HashOrNumber{Hash: backend.chain.GetBlockByNumber(limit / 2).Hash()}, Amount: 0},
+			[]common.Hash{},
+		},
 	}
 	// Run each of the tests and verify the results against the chain
 	for i, tt := range tests {

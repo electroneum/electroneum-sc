@@ -50,7 +50,7 @@ func TestBuildSchema(t *testing.T) {
 	}
 	defer stack.Close()
 	// Make sure the schema can be parsed and matched up to the object model.
-	if err := newHandler(stack, nil, []string{}, []string{}); err != nil {
+	if err := newHandler(stack, nil, []string{}, []string{}, 0); err != nil {
 		t.Errorf("Could not construct GraphQL handler: %v", err)
 	}
 }
@@ -263,7 +263,7 @@ func createGQLService(t *testing.T, stack *node.Node) {
 		t.Fatalf("could not create import blocks: %v", err)
 	}
 	// create gql service
-	err = New(stack, ethBackend.APIBackend, []string{}, []string{})
+	err = New(stack, ethBackend.APIBackend, []string{}, []string{}, 0)
 	if err != nil {
 		t.Fatalf("could not create graphql service: %v", err)
 	}
@@ -348,7 +348,7 @@ func createGQLServiceWithTransactions(t *testing.T, stack *node.Node) {
 		t.Fatalf("could not create import blocks: %v", err)
 	}
 	// create gql service
-	err = New(stack, ethBackend.APIBackend, []string{}, []string{})
+	err = New(stack, ethBackend.APIBackend, []string{}, []string{}, 0)
 	if err != nil {
 		t.Fatalf("could not create graphql service: %v", err)
 	}

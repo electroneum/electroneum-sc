@@ -48,6 +48,8 @@ type prioritySigCache struct {
 func MakeSigner(config *params.ChainConfig, blockNumber *big.Int) Signer {
 	var signer Signer
 	switch {
+	case config.IsFutureFork(blockNumber):
+		signer = NewFutureForkSigner(config.ChainID)
 	case config.IsLondon(blockNumber):
 		signer = NewLondonSigner(config.ChainID)
 	case config.IsBerlin(blockNumber):
@@ -108,7 +110,10 @@ func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, err
 	return tx.WithSignature(s, sig)
 }
 
-// SignTx signs the transaction using the given signer and private key.
+// SignPriorityTx signs the transaction using the given signer and private key.
+// The sender signs first over Hash(tx), then the priority key signs over
+// PriorityHash(tx) which includes the sender's V,R,S — binding the priority
+// signature to a specific sender.
 func SignPriorityTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey, priorityPrv *ecdsa.PrivateKey) (*Transaction, error) {
 	if tx.Type() != PriorityTxType {
 		return nil, ErrTxIsNotPriorityType
@@ -118,11 +123,12 @@ func SignPriorityTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey, priorityPr
 	if err != nil {
 		return nil, err
 	}
-	prioritySig, err := crypto.Sign(h[:], priorityPrv)
+	txCpy, err := tx.WithSignature(s, sig)
 	if err != nil {
 		return nil, err
 	}
-	txCpy, err := tx.WithSignature(s, sig)
+	ph := s.PriorityHash(txCpy)
+	prioritySig, err := crypto.Sign(ph[:], priorityPrv)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +146,9 @@ func SignNewTx(prv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, er
 	return tx.WithSignature(s, sig)
 }
 
-// SignNewPriorityTx creates a transaction and signs it.
+// SignNewPriorityTx creates a priority transaction and signs it.
+// The sender signs first, then the priority key signs over PriorityHash
+// which includes the sender's signature.
 func SignNewPriorityTx(prv *ecdsa.PrivateKey, priorityPrv *ecdsa.PrivateKey, s Signer, txdata TxData) (*Transaction, error) {
 	tx := NewTx(txdata)
 	if tx.Type() != PriorityTxType {
@@ -151,11 +159,12 @@ func SignNewPriorityTx(prv *ecdsa.PrivateKey, priorityPrv *ecdsa.PrivateKey, s S
 	if err != nil {
 		return nil, err
 	}
-	prioritySig, err := crypto.Sign(h[:], priorityPrv)
+	txCpy, err := tx.WithSignature(s, sig)
 	if err != nil {
 		return nil, err
 	}
-	txCpy, err := tx.WithSignature(s, sig)
+	ph := s.PriorityHash(txCpy)
+	prioritySig, err := crypto.Sign(ph[:], priorityPrv)
 	if err != nil {
 		return nil, err
 	}
@@ -238,6 +247,12 @@ type Signer interface {
 	// Hash returns 'signature hash', i.e. the transaction hash that is signed by the
 	// private key. This hash does not uniquely identify the transaction.
 	Hash(tx *Transaction) common.Hash
+
+	// PriorityHash returns the hash to be signed by the priority key.
+	// Pre-fork signers return the same value as Hash (both keys sign the same hash).
+	// Post-fork signers include the sender's V, R, S so the priority signature
+	// is bound to a specific sender and cannot be replayed.
+	PriorityHash(tx *Transaction) common.Hash
 
 	// Equal returns true if the given signer is the same as the receiver.
 	Equal(Signer) bool
@@ -338,6 +353,86 @@ func (s londonSigner) Hash(tx *Transaction) common.Hash {
 		})
 }
 
+// PriorityHash for londonSigner (pre-fork) returns the same as Hash.
+// Both the sender and priority key sign over the same body-only hash.
+func (s londonSigner) PriorityHash(tx *Transaction) common.Hash {
+	return s.Hash(tx)
+}
+
+// futureForkSigner wraps londonSigner and changes only the priority signature
+// scheme. After the future fork activates, the priority key signs over a hash
+// that includes the sender's V,R,S — binding the priority signature to that
+// specific sender so it cannot be replayed by a different account.
+type futureForkSigner struct{ londonSigner }
+
+// NewFutureForkSigner returns a signer that uses the sender-bound priority
+// signature scheme introduced by the future fork.
+func NewFutureForkSigner(chainId *big.Int) Signer {
+	return futureForkSigner{londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}}
+}
+
+func (s futureForkSigner) Sender(tx *Transaction) (common.Address, error) {
+	if tx.Type() != DynamicFeeTxType && tx.Type() != PriorityTxType {
+		return s.londonSigner.eip2930Signer.Sender(tx)
+	}
+	V, R, S := tx.RawSignatureValues()
+	V = new(big.Int).Add(V, big.NewInt(27))
+	if tx.ChainId().Cmp(s.chainId) != 0 {
+		return common.Address{}, ErrInvalidChainId
+	}
+	if tx.Type() == PriorityTxType {
+		_, err := s.PrioritySender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+	}
+	return recoverPlain(s.Hash(tx), R, S, V, true)
+}
+
+// PriorityHash returns a hash that includes the sender's signature (V, R, S)
+// in addition to the transaction body fields. This binds the priority signature
+// to the sender so it cannot be replayed by a different account.
+func (s futureForkSigner) PriorityHash(tx *Transaction) common.Hash {
+	if tx.Type() != PriorityTxType {
+		return s.londonSigner.Hash(tx)
+	}
+	V, R, S := tx.RawSignatureValues()
+	return prefixedRlpHash(
+		tx.Type(),
+		[]interface{}{
+			s.chainId,
+			tx.Nonce(),
+			tx.GasTipCap(),
+			tx.GasFeeCap(),
+			tx.Gas(),
+			tx.To(),
+			tx.Value(),
+			tx.Data(),
+			tx.AccessList(),
+			V, R, S,
+		})
+}
+
+// PrioritySender recovers the priority public key using the sender-bound hash.
+func (s futureForkSigner) PrioritySender(tx *Transaction) (common.PublicKey, error) {
+	switch inner := tx.inner.(type) {
+	case *PriorityTx:
+		V, R, S := inner.rawPrioritySignatureValues()
+		V = new(big.Int).Add(V, big.NewInt(27))
+		if tx.ChainId().Cmp(s.chainId) != 0 {
+			return common.PublicKey{}, ErrInvalidChainId
+		}
+		return recoverPublicKey(s.PriorityHash(tx), V, R, S, true)
+	default:
+		return common.PublicKey{}, ErrTxTypeNotSupported
+	}
+}
+
+func (s futureForkSigner) Equal(s2 Signer) bool {
+	x, ok := s2.(futureForkSigner)
+	return ok && x.chainId.Cmp(s.chainId) == 0
+}
+
 type eip2930Signer struct{ EIP155Signer }
 
 // NewEIP2930Signer returns a signer that accepts EIP-2930 access list transactions,
@@ -379,6 +474,10 @@ func (s eip2930Signer) Sender(tx *Transaction) (common.Address, error) {
 
 func (s eip2930Signer) PrioritySender(tx *Transaction) (common.PublicKey, error) {
 	return common.PublicKey{}, ErrTxTypeNotSupported
+}
+
+func (s eip2930Signer) PriorityHash(tx *Transaction) common.Hash {
+	return s.Hash(tx)
 }
 
 func (s eip2930Signer) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
@@ -482,6 +581,10 @@ func (s EIP155Signer) PrioritySender(tx *Transaction) (common.PublicKey, error) 
 	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
+func (s EIP155Signer) PriorityHash(tx *Transaction) common.Hash {
+	return s.Hash(tx)
+}
+
 // SignatureValues returns signature values. This signature
 // needs to be in the [R || S || V] format where V is 0 or 1.
 func (s EIP155Signer) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
@@ -541,6 +644,10 @@ func (hs HomesteadSigner) PrioritySender(tx *Transaction) (common.PublicKey, err
 	return common.PublicKey{}, ErrTxTypeNotSupported
 }
 
+func (hs HomesteadSigner) PriorityHash(tx *Transaction) common.Hash {
+	return hs.Hash(tx)
+}
+
 type FrontierSigner struct{}
 
 func (fs FrontierSigner) ChainID() *big.Int {
@@ -562,6 +669,10 @@ func (fs FrontierSigner) Sender(tx *Transaction) (common.Address, error) {
 
 func (fs FrontierSigner) PrioritySender(tx *Transaction) (common.PublicKey, error) {
 	return common.PublicKey{}, ErrTxTypeNotSupported
+}
+
+func (fs FrontierSigner) PriorityHash(tx *Transaction) common.Hash {
+	return fs.Hash(tx)
 }
 
 // SignatureValues returns signature values. This signature
