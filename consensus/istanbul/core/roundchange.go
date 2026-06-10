@@ -110,6 +110,24 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 	currentRoundMessages := c.roundChangeSet.getRCMessagesForGivenRound(currentRound)
 	logger.Trace("IBFT: handle ROUND-CHANGE message", "currentRoundChanges.count", currentRoundMessages)
 
+	// Drop far-future ROUND-CHANGE messages.
+	//
+	// roundChangeSet.roundChanges is keyed by round number, so accepting an
+	// unbounded range of distinct rounds lets a single validator grow the map
+	// without limit (each distinct round allocates a new qbftMsgSet). Such
+	// messages can never legitimately advance consensus: jumping to a round
+	// requires F+1 validators agreeing on the SAME round, which a flood of
+	// distinct rounds never produces. Cap the accepted round at the same
+	// MaxFutureRoundGap that addToBacklog already enforces for future-sequence
+	// ROUND-CHANGE messages (see withinBacklogFutureWindow), so the bound holds
+	// regardless of which path the message arrives on.
+	maxAllowedRound := new(big.Int).Add(currentRound, new(big.Int).SetUint64(MaxFutureRoundGap))
+	if view.Round.Cmp(maxAllowedRound) > 0 {
+		logger.Trace("[Consensus]: Dropping far-future ROUND-CHANGE message",
+			"round", view.Round, "max", maxAllowedRound)
+		return nil
+	}
+
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
 		var prepareMessages []*qbfttypes.Prepare = nil

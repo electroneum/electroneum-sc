@@ -184,6 +184,7 @@ var (
 		utils.RPCGlobalGasCapFlag,
 		utils.RPCGlobalEVMTimeoutFlag,
 		utils.RPCGlobalTxFeeCapFlag,
+		utils.RPCGlobalLogQueryLimitFlag,
 		utils.AllowUnprotectedTxs,
 	}
 

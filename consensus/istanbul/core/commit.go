@@ -18,6 +18,7 @@ package core
 
 import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rlp"
@@ -97,6 +98,19 @@ func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 		return errInvalidMessage
 	}
 
+	// Verify the committed seal embedded in the message. The outer message
+	// signature (already checked in verifySignatures) only proves the sender
+	// authored the COMMIT; it does not prove the CommitSeal actually signs the
+	// proposal. Without this check a Byzantine validator could have a malformed
+	// seal counted toward quorum and copied verbatim into the block header by
+	// commitQBFT, even though verifyCommittedSeals would later reject the block
+	// network-wide. We validate here so the local commit path is symmetric with
+	// the receive/verify path.
+	if err := c.verifyCommittedSeal(commit); err != nil {
+		logger.Error("IBFT: invalid COMMIT seal", "err", err)
+		return err
+	}
+
 	// Add to received msgs
 	if err := c.current.QBFTCommits.Add(commit); err != nil {
 		c.logger.Error("IBFT: failed to save COMMIT message", "err", err)
@@ -117,6 +131,43 @@ func (c *core) handleCommitMsg(commit *qbfttypes.Commit) error {
 	return nil
 }
 
+// verifyCommittedSeal checks that commit.CommitSeal is a signature over
+// PrepareCommittedSeal(proposalHeader, commitRound) produced by the validator
+// that sent the COMMIT message. It mirrors the seal construction in
+// broadcastCommit and the network-wide check in Engine.verifyCommittedSeals.
+func (c *core) verifyCommittedSeal(commit *qbfttypes.Commit) error {
+	// A committed seal is a fixed-length ECDSA signature; reject anything else
+	// before attempting recovery so a malformed length cannot reach the header.
+	if len(commit.CommitSeal) != types.IstanbulExtraSeal {
+		return errInvalidCommittedSeal
+	}
+
+	block, ok := c.current.Proposal().(*types.Block)
+	if !ok {
+		return errInvalidMessage
+	}
+
+	// The seal signs the proposal header under the round the sender committed
+	// in. broadcastCommit signs PrepareCommittedSeal(header, currentRound), and
+	// the COMMIT message carries that same round in its view.
+	committedSeal := PrepareCommittedSeal(block.Header(), uint32(commit.View().Round.Uint64()))
+
+	signer, err := istanbul.GetSignatureAddressNoHashing(committedSeal, commit.CommitSeal)
+	if err != nil {
+		return errInvalidCommittedSeal
+	}
+
+	// The recovered signer must be the validator that sent the COMMIT. Because
+	// verifySignatures already established that Source() is a member of the
+	// current validator set, matching against Source() also guarantees the seal
+	// belongs to a validator.
+	if signer != commit.Source() {
+		return errInvalidCommittedSeal
+	}
+
+	return nil
+}
+
 // commitQBFT is called once quorum of commits is reached
 // - computes committedSeals from each received commit messages
 // - then commits block proposal to database with committed seals
@@ -129,8 +180,17 @@ func (c *core) commitQBFT() {
 		// Compute committed seals
 		committedSeals := make([][]byte, c.current.QBFTCommits.Size())
 		for i, msg := range c.current.QBFTCommits.Values() {
-			committedSeals[i] = make([]byte, types.IstanbulExtraSeal)
 			commitMsg := msg.(*qbfttypes.Commit)
+			// Defense in depth: every seal in the set was already validated in
+			// handleCommitMsg, but guard the length again so a malformed seal
+			// can never be copied into the block header even if a future code
+			// path adds to QBFTCommits without going through that check.
+			if len(commitMsg.CommitSeal) != types.IstanbulExtraSeal {
+				c.currentLogger(true, commitMsg).Error("IBFT: refusing to commit malformed COMMIT seal", "source", commitMsg.Source())
+				c.broadcastNextRoundChange()
+				return
+			}
+			committedSeals[i] = make([]byte, types.IstanbulExtraSeal)
 			copy(committedSeals[i][:], commitMsg.CommitSeal[:])
 		}
 

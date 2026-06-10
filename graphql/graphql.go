@@ -183,11 +183,12 @@ func (at *AccessTuple) StorageKeys(ctx context.Context) []common.Hash {
 // Transaction represents an Ethereum transaction.
 // backend and hash are mandatory; all others will be fetched when required.
 type Transaction struct {
-	backend ethapi.Backend
-	hash    common.Hash
-	tx      *types.Transaction
-	block   *Block
-	index   uint64
+	backend       ethapi.Backend
+	hash          common.Hash
+	tx            *types.Transaction
+	block         *Block
+	index         uint64
+	logQueryLimit int
 }
 
 // resolve returns the internal transaction object, fetching it if needed.
@@ -199,8 +200,9 @@ func (t *Transaction) resolve(ctx context.Context) (*types.Transaction, error) {
 			t.tx = tx
 			blockNrOrHash := rpc.BlockNumberOrHashWithHash(blockHash, false)
 			t.block = &Block{
-				backend:      t.backend,
-				numberOrHash: &blockNrOrHash,
+				backend:       t.backend,
+				numberOrHash:  &blockNrOrHash,
+				logQueryLimit: t.logQueryLimit,
 			}
 			t.index = index
 			return t.tx, nil
@@ -555,12 +557,13 @@ type BlockType int
 // backend, and numberOrHash are mandatory. All other fields are lazily fetched
 // when required.
 type Block struct {
-	backend      ethapi.Backend
-	numberOrHash *rpc.BlockNumberOrHash
-	hash         common.Hash
-	header       *types.Header
-	block        *types.Block
-	receipts     []*types.Receipt
+	backend       ethapi.Backend
+	numberOrHash  *rpc.BlockNumberOrHash
+	hash          common.Hash
+	header        *types.Header
+	block         *types.Block
+	receipts      []*types.Receipt
+	logQueryLimit int
 }
 
 // resolve returns the internal Block object representing this block, fetching
@@ -695,9 +698,10 @@ func (b *Block) Parent(ctx context.Context) (*Block, error) {
 	}
 	num := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(b.header.Number.Uint64() - 1))
 	return &Block{
-		backend:      b.backend,
-		numberOrHash: &num,
-		hash:         b.header.ParentHash,
+		backend:       b.backend,
+		numberOrHash:  &num,
+		hash:          b.header.ParentHash,
+		logQueryLimit: b.logQueryLimit,
 	}, nil
 }
 
@@ -783,9 +787,10 @@ func (b *Block) Ommers(ctx context.Context) (*[]*Block, error) {
 	for _, uncle := range block.Uncles() {
 		blockNumberOrHash := rpc.BlockNumberOrHashWithHash(uncle.Hash(), false)
 		ret = append(ret, &Block{
-			backend:      b.backend,
-			numberOrHash: &blockNumberOrHash,
-			header:       uncle,
+			backend:       b.backend,
+			numberOrHash:  &blockNumberOrHash,
+			header:        uncle,
+			logQueryLimit: b.logQueryLimit,
 		})
 	}
 	return &ret, nil
@@ -892,11 +897,12 @@ func (b *Block) Transactions(ctx context.Context) (*[]*Transaction, error) {
 	ret := make([]*Transaction, 0, len(block.Transactions()))
 	for i, tx := range block.Transactions() {
 		ret = append(ret, &Transaction{
-			backend: b.backend,
-			hash:    tx.Hash(),
-			tx:      tx,
-			block:   b,
-			index:   uint64(i),
+			backend:       b.backend,
+			hash:          tx.Hash(),
+			tx:            tx,
+			block:         b,
+			index:         uint64(i),
+			logQueryLimit: b.logQueryLimit,
 		})
 	}
 	return &ret, nil
@@ -913,11 +919,12 @@ func (b *Block) TransactionAt(ctx context.Context, args struct{ Index int32 }) (
 	}
 	tx := txs[args.Index]
 	return &Transaction{
-		backend: b.backend,
-		hash:    tx.Hash(),
-		tx:      tx,
-		block:   b,
-		index:   uint64(args.Index),
+		backend:       b.backend,
+		hash:          tx.Hash(),
+		tx:            tx,
+		block:         b,
+		index:         uint64(args.Index),
+		logQueryLimit: b.logQueryLimit,
 	}, nil
 }
 
@@ -933,9 +940,10 @@ func (b *Block) OmmerAt(ctx context.Context, args struct{ Index int32 }) (*Block
 	uncle := uncles[args.Index]
 	blockNumberOrHash := rpc.BlockNumberOrHashWithHash(uncle.Hash(), false)
 	return &Block{
-		backend:      b.backend,
-		numberOrHash: &blockNumberOrHash,
-		header:       uncle,
+		backend:       b.backend,
+		numberOrHash:  &blockNumberOrHash,
+		header:        uncle,
+		logQueryLimit: b.logQueryLimit,
 	}, nil
 }
 
@@ -984,6 +992,9 @@ func (b *Block) Logs(ctx context.Context, args struct{ Filter BlockFilterCriteri
 	var topics [][]common.Hash
 	if args.Filter.Topics != nil {
 		topics = *args.Filter.Topics
+	}
+	if err := filters.CheckLogQueryLimit(b.logQueryLimit, addresses, topics); err != nil {
+		return nil, err
 	}
 	hash := b.hash
 	if hash == (common.Hash{}) {
@@ -1087,7 +1098,8 @@ func (b *Block) EstimateGas(ctx context.Context, args struct {
 }
 
 type Pending struct {
-	backend ethapi.Backend
+	backend       ethapi.Backend
+	logQueryLimit int
 }
 
 func (p *Pending) TransactionCount(ctx context.Context) (int32, error) {
@@ -1103,10 +1115,11 @@ func (p *Pending) Transactions(ctx context.Context) (*[]*Transaction, error) {
 	ret := make([]*Transaction, 0, len(txs))
 	for i, tx := range txs {
 		ret = append(ret, &Transaction{
-			backend: p.backend,
-			hash:    tx.Hash(),
-			tx:      tx,
-			index:   uint64(i),
+			backend:       p.backend,
+			hash:          tx.Hash(),
+			tx:            tx,
+			index:         uint64(i),
+			logQueryLimit: p.logQueryLimit,
 		})
 	}
 	return &ret, nil
@@ -1153,7 +1166,8 @@ func (p *Pending) EstimateGas(ctx context.Context, args struct {
 
 // Resolver is the top-level object in the GraphQL hierarchy.
 type Resolver struct {
-	backend ethapi.Backend
+	backend       ethapi.Backend
+	logQueryLimit int
 }
 
 func (r *Resolver) Block(ctx context.Context, args struct {
@@ -1168,20 +1182,23 @@ func (r *Resolver) Block(ctx context.Context, args struct {
 		number := rpc.BlockNumber(*args.Number)
 		numberOrHash := rpc.BlockNumberOrHashWithNumber(number)
 		block = &Block{
-			backend:      r.backend,
-			numberOrHash: &numberOrHash,
+			backend:       r.backend,
+			numberOrHash:  &numberOrHash,
+			logQueryLimit: r.logQueryLimit,
 		}
 	} else if args.Hash != nil {
 		numberOrHash := rpc.BlockNumberOrHashWithHash(*args.Hash, false)
 		block = &Block{
-			backend:      r.backend,
-			numberOrHash: &numberOrHash,
+			backend:       r.backend,
+			numberOrHash:  &numberOrHash,
+			logQueryLimit: r.logQueryLimit,
 		}
 	} else {
 		numberOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 		block = &Block{
-			backend:      r.backend,
-			numberOrHash: &numberOrHash,
+			backend:       r.backend,
+			numberOrHash:  &numberOrHash,
+			logQueryLimit: r.logQueryLimit,
 		}
 	}
 	// Resolve the header, return nil if it doesn't exist.
@@ -1215,8 +1232,9 @@ func (r *Resolver) Blocks(ctx context.Context, args struct {
 	for i := from; i <= to; i++ {
 		numberOrHash := rpc.BlockNumberOrHashWithNumber(i)
 		block := &Block{
-			backend:      r.backend,
-			numberOrHash: &numberOrHash,
+			backend:       r.backend,
+			numberOrHash:  &numberOrHash,
+			logQueryLimit: r.logQueryLimit,
 		}
 		// Resolve the header to check for existence.
 		// Note we don't resolve block directly here since it will require an
@@ -1234,13 +1252,14 @@ func (r *Resolver) Blocks(ctx context.Context, args struct {
 }
 
 func (r *Resolver) Pending(ctx context.Context) *Pending {
-	return &Pending{r.backend}
+	return &Pending{backend: r.backend, logQueryLimit: r.logQueryLimit}
 }
 
 func (r *Resolver) Transaction(ctx context.Context, args struct{ Hash common.Hash }) (*Transaction, error) {
 	tx := &Transaction{
-		backend: r.backend,
-		hash:    args.Hash,
+		backend:       r.backend,
+		hash:          args.Hash,
+		logQueryLimit: r.logQueryLimit,
 	}
 	// Resolve the transaction; if it doesn't exist, return nil.
 	t, err := tx.resolve(ctx)
@@ -1298,6 +1317,9 @@ func (r *Resolver) Logs(ctx context.Context, args struct{ Filter FilterCriteria 
 	var topics [][]common.Hash
 	if args.Filter.Topics != nil {
 		topics = *args.Filter.Topics
+	}
+	if err := filters.CheckLogQueryLimit(r.logQueryLimit, addresses, topics); err != nil {
+		return nil, err
 	}
 	// Construct the range filter
 	filter := filters.NewRangeFilter(filters.Backend(r.backend), begin, end, addresses, topics)

@@ -29,6 +29,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/testutils"
+	"github.com/electroneum/electroneum-sc/consensus/misc"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -116,6 +117,12 @@ func makeBlockWithoutSeal(chain *core.BlockChain, engine *Backend, parent *types
 		header.Coinbase = engine.Address()
 	} else {
 		header.Coinbase = common.Address{}
+	}
+
+	// Mirror miner/worker.go: set BaseFee on London chains so headers pass
+	// the EIP-1559 validation in verifyCascadingFields.
+	if chain.Config().IsLondon(header.Number) {
+		header.BaseFee = misc.CalcBaseFee(chain.Config(), parent.Header())
 	}
 
 	engine.Prepare(chain, header)
