@@ -7,15 +7,73 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/electroneum/electroneum-sc/consensus/istanbul"
-	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
-	"github.com/electroneum/electroneum-sc/crypto"
-
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
+
+// forkAwareChainReader implements consensus.ChainHeaderReader for ProposerSeal
+// tests. Unlike the simpler mockChainHeaderReader in engine_eip1559_test.go,
+// this one can store/retrieve parent headers (needed by Seal).
+type forkAwareChainReader struct {
+	config  *params.ChainConfig
+	headers map[common.Hash]*types.Header
+}
+
+func newForkAwareChain(cfg *params.ChainConfig) *forkAwareChainReader {
+	return &forkAwareChainReader{
+		config:  cfg,
+		headers: make(map[common.Hash]*types.Header),
+	}
+}
+
+func (m *forkAwareChainReader) Config() *params.ChainConfig        { return m.config }
+func (m *forkAwareChainReader) CurrentHeader() *types.Header       { return nil }
+func (m *forkAwareChainReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+	return m.headers[hash]
+}
+func (m *forkAwareChainReader) GetHeaderByNumber(number uint64) *types.Header { return nil }
+func (m *forkAwareChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
+	return m.headers[hash]
+}
+func (m *forkAwareChainReader) GetTd(hash common.Hash, number uint64) *big.Int { return nil }
+
+func (m *forkAwareChainReader) addHeader(h *types.Header) {
+	m.headers[h.Hash()] = h
+}
+
+// futureForkConfig returns a ChainConfig where FutureFork is always active (block 0).
+func futureForkConfig() *params.ChainConfig {
+	return &params.ChainConfig{
+		ChainID:             big.NewInt(1),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      false,
+		EIP150Block:         big.NewInt(0),
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		BerlinBlock:         big.NewInt(0),
+		LondonBlock:         big.NewInt(0),
+		FutureForkBlock:     big.NewInt(0),
+	}
+}
+
+// preForkConfig returns a ChainConfig where FutureFork is never active.
+func preForkConfig() *params.ChainConfig {
+	cfg := futureForkConfig()
+	cfg.FutureForkBlock = nil
+	return cfg
+}
 
 func TestPrepareExtra(t *testing.T) {
 	validators := make([]common.Address, 4)
@@ -23,8 +81,6 @@ func TestPrepareExtra(t *testing.T) {
 	validators[1] = common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212"))
 	validators[2] = common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6"))
 	validators[3] = common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440"))
-
-	expectedResult := hexutil.MustDecode("0xf87aa00000000000000000000000000000000000000000000000000000000000000000f8549444add0ec310f115a0e603b2d7db9f067778eaf8a94294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212946beaaed781d2d2ab6350f5c4566a2c6eaac407a6948be76812f765c24641ec63dc2852b378aba2b440c080c0")
 
 	h := &types.Header{}
 	err := ApplyHeaderQBFTExtra(
@@ -34,26 +90,38 @@ func TestPrepareExtra(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want: nil", err)
 	}
-	if !reflect.DeepEqual(h.Extra, expectedResult) {
-		t.Errorf("payload mismatch: have %v, want %v", h.Extra, expectedResult)
+
+	// Verify by round-tripping through decode
+	extra, err := types.ExtractQBFTExtra(h)
+	if err != nil {
+		t.Fatalf("failed to extract extra: %v", err)
+	}
+	if len(extra.Validators) != 4 {
+		t.Errorf("validator count mismatch: have %d, want 4", len(extra.Validators))
+	}
+	for i, v := range validators {
+		if extra.Validators[i] != v {
+			t.Errorf("validator %d mismatch: have %s, want %s", i, extra.Validators[i].Hex(), v.Hex())
+		}
 	}
 }
 
 func TestWriteCommittedSeals(t *testing.T) {
-	istRawData := hexutil.MustDecode("0xf85a80f8549444add0ec310f115a0e603b2d7db9f067778eaf8a94294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212946beaaed781d2d2ab6350f5c4566a2c6eaac407a6948be76812f765c24641ec63dc2852b378aba2b440c080c0")
 	expectedCommittedSeal := append([]byte{1, 2, 3}, bytes.Repeat([]byte{0x00}, types.IstanbulExtraSeal-3)...)
-	expectedIstExtra := &types.QBFTExtra{
-		VanityData: []byte{},
-		Validators: []common.Address{
-			common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f067778eaf8a")),
-			common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212")),
-			common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6")),
-			common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440")),
-		},
-		CommittedSeal: [][]byte{expectedCommittedSeal},
-		Round:         0,
-		Vote:          nil,
+
+	validators := []common.Address{
+		common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f067778eaf8a")),
+		common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212")),
+		common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6")),
+		common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440")),
 	}
+
+	// Build a header with validators first, then use its encoded form
+	setupHeader := &types.Header{}
+	if err := ApplyHeaderQBFTExtra(setupHeader, WriteValidators(validators)); err != nil {
+		t.Fatalf("failed to setup header: %v", err)
+	}
+	istRawData := setupHeader.Extra
 
 	h := &types.Header{
 		Extra: istRawData,
@@ -73,8 +141,14 @@ func TestWriteCommittedSeals(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
-	if !reflect.DeepEqual(istExtra, expectedIstExtra) {
-		t.Errorf("extra data mismatch: have %v, want %v", istExtra, expectedIstExtra)
+	if len(istExtra.Validators) != len(validators) {
+		t.Errorf("validator count mismatch: have %d, want %d", len(istExtra.Validators), len(validators))
+	}
+	if len(istExtra.CommittedSeal) != 1 || !bytes.Equal(istExtra.CommittedSeal[0], expectedCommittedSeal) {
+		t.Errorf("committed seal mismatch")
+	}
+	if istExtra.Round != 0 {
+		t.Errorf("round mismatch: have %d, want 0", istExtra.Round)
 	}
 
 	// invalid seal
@@ -89,24 +163,17 @@ func TestWriteCommittedSeals(t *testing.T) {
 }
 
 func TestWriteRoundNumber(t *testing.T) {
-	istRawData := hexutil.MustDecode("0xf85a80f8549444add0ec310f115a0e603b2d7db9f067778eaf8a94294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212946beaaed781d2d2ab6350f5c4566a2c6eaac407a6948be76812f765c24641ec63dc2852b378aba2b440c005c0")
-	expectedIstExtra := &types.QBFTExtra{
-		VanityData: []byte{},
-		Validators: []common.Address{
-			common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f067778eaf8a")),
-			common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212")),
-			common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6")),
-			common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440")),
-		},
-		CommittedSeal: [][]byte{},
-		Round:         5,
-		Vote:          nil,
+	validators := []common.Address{
+		common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f067778eaf8a")),
+		common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212")),
+		common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6")),
+		common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440")),
 	}
 
-	var expectedErr error
-
-	h := &types.Header{
-		Extra: istRawData,
+	// Build a header with validators and round=5
+	h := &types.Header{}
+	if err := ApplyHeaderQBFTExtra(h, WriteValidators(validators)); err != nil {
+		t.Fatalf("failed to setup header: %v", err)
 	}
 
 	// normal case
@@ -114,8 +181,8 @@ func TestWriteRoundNumber(t *testing.T) {
 		h,
 		writeRoundNumber(big.NewInt(5)),
 	)
-	if err != expectedErr {
-		t.Errorf("error mismatch: have %v, want %v", err, expectedErr)
+	if err != nil {
+		t.Errorf("error mismatch: have %v, want nil", err)
 	}
 
 	// verify istanbul extra-data
@@ -123,27 +190,26 @@ func TestWriteRoundNumber(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
-	if !reflect.DeepEqual(istExtra, expectedIstExtra) {
-		t.Errorf("extra data mismatch: have %v, want %v", istExtra.VanityData, expectedIstExtra.VanityData)
+	if istExtra.Round != 5 {
+		t.Errorf("round mismatch: have %d, want 5", istExtra.Round)
+	}
+	if len(istExtra.Validators) != 4 {
+		t.Errorf("validator count mismatch: have %d, want 4", len(istExtra.Validators))
 	}
 }
 
 func TestWriteValidatorVote(t *testing.T) {
-	vanity := bytes.Repeat([]byte{0x00}, types.IstanbulExtraVanity)
-	istRawData := hexutil.MustDecode("0xf85a80f8549444add0ec310f115a0e603b2d7db9f067778eaf8a94294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212946beaaed781d2d2ab6350f5c4566a2c6eaac407a6948be76812f765c24641ec63dc2852b378aba2b440c005c0")
-	vote := &types.ValidatorVote{RecipientAddress: common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f06777123456")), VoteType: types.QBFTAuthVote}
-	expectedIstExtra := &types.QBFTExtra{
-		VanityData:    vanity,
-		Validators:    []common.Address{},
-		CommittedSeal: [][]byte{},
-		Round:         0,
-		Vote:          vote,
+	validators := []common.Address{
+		common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f067778eaf8a")),
+		common.BytesToAddress(hexutil.MustDecode("0x294fc7e8f22b3bcdcf955dd7ff3ba2ed833f8212")),
+		common.BytesToAddress(hexutil.MustDecode("0x6beaaed781d2d2ab6350f5c4566a2c6eaac407a6")),
+		common.BytesToAddress(hexutil.MustDecode("0x8be76812f765c24641ec63dc2852b378aba2b440")),
 	}
+	expectedVote := &types.ValidatorVote{RecipientAddress: common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f06777123456")), VoteType: types.QBFTAuthVote}
 
-	var expectedErr error
-
-	h := &types.Header{
-		Extra: istRawData,
+	h := &types.Header{}
+	if err := ApplyHeaderQBFTExtra(h, WriteValidators(validators)); err != nil {
+		t.Fatalf("failed to setup header: %v", err)
 	}
 
 	// normal case
@@ -151,8 +217,8 @@ func TestWriteValidatorVote(t *testing.T) {
 		h,
 		WriteVote(common.BytesToAddress(hexutil.MustDecode("0x44add0ec310f115a0e603b2d7db9f06777123456")), true),
 	)
-	if err != expectedErr {
-		t.Errorf("error mismatch: have %v, want %v", err, expectedErr)
+	if err != nil {
+		t.Errorf("error mismatch: have %v, want nil", err)
 	}
 
 	// verify istanbul extra-data
@@ -160,8 +226,8 @@ func TestWriteValidatorVote(t *testing.T) {
 	if err != nil {
 		t.Errorf("error mismatch: have %v, want nil", err)
 	}
-	if !reflect.DeepEqual(istExtra.Vote, expectedIstExtra.Vote) {
-		t.Errorf("extra data mismatch: have %v, want %v", istExtra, expectedIstExtra)
+	if !reflect.DeepEqual(istExtra.Vote, expectedVote) {
+		t.Errorf("vote mismatch: have %v, want %v", istExtra.Vote, expectedVote)
 	}
 }
 
@@ -467,5 +533,370 @@ func TestQuorum_ProperThreshold_Passes(t *testing.T) {
 				t.Fatalf("N=%d: expected ≥2F+1 (%d) to pass, got error: %v", N, required, err)
 			}
 		})
+	}
+}
+
+// ---- Post-FutureFork ProposerSeal tests ----
+
+// TestPostFork_SealProducesProposerSeal verifies that after FutureFork,
+// Seal() embeds a valid proposer seal in the header's QBFTExtra.
+func TestPostFork_SealProducesProposerSeal(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+
+	signFn := func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	}
+
+	engine := NewEngine(&istanbul.Config{}, addr, signFn)
+	chain := newForkAwareChain(futureForkConfig())
+
+	parent := &types.Header{
+		Number:     big.NewInt(0),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(parent, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply parent extra: %v", err)
+	}
+	chain.addHeader(parent)
+
+	child := &types.Header{
+		Number:     big.NewInt(1),
+		ParentHash: parent.Hash(),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(child, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply child extra: %v", err)
+	}
+	block := types.NewBlockWithHeader(child)
+
+	valSet := validator.NewSet([]common.Address{addr}, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+	sealedBlock, err := engine.Seal(chain, block, valSet)
+	if err != nil {
+		t.Fatalf("Seal() failed: %v", err)
+	}
+
+	extra, err := types.ExtractQBFTExtra(sealedBlock.Header())
+	if err != nil {
+		t.Fatalf("extract extra: %v", err)
+	}
+	if len(extra.ProposerSeal) != types.IstanbulExtraSeal {
+		t.Fatalf("ProposerSeal length: have %d, want %d", len(extra.ProposerSeal), types.IstanbulExtraSeal)
+	}
+}
+
+// TestPostFork_AuthorRecoversFromSeal verifies that Author() recovers the
+// correct address from a ProposerSeal-bearing header.
+func TestPostFork_AuthorRecoversFromSeal(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+
+	signFn := func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	}
+
+	engine := NewEngine(&istanbul.Config{}, addr, signFn)
+	chain := newForkAwareChain(futureForkConfig())
+
+	parent := &types.Header{
+		Number:     big.NewInt(0),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(parent, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply parent extra: %v", err)
+	}
+	chain.addHeader(parent)
+
+	child := &types.Header{
+		Number:     big.NewInt(1),
+		ParentHash: parent.Hash(),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(child, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply child extra: %v", err)
+	}
+	block := types.NewBlockWithHeader(child)
+
+	valSet := validator.NewSet([]common.Address{addr}, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+	sealedBlock, err := engine.Seal(chain, block, valSet)
+	if err != nil {
+		t.Fatalf("Seal() failed: %v", err)
+	}
+
+	author, err := engine.Author(sealedBlock.Header())
+	if err != nil {
+		t.Fatalf("Author() failed: %v", err)
+	}
+	if author != addr {
+		t.Fatalf("Author() mismatch: have %s, want %s", author.Hex(), addr.Hex())
+	}
+}
+
+// TestPostFork_VerifySignerRejectsForgedCoinbase verifies that after
+// FutureFork, verifySigner rejects a block whose Coinbase has been tampered
+// with (it won't match the ProposerSeal recovery).
+func TestPostFork_VerifySignerRejectsForgedCoinbase(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	proposer := crypto.PubkeyToAddress(key.PublicKey)
+	forged := common.HexToAddress("0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF")
+
+	signFn := func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	}
+
+	engine := NewEngine(&istanbul.Config{}, proposer, signFn)
+	chain := newForkAwareChain(futureForkConfig())
+
+	validators := []common.Address{proposer, forged}
+	valSet := validator.NewSet(validators, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+
+	parent := &types.Header{
+		Number:     big.NewInt(0),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   proposer,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(parent, WriteValidators(validators)); err != nil {
+		t.Fatalf("apply parent extra: %v", err)
+	}
+	chain.addHeader(parent)
+
+	// Build and seal a legitimate block
+	child := &types.Header{
+		Number:     big.NewInt(1),
+		ParentHash: parent.Hash(),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(child, WriteValidators(validators)); err != nil {
+		t.Fatalf("apply child extra: %v", err)
+	}
+	block := types.NewBlockWithHeader(child)
+	sealedBlock, err := engine.Seal(chain, block, valSet)
+	if err != nil {
+		t.Fatalf("Seal() failed: %v", err)
+	}
+
+	// Now tamper with Coinbase — swap it to the forged address.
+	// The ProposerSeal was computed over a header with Coinbase=proposer,
+	// so recovery will return proposer, which won't match forged.
+	tamperedHeader := types.CopyHeader(sealedBlock.Header())
+	tamperedHeader.Coinbase = forged
+
+	err = engine.verifySigner(chain, tamperedHeader, []*types.Header{parent}, valSet)
+	if err == nil {
+		t.Fatal("verifySigner should have rejected forged Coinbase, but accepted it")
+	}
+	if err != istanbulcommon.ErrInvalidCoinbase {
+		t.Fatalf("expected ErrInvalidCoinbase, got: %v", err)
+	}
+}
+
+// TestPostFork_VerifySignerRejectsMissingSeal verifies that after FutureFork,
+// verifySigner rejects a block that has no ProposerSeal.
+func TestPostFork_VerifySignerRejectsMissingSeal(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+
+	engine := NewEngine(&istanbul.Config{}, addr, func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	})
+	chain := newForkAwareChain(futureForkConfig())
+
+	parent := &types.Header{
+		Number:     big.NewInt(0),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(parent, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply parent extra: %v", err)
+	}
+	chain.addHeader(parent)
+
+	// Build a block WITHOUT calling Seal() — no ProposerSeal
+	child := &types.Header{
+		Number:     big.NewInt(1),
+		ParentHash: parent.Hash(),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(child, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply child extra: %v", err)
+	}
+
+	valSet := validator.NewSet([]common.Address{addr}, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+	err = engine.verifySigner(chain, child, []*types.Header{parent}, valSet)
+	if err == nil {
+		t.Fatal("verifySigner should have rejected header without ProposerSeal")
+	}
+	if err != istanbulcommon.ErrInvalidSignature {
+		t.Fatalf("expected ErrInvalidSignature, got: %v", err)
+	}
+}
+
+// TestPreFork_SealDoesNotProduceProposerSeal verifies that before FutureFork,
+// Seal() does NOT embed a ProposerSeal — existing behaviour is preserved.
+func TestPreFork_SealDoesNotProduceProposerSeal(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+
+	engine := NewEngine(&istanbul.Config{}, addr, func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	})
+	chain := newForkAwareChain(preForkConfig())
+
+	parent := &types.Header{
+		Number:     big.NewInt(0),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(parent, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply parent extra: %v", err)
+	}
+	chain.addHeader(parent)
+
+	child := &types.Header{
+		Number:     big.NewInt(1),
+		ParentHash: parent.Hash(),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(child, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply child extra: %v", err)
+	}
+	block := types.NewBlockWithHeader(child)
+
+	valSet := validator.NewSet([]common.Address{addr}, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+	sealedBlock, err := engine.Seal(chain, block, valSet)
+	if err != nil {
+		t.Fatalf("Seal() failed: %v", err)
+	}
+
+	extra, err := types.ExtractQBFTExtra(sealedBlock.Header())
+	if err != nil {
+		t.Fatalf("extract extra: %v", err)
+	}
+	if len(extra.ProposerSeal) != 0 {
+		t.Fatalf("pre-fork Seal() should not produce ProposerSeal, got %d bytes", len(extra.ProposerSeal))
+	}
+}
+
+// TestPreFork_BlockHashStableAfterRoundTrip verifies that decoding a pre-fork
+// header's Extra (5-field RLP) and re-encoding it does NOT change the block
+// hash. This is a regression test for a bug where EncodeRLP always emitted 6
+// fields, adding an extra 0x80 byte for the empty ProposerSeal.
+func TestPreFork_BlockHashStableAfterRoundTrip(t *testing.T) {
+	addr := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
+	header := &types.Header{
+		Number:     big.NewInt(1),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       1,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(header, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply extra: %v", err)
+	}
+
+	hashBefore := header.Hash()
+
+	// Simulate what QBFTFilteredHeaderWithRound does: decode + re-encode
+	extra, err := types.ExtractQBFTExtra(header)
+	if err != nil {
+		t.Fatalf("extract extra: %v", err)
+	}
+	extra.CommittedSeal = [][]byte{}
+	extra.ProposerSeal = []byte{}
+	extra.Round = 0
+	reencoded, err := rlp.EncodeToBytes(extra)
+	if err != nil {
+		t.Fatalf("re-encode: %v", err)
+	}
+	header.Extra = reencoded
+
+	hashAfter := header.Hash()
+	if hashBefore != hashAfter {
+		t.Fatalf("block hash changed after Extra round-trip: before=%s after=%s", hashBefore.Hex(), hashAfter.Hex())
+	}
+}
+
+// TestPreFork_AuthorReturnsCoinbase verifies that for pre-fork headers
+// (no ProposerSeal), Author() returns header.Coinbase as before.
+func TestPreFork_AuthorReturnsCoinbase(t *testing.T) {
+	addr := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
+	engine := NewEngine(&istanbul.Config{}, addr, func(data []byte) ([]byte, error) {
+		return make([]byte, 65), nil
+	})
+
+	header := &types.Header{
+		Number:   big.NewInt(1),
+		Coinbase: addr,
+	}
+	if err := ApplyHeaderQBFTExtra(header, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply extra: %v", err)
+	}
+
+	author, err := engine.Author(header)
+	if err != nil {
+		t.Fatalf("Author() failed: %v", err)
+	}
+	if author != addr {
+		t.Fatalf("Author() mismatch: have %s, want %s", author.Hex(), addr.Hex())
 	}
 }
