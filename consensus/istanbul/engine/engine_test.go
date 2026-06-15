@@ -33,8 +33,8 @@ func newForkAwareChain(cfg *params.ChainConfig) *forkAwareChainReader {
 	}
 }
 
-func (m *forkAwareChainReader) Config() *params.ChainConfig        { return m.config }
-func (m *forkAwareChainReader) CurrentHeader() *types.Header       { return nil }
+func (m *forkAwareChainReader) Config() *params.ChainConfig  { return m.config }
+func (m *forkAwareChainReader) CurrentHeader() *types.Header { return nil }
 func (m *forkAwareChainReader) GetHeader(hash common.Hash, number uint64) *types.Header {
 	return m.headers[hash]
 }
