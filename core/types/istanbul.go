@@ -130,6 +130,7 @@ type QBFTExtra struct {
 	Vote          *ValidatorVote
 	Round         uint32
 	CommittedSeal [][]byte
+	ProposerSeal  []byte // Proposer's signature over the header hash (post-FutureFork only)
 }
 
 type ValidatorVote struct {
@@ -138,7 +139,20 @@ type ValidatorVote struct {
 }
 
 // EncodeRLP serializes qist into the Ethereum RLP format.
+// ProposerSeal is only included as a 6th field when it contains a real seal.
+// Pre-fork blocks (no seal) encode as 5 fields, preserving identical RLP output
+// to the original format and keeping block hashes stable.
 func (qst *QBFTExtra) EncodeRLP(w io.Writer) error {
+	if len(qst.ProposerSeal) > 0 {
+		return rlp.Encode(w, []interface{}{
+			qst.VanityData,
+			qst.Validators,
+			qst.Vote,
+			qst.Round,
+			qst.CommittedSeal,
+			qst.ProposerSeal,
+		})
+	}
 	return rlp.Encode(w, []interface{}{
 		qst.VanityData,
 		qst.Validators,
@@ -149,19 +163,49 @@ func (qst *QBFTExtra) EncodeRLP(w io.Writer) error {
 }
 
 // DecodeRLP implements rlp.Decoder, and load the QBFTExtra fields from a RLP stream.
+// Supports both pre-fork (5-field) and post-fork (6-field) encodings for backward
+// compatibility with existing blocks on disk.
 func (qst *QBFTExtra) DecodeRLP(s *rlp.Stream) error {
-	var qbftExtra struct {
+	// Try 6-field decode first (post-fork format with ProposerSeal)
+	var qbftExtraV2 struct {
+		VanityData    []byte
+		Validators    []common.Address
+		Vote          *ValidatorVote `rlp:"nil"`
+		Round         uint32
+		CommittedSeal [][]byte
+		ProposerSeal  []byte
+	}
+	raw, err := s.Raw()
+	if err != nil {
+		return err
+	}
+	if err := rlp.DecodeBytes(raw, &qbftExtraV2); err == nil {
+		qst.VanityData = qbftExtraV2.VanityData
+		qst.Validators = qbftExtraV2.Validators
+		qst.Vote = qbftExtraV2.Vote
+		qst.Round = qbftExtraV2.Round
+		qst.CommittedSeal = qbftExtraV2.CommittedSeal
+		qst.ProposerSeal = qbftExtraV2.ProposerSeal
+		return nil
+	}
+
+	// Fall back to 5-field decode (pre-fork format without ProposerSeal)
+	var qbftExtraV1 struct {
 		VanityData    []byte
 		Validators    []common.Address
 		Vote          *ValidatorVote `rlp:"nil"`
 		Round         uint32
 		CommittedSeal [][]byte
 	}
-	if err := s.Decode(&qbftExtra); err != nil {
+	if err := rlp.DecodeBytes(raw, &qbftExtraV1); err != nil {
 		return err
 	}
-	qst.VanityData, qst.Validators, qst.Vote, qst.Round, qst.CommittedSeal = qbftExtra.VanityData, qbftExtra.Validators, qbftExtra.Vote, qbftExtra.Round, qbftExtra.CommittedSeal
-
+	qst.VanityData = qbftExtraV1.VanityData
+	qst.Validators = qbftExtraV1.Validators
+	qst.Vote = qbftExtraV1.Vote
+	qst.Round = qbftExtraV1.Round
+	qst.CommittedSeal = qbftExtraV1.CommittedSeal
+	qst.ProposerSeal = nil
 	return nil
 }
 
@@ -215,6 +259,7 @@ func QBFTFilteredHeaderWithRound(h *Header, round uint32) *Header {
 	}
 
 	qbftExtra.CommittedSeal = [][]byte{}
+	qbftExtra.ProposerSeal = []byte{}
 	qbftExtra.Round = round
 
 	payload, err := rlp.EncodeToBytes(&qbftExtra)

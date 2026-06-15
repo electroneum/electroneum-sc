@@ -22,6 +22,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -117,6 +118,37 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	if !c.valSet.IsProposer(preprepare.Source()) {
 		logger.Warn("[Consensus]: Ignore PRE-PREPARE message from non proposer", "proposer", c.valSet.GetProposer().Address())
 		return errNotFromProposer
+	}
+
+	// Validates that the block's coinbase matches the authenticated PRE-PREPARE source.
+	// This prevents a malicious proposer from setting header.Coinbase to another validator's
+	// address and forging validator votes under that identity.
+	//
+	// The only legitimate case where Coinbase differs from Source is a round-change
+	// re-proposal of a previously prepared block (round > 0 with PREPARE justifications).
+	// The PREPARE quorum's signatures bind the block hash — which includes Coinbase —
+	// so it cannot be forged. isJustified() below cryptographically validates these.
+	//
+	// In all other cases the proposer created the block and Coinbase must match Source.
+	// We require both round > 0 AND PREPAREs present to take the relaxed path, because
+	// justifications are not covered by the PRE-PREPARE signature and isJustified() is
+	// only called at round > 0. Without both conditions an attacker could stuff fake
+	// PREPAREs into a round-0 message to bypass the strict check.
+	if block, ok := preprepare.Proposal.(*types.Block); ok {
+		isReproposal := preprepare.Round.Uint64() > 0 && len(preprepare.JustificationPrepares) > 0
+		if isReproposal {
+			if _, v := c.valSet.GetByAddress(block.Header().Coinbase); v == nil {
+				logger.Warn("[Consensus]: Block coinbase is not a known validator",
+					"coinbase", block.Header().Coinbase)
+				return errInvalidBlockCoinbase
+			}
+		} else {
+			if block.Header().Coinbase != preprepare.Source() {
+				logger.Warn("[Consensus]: Block coinbase does not match PRE-PREPARE source",
+					"coinbase", block.Header().Coinbase, "source", preprepare.Source())
+				return errInvalidBlockCoinbase
+			}
+		}
 	}
 
 	// Validates PRE-PREPARE message justification
