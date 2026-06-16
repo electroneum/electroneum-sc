@@ -190,7 +190,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		}
 
 		prepareMessages := c.roundChangeSet.prepareMessages[currentRound.Uint64()]
-		if err := isJustified(proposal, rcSignedPayloads, prepareMessages, c.QuorumSize(), c.valSet); err != nil {
+		if err := isJustified(c.current.Sequence(), currentRound, proposal, rcSignedPayloads, prepareMessages, c.QuorumSize(), c.valSet); err != nil {
 			logger.Error("IBFT: invalid ROUND-CHANGE message justification", "err", err)
 			return nil
 		}
