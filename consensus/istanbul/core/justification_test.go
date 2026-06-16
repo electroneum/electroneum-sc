@@ -139,7 +139,7 @@ func testParameterizedCase(
 		fmt.Printf("PR %v\n", m)
 	}
 	fmt.Println("roundChangeMessages", roundChangeMessages, len(roundChangeMessages))
-	if err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err == nil && !messageJustified {
+	if err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err == nil && !messageJustified {
 		t.Errorf("quorumSize = %v, rcForNil = %v, rcEqualToTargetRound = %v, rcLowerThanTargetRound = %v, rcHigherThanTargetRound = %v, preparesForTargetRound = %v, preparesNotForTargetRound = %v (Expected: %v, Actual: %v)",
 			quorumSize, rcForNil, rcEqualToTargetRound, rcLowerThanTargetRound, rcHigherThanTargetRound, preparesForTargetRound, preparesNotForTargetRound, err == nil, !messageJustified)
 	}
@@ -202,7 +202,7 @@ func TestIsJustified_AllowsNilPreparedRoundWithoutPrepares(t *testing.T) {
 	// No prepares is valid in the nil-preparedRound justification case
 	prepareMessages := []*qbfttypes.Prepare{}
 
-	if err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err != nil {
+	if err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet); err != nil {
 		t.Fatalf("expected justification to succeed with nil preparedRound and no prepares; got: %v", err)
 	}
 }
@@ -235,7 +235,7 @@ func TestIsJustified_RejectsPrepareWithEmptySource(t *testing.T) {
 		prepareMessages = append(prepareMessages, p)
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected justification to fail due to empty prepare source, but got nil")
 	}
@@ -277,7 +277,7 @@ func TestIsJustified_RejectsPrepareSignerNotInValidatorSet(t *testing.T) {
 		big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x02}, notInSet,
 	))
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected justification to fail due to non-validator prepare signer, but got nil")
 	}
@@ -310,7 +310,7 @@ func TestIsJustified_RejectsDuplicatePrepareSignersNotDistinctQuorum(t *testing.
 		qbfttypes.NewPrepareWithSigAndSource(big.NewInt(1), big.NewInt(targetPreparedRound), block.Hash(), []byte{0x03}, v1),
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected justification to fail due to insufficient distinct prepare signers, but got nil")
 	}
@@ -662,7 +662,7 @@ func TestIsJustified_RejectsDuplicateRCSignersNilPath(t *testing.T) {
 		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(singleValidator, 10, 0, nil))
 	}
 
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to duplicate RC signers in nil path, but got nil")
 	}
@@ -692,7 +692,7 @@ func TestIsJustified_RejectsDuplicateRCSignersPreparedRoundPath(t *testing.T) {
 		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to duplicate RC signers in prepared-round path, but got nil")
 	}
@@ -718,7 +718,7 @@ func TestIsJustified_RejectsDuplicateRCSignersForBadProposalCount(t *testing.T) 
 	}
 
 	// This should fail because we can't reach quorum of distinct RC signers
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to duplicate RC signers for bad proposal count, but got nil")
 	}
@@ -748,7 +748,7 @@ func TestIsJustified_AcceptsBadProposalFromDistinctSigners(t *testing.T) {
 		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, wrongBlock))
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err != nil {
 		t.Fatalf("expected justification to succeed with quorum of distinct bad-proposal signers; got: %v", err)
 	}
@@ -774,7 +774,7 @@ func TestIsJustified_RejectsTooManyRoundChangeMessages(t *testing.T) {
 	extraRC := createRoundChangeMessage(extraAddr, 10, 0, nil)
 	roundChangeMessages = append(roundChangeMessages, extraRC)
 
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to too many round change messages, but got nil")
 	}
@@ -797,7 +797,7 @@ func TestIsJustified_RejectsRCWithEmptySourceNilPath(t *testing.T) {
 	unsourcedRC := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), nil, false)
 	roundChangeMessages = append(roundChangeMessages, &unsourcedRC.SignedRoundChangePayload)
 
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to empty source on RC message, but got nil")
 	}
@@ -821,7 +821,7 @@ func TestIsJustified_RejectsRCFromNonValidatorNilPath(t *testing.T) {
 	notInSet := crypto.PubkeyToAddress(notInSetKey.PublicKey)
 	roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(notInSet, 10, 0, nil))
 
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to non-validator RC signer, but got nil")
 	}
@@ -850,7 +850,7 @@ func TestIsJustified_RejectsRCWithEmptySourcePreparedRoundPath(t *testing.T) {
 		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to empty source on RC message in prepared-round path, but got nil")
 	}
@@ -879,7 +879,7 @@ func TestIsJustified_RejectsRCFromNonValidatorPreparedRoundPath(t *testing.T) {
 		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err == nil {
 		t.Fatalf("expected rejection due to non-validator RC signer in prepared-round path, but got nil")
 	}
@@ -899,7 +899,7 @@ func TestIsJustified_AcceptsDistinctRCSignersNilPath(t *testing.T) {
 		roundChangeMessages = append(roundChangeMessages, createRoundChangeMessage(validatorSet.List()[i].Address(), 10, 0, nil))
 	}
 
-	err := isJustified(block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, []*qbfttypes.Prepare{}, quorumSize, validatorSet)
 	if err != nil {
 		t.Fatalf("expected valid distinct RC signers to pass nil path; got: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestIsJustified_AcceptsDistinctRCSignersPreparedRoundPath(t *testing.T) {
 		prepareMessages = append(prepareMessages, createPrepareMessage(validatorSet.List()[i].Address(), targetPreparedRound, block))
 	}
 
-	err := isJustified(block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
+	err := isJustified(big.NewInt(1), big.NewInt(1), block, roundChangeMessages, prepareMessages, quorumSize, validatorSet)
 	if err != nil {
 		t.Fatalf("expected valid distinct RC signers to pass prepared-round path; got: %v", err)
 	}

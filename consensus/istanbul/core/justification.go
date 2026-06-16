@@ -10,14 +10,25 @@ import (
 	"github.com/electroneum/electroneum-sc/log"
 )
 
-// Returns true if the `proposal` is justified by the set `roundChangeMessages` of ROUND-CHANGE messages
-// and by the set `prepareMessages` of PREPARE messages.
+// Returns true if the `proposal` for view (`sequence`, `round`) is justified by the set
+// `roundChangeMessages` of ROUND-CHANGE messages and by the set `prepareMessages` of PREPARE messages.
 // For this we must either have:
 //   - a quorum of ROUND-CHANGE messages with preparedRound and preparedBlockDigest equal to nil; or
 //   - a ROUND-CHANGE message (1) whose preparedRound is not nil and is equal or higher than the
 //     preparedRound of `quorumSize` ROUND-CHANGE messages and (2) whose preparedRound and
 //     preparedBlockDigest match the round and block of `quorumSize` PREPARE messages.
+//
+// Every ROUND-CHANGE message in the justification MUST itself be for the target view
+// (`sequence`, `round`). The EEA QBFT specification's validRoundChange predicate requires the
+// justification of a round-r PRE-PREPARE to consist of ROUND-CHANGE messages for round r; without
+// this binding a proposer could replay valid ROUND-CHANGE messages from an earlier round (whose
+// signatures correctly cover that earlier round) as the certificate for a new round. Note that a
+// ROUND-CHANGE message's *own* round (the round it is changing TO) is distinct from its
+// preparedRound (the round of any block it locked previously); only the former is bound here, while
+// preparedRound is legitimately lower and is checked separately below.
 func isJustified(
+	sequence *big.Int,
+	round *big.Int,
 	proposal istanbul.Proposal,
 	roundChangeMessages []*qbfttypes.SignedRoundChangePayload,
 	prepareMessages []*qbfttypes.Prepare,
@@ -31,6 +42,22 @@ func isJustified(
 	// DoS hardening: justification cannot contain more round-change messages than there are validators
 	if len(roundChangeMessages) > validators.Size() {
 		return errors.New("too many round change messages in justification")
+	}
+
+	// View binding: every ROUND-CHANGE message must be for the same sequence and round as the
+	// PRE-PREPARE it justifies. This is checked up front, before either quorum path, so that a
+	// stale-but-validly-signed ROUND-CHANGE can never be counted toward quorum regardless of which
+	// branch is taken below.
+	if sequence == nil || round == nil {
+		return errors.New("target sequence or round is nil")
+	}
+	for _, m := range roundChangeMessages {
+		if m.Sequence == nil || m.Sequence.Cmp(sequence) != 0 {
+			return errors.New("round change sequence does not match preprepare sequence")
+		}
+		if m.Round == nil || m.Round.Cmp(round) != 0 {
+			return errors.New("round change round does not match preprepare round")
+		}
 	}
 
 	// Count round change messages with "bad proposal" reason from DISTINCT signers
