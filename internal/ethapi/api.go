@@ -48,6 +48,13 @@ import (
 	"github.com/electroneum/electroneum-sc/rpc"
 )
 
+// maxGetProofKeys is the maximum number of storage keys that can be
+// requested in a single eth_getProof call. Each key requires a full
+// Merkle proof computation against the state trie, so an unbounded
+// array lets a single unauthenticated request monopolise an RPC worker
+// (DoS). 1024 matches the upstream go-ethereum limit.
+const maxGetProofKeys = 1024
+
 // PublicEthereumAPI provides an API to access Ethereum related information.
 // It offers only methods that operate on public data that is freely available to anyone.
 type PublicEthereumAPI struct {
@@ -662,6 +669,9 @@ type StorageResult struct {
 
 // GetProof returns the Merkle-proof for a given account and optionally some storage keys.
 func (api *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNrOrHash rpc.BlockNumberOrHash) (*AccountResult, error) {
+	if len(storageKeys) > maxGetProofKeys {
+		return nil, fmt.Errorf("too many storage keys requested (max %d, got %d)", maxGetProofKeys, len(storageKeys))
+	}
 	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return nil, err
