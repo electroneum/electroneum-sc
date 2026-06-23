@@ -185,6 +185,7 @@ var (
 		utils.RPCGlobalEVMTimeoutFlag,
 		utils.RPCGlobalTxFeeCapFlag,
 		utils.RPCGlobalLogQueryLimitFlag,
+		utils.RPCGlobalRangeLimitFlag,
 		utils.AllowUnprotectedTxs,
 	}
 

@@ -59,6 +59,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		RPCEVMTimeout                   time.Duration
 		RPCTxFeeCap                     float64
 		RPCLogQueryLimit                int
+		RangeLimit                      uint64                         `toml:",omitempty"`
 		Checkpoint                      *params.TrustedCheckpoint      `toml:",omitempty"`
 		CheckpointOracle                *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideArrowGlacier            *big.Int                       `toml:",omitempty"`
@@ -106,6 +107,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.RPCEVMTimeout = c.RPCEVMTimeout
 	enc.RPCTxFeeCap = c.RPCTxFeeCap
 	enc.RPCLogQueryLimit = c.RPCLogQueryLimit
+	enc.RangeLimit = c.RangeLimit
 	enc.Checkpoint = c.Checkpoint
 	enc.CheckpointOracle = c.CheckpointOracle
 	enc.OverrideArrowGlacier = c.OverrideArrowGlacier
@@ -157,6 +159,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		RPCEVMTimeout                   *time.Duration
 		RPCTxFeeCap                     *float64
 		RPCLogQueryLimit                *int
+		RangeLimit                      *uint64                        `toml:",omitempty"`
 		Checkpoint                      *params.TrustedCheckpoint      `toml:",omitempty"`
 		CheckpointOracle                *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideArrowGlacier            *big.Int                       `toml:",omitempty"`
@@ -286,6 +289,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.RPCLogQueryLimit != nil {
 		c.RPCLogQueryLimit = *dec.RPCLogQueryLimit
+	}
+	if dec.RangeLimit != nil {
+		c.RangeLimit = *dec.RangeLimit
 	}
 	if dec.Checkpoint != nil {
 		c.Checkpoint = dec.Checkpoint
