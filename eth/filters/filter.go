@@ -19,6 +19,7 @@ package filters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -57,13 +58,14 @@ type Filter struct {
 
 	block      common.Hash // Block hash if filtering a single block
 	begin, end int64       // Range interval if filtering multiple blocks
+	rangeLimit uint64      // Maximum block range (end - begin) allowed; 0 disables the cap
 
 	matcher *bloombits.Matcher
 }
 
 // NewRangeFilter creates a new filter which uses a bloom filter on blocks to
 // figure out whether a particular block is interesting or not.
-func NewRangeFilter(backend Backend, begin, end int64, addresses []common.Address, topics [][]common.Hash) *Filter {
+func NewRangeFilter(backend Backend, begin, end int64, addresses []common.Address, topics [][]common.Hash, rangeLimit uint64) *Filter {
 	// Flatten the address and topic filter clauses into a single bloombits filter
 	// system. Since the bloombits are not positional, nil topics are permitted,
 	// which get flattened into a nil byte slice.
@@ -90,6 +92,7 @@ func NewRangeFilter(backend Backend, begin, end int64, addresses []common.Addres
 	filter.matcher = bloombits.NewMatcher(size, filters)
 	filter.begin = begin
 	filter.end = end
+	filter.rangeLimit = rangeLimit
 
 	return filter
 }
@@ -141,6 +144,12 @@ func (f *Filter) Logs(ctx context.Context) ([]*types.Log, error) {
 	end := uint64(f.end)
 	if f.end == -1 {
 		end = head
+	}
+	// Enforce the configured block-range cap once the special "latest" (-1)
+	// markers have been resolved to concrete block numbers. Mirrors upstream
+	// go-ethereum; 0 disables the cap (the default).
+	if f.rangeLimit != 0 && end >= uint64(f.begin) && end-uint64(f.begin) > f.rangeLimit {
+		return nil, fmt.Errorf("exceed maximum block range %d", f.rangeLimit)
 	}
 	// Gather all indexed logs, and finish with non indexed ones
 	var (

@@ -96,6 +96,7 @@ var Defaults = Config{
 	GPO:              FullNodeGPO,
 	RPCTxFeeCap:      100000, //  [[ETH($)/ETN($)] / 20(to allow for appreciation, and given that fees will start very low] : correct to jun 2023
 	RPCLogQueryLimit: 1000,
+	RangeLimit:       0, // disabled by default, matching upstream go-ethereum
 
 	// Quorum
 	Istanbul: *istanbul.DefaultConfig, // Quorum
@@ -213,6 +214,11 @@ type Config struct {
 	// eth_subscribe("logs"), eth_getFilterLogs, and the GraphQL logs resolvers).
 	// 0 disables the cap.
 	RPCLogQueryLimit int
+
+	// RangeLimit restricts the maximum block range (end - begin) accepted by
+	// range log queries (eth_getLogs, eth_getFilterLogs and the GraphQL logs
+	// resolvers). 0 disables the cap. Mirrors upstream go-ethereum.
+	RangeLimit uint64 `toml:",omitempty"`
 
 	// Checkpoint is a hardcoded checkpoint which can be nil.
 	Checkpoint *params.TrustedCheckpoint `toml:",omitempty"`

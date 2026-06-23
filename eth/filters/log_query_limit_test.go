@@ -20,10 +20,14 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus/ethash"
+	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/params"
 )
 
 // makeAddresses returns n distinct synthetic addresses.
@@ -48,7 +52,7 @@ func makeTopics(n int) [][]common.Hash {
 // database with the supplied log-query cap.
 func newAPIWithLimit(limit int) *PublicFilterAPI {
 	backend := &testBackend{db: rawdb.NewMemoryDatabase()}
-	return NewPublicFilterAPI(backend, false, deadline, limit)
+	return NewPublicFilterAPI(backend, false, deadline, limit, 0)
 }
 
 func TestCheckLogQueryLimit(t *testing.T) {
@@ -170,4 +174,52 @@ func TestUnderLimitIsAccepted(t *testing.T) {
 	if _, err := api.NewFilter(crit); errors.Is(err, ErrExceedLogQueryLimit) {
 		t.Fatalf("NewFilter: unexpected ErrExceedLogQueryLimit at exact cap")
 	}
+}
+
+// newBackendWithChain returns a testBackend whose canonical chain has the given
+// number of blocks above genesis, so that "latest" resolves to height n.
+func newBackendWithChain(t *testing.T, n int) *testBackend {
+	t.Helper()
+	db := rawdb.NewMemoryDatabase()
+	addr := common.BytesToAddress([]byte("tester"))
+	genesis := core.GenesisBlockForTesting(db, addr, big.NewInt(1000000))
+	chain, receipts := core.GenerateChain(params.TestChainConfig, genesis, ethash.NewFaker(), db, n, func(i int, gen *core.BlockGen) {})
+	for i, block := range chain {
+		rawdb.WriteBlock(db, block)
+		rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+		rawdb.WriteHeadBlockHash(db, block.Hash())
+		rawdb.WriteReceipts(db, block.Hash(), block.NumberU64(), receipts[i])
+	}
+	return &testBackend{db: db}
+}
+
+// TestRangeLimit verifies that a non-zero rangeLimit rejects range queries whose
+// resolved span (end - begin) exceeds the cap, that the "latest" sentinel is
+// resolved before the comparison, and that a zero cap disables the check. This
+// mirrors upstream go-ethereum's --rpc.rangelimit behaviour.
+func TestRangeLimit(t *testing.T) {
+	t.Parallel()
+
+	const head = 20
+	backend := newBackendWithChain(t, head)
+
+	assertExceeds := func(t *testing.T, begin, end int64, limit uint64, want bool) {
+		t.Helper()
+		filter := NewRangeFilter(backend, begin, end, nil, nil, limit)
+		_, err := filter.Logs(context.Background())
+		got := err != nil && strings.Contains(err.Error(), "exceed maximum block range")
+		if got != want {
+			t.Fatalf("begin=%d end=%d limit=%d: range-limit error = %v (err=%v), want %v", begin, end, limit, got, err, want)
+		}
+	}
+
+	// Span 0..20 (= 20) with cap 5 must be rejected.
+	assertExceeds(t, 0, head, 5, true)
+	// The "latest" sentinel (-1) must resolve to head before the comparison,
+	// so 0..latest with cap 5 is rejected just the same.
+	assertExceeds(t, 0, -1, 5, true)
+	// A span within the cap is accepted.
+	assertExceeds(t, 0, 5, 5, false)
+	// A zero cap disables the check entirely, even for the full range.
+	assertExceeds(t, 0, -1, 0, false)
 }

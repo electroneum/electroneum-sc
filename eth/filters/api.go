@@ -56,19 +56,22 @@ type PublicFilterAPI struct {
 	filters       map[rpc.ID]*filter
 	timeout       time.Duration
 	logQueryLimit int
+	rangeLimit    uint64
 }
 
 // NewPublicFilterAPI returns a new PublicFilterAPI instance.
 //
 // logQueryLimit caps the number of addresses and per-position topics accepted
-// by log-filter methods. 0 disables the cap.
-func NewPublicFilterAPI(backend Backend, lightMode bool, timeout time.Duration, logQueryLimit int) *PublicFilterAPI {
+// by log-filter methods. rangeLimit caps the block range (end - begin) accepted
+// by range log queries. 0 disables either cap.
+func NewPublicFilterAPI(backend Backend, lightMode bool, timeout time.Duration, logQueryLimit int, rangeLimit uint64) *PublicFilterAPI {
 	api := &PublicFilterAPI{
 		backend:       backend,
 		events:        NewEventSystem(backend, lightMode),
 		filters:       make(map[rpc.ID]*filter),
 		timeout:       timeout,
 		logQueryLimit: logQueryLimit,
+		rangeLimit:    rangeLimit,
 	}
 	go api.timeoutLoop(timeout)
 
@@ -379,7 +382,7 @@ func (api *PublicFilterAPI) GetLogs(ctx context.Context, crit FilterCriteria) ([
 			end = crit.ToBlock.Int64()
 		}
 		// Construct the range filter
-		filter = NewRangeFilter(api.backend, begin, end, crit.Addresses, crit.Topics)
+		filter = NewRangeFilter(api.backend, begin, end, crit.Addresses, crit.Topics, api.rangeLimit)
 	}
 	// Run the filter and return all the logs
 	logs, err := filter.Logs(ctx)
@@ -437,7 +440,7 @@ func (api *PublicFilterAPI) GetFilterLogs(ctx context.Context, id rpc.ID) ([]*ty
 			end = f.crit.ToBlock.Int64()
 		}
 		// Construct the range filter
-		filter = NewRangeFilter(api.backend, begin, end, f.crit.Addresses, f.crit.Topics)
+		filter = NewRangeFilter(api.backend, begin, end, f.crit.Addresses, f.crit.Topics, api.rangeLimit)
 	}
 	// Run the filter and return all the logs
 	logs, err := filter.Logs(ctx)

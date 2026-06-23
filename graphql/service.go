@@ -57,19 +57,20 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // New constructs a new GraphQL service instance.
 //
 // logQueryLimit caps the number of addresses and per-position topics accepted
-// by the `logs` resolvers. 0 disables the cap.
-func New(stack *node.Node, backend ethapi.Backend, cors, vhosts []string, logQueryLimit int) error {
+// by the `logs` resolvers. rangeLimit caps the block range accepted by the
+// top-level `logs` resolver. 0 disables either cap.
+func New(stack *node.Node, backend ethapi.Backend, cors, vhosts []string, logQueryLimit int, rangeLimit uint64) error {
 	if backend == nil {
 		panic("missing backend")
 	}
 	// check if http server with given endpoint exists and enable graphQL on it
-	return newHandler(stack, backend, cors, vhosts, logQueryLimit)
+	return newHandler(stack, backend, cors, vhosts, logQueryLimit, rangeLimit)
 }
 
 // newHandler returns a new `http.Handler` that will answer GraphQL queries.
 // It additionally exports an interactive query browser on the / endpoint.
-func newHandler(stack *node.Node, backend ethapi.Backend, cors, vhosts []string, logQueryLimit int) error {
-	q := Resolver{backend: backend, logQueryLimit: logQueryLimit}
+func newHandler(stack *node.Node, backend ethapi.Backend, cors, vhosts []string, logQueryLimit int, rangeLimit uint64) error {
+	q := Resolver{backend: backend, logQueryLimit: logQueryLimit, rangeLimit: rangeLimit}
 
 	s, err := graphql.ParseSchema(schema, &q)
 	if err != nil {

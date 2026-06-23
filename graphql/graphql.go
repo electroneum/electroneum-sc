@@ -1168,6 +1168,7 @@ func (p *Pending) EstimateGas(ctx context.Context, args struct {
 type Resolver struct {
 	backend       ethapi.Backend
 	logQueryLimit int
+	rangeLimit    uint64
 }
 
 func (r *Resolver) Block(ctx context.Context, args struct {
@@ -1322,7 +1323,7 @@ func (r *Resolver) Logs(ctx context.Context, args struct{ Filter FilterCriteria 
 		return nil, err
 	}
 	// Construct the range filter
-	filter := filters.NewRangeFilter(filters.Backend(r.backend), begin, end, addresses, topics)
+	filter := filters.NewRangeFilter(filters.Backend(r.backend), begin, end, addresses, topics, r.rangeLimit)
 	return runFilter(ctx, r.backend, filter)
 }
 
