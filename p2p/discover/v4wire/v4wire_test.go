@@ -18,6 +18,7 @@ package v4wire
 
 import (
 	"encoding/hex"
+	"math/big"
 	"net"
 	"reflect"
 	"testing"
@@ -129,4 +130,33 @@ func hexPubkey(h string) (ret Pubkey) {
 	}
 	copy(ret[:], b)
 	return ret
+}
+
+// TestDecodePubkeyNonCanonical ensures that public keys with coordinates that
+// are not in canonical form (>= the curve prime P) are rejected. Such a point
+// can pass a naive mod-P on-curve check but later panics in libsecp256k1 when
+// re-encoded, allowing a remote peer to crash the node via a Neighbors packet.
+func TestDecodePubkeyNonCanonical(t *testing.T) {
+	curve := crypto.S256()
+	p := curve.Params().P
+
+	// Build a valid point for x = 1, then offset x by P so it stays the same
+	// value mod P but is no longer canonical.
+	x := big.NewInt(1)
+	rhs := new(big.Int).Mul(x, x)
+	rhs.Mul(rhs, x)
+	rhs.Add(rhs, curve.Params().B)
+	rhs.Mod(rhs, p)
+	y := new(big.Int).ModSqrt(rhs, p)
+	if y == nil {
+		t.Fatal("no valid y for x=1 on secp256k1")
+	}
+
+	var e Pubkey
+	new(big.Int).Add(x, p).FillBytes(e[:len(e)/2]) // x + P, non-canonical
+	y.FillBytes(e[len(e)/2:])
+
+	if _, err := DecodePubkey(curve, e); err != ErrBadPoint {
+		t.Fatalf("non-canonical pubkey accepted, got err = %v, want ErrBadPoint", err)
+	}
 }
