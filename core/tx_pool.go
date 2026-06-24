@@ -18,6 +18,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -717,6 +718,13 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return errBadPriorityKey
 		}
 		isGasWaiver = transactor.IsGasPriceWaiver
+		// Mirror the execution-layer rule (validatePriorityGasFields): a waiver
+		// sender must submit zero fee fields. Without this the pool accepts a
+		// waiver tx with non-zero fees that execution always rejects, leaving it
+		// stuck in the pool forever.
+		if isGasWaiver && !tx.HasZeroFee() {
+			return fmt.Errorf("%w: waiver priority tx must have zero fee fields", errNoGasPriceWaiver)
+		}
 		// Assure transaction meets fee requirements for non gas waiver transactors
 		if !isGasWaiver {
 			// keep the original rule: if they don't have waiver, they can't submit a zero-fee tx
