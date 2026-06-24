@@ -258,6 +258,38 @@ func TestWaiverPriorityTxBypassesBaseFee(t *testing.T) {
 	}
 }
 
+// Test that a waiver priority tx with non-zero fee fields is rejected at pool
+// admission with errNoGasPriceWaiver, matching the execution-layer rule in
+// validatePriorityGasFields. Without this the pool would accept a tx that
+// execution always rejects, leaving it stuck in the pool forever.
+func TestWaiverPriorityTxNonZeroFeeRejected(t *testing.T) {
+	t.Parallel()
+
+	statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	blockchain := &testBlockChain{10000000, statedb, new(event.Feed), WaiverPriorityTx, common.PriorityTransactorMap{}}
+
+	key, _ := crypto.GenerateKey()
+	pool := NewTxPool(testTxPoolConfig, eip1559Config, blockchain)
+	defer pool.Stop()
+	<-pool.initDoneCh
+
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	testAddBalance(pool, from, new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)))
+
+	// A non-zero feeCap with zero tip should be rejected.
+	tx := priorityTx(0, 21_000, big.NewInt(1_000_000_000), big.NewInt(0), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); !errors.Is(err, errNoGasPriceWaiver) {
+		t.Fatalf("expected %v, got %v", errNoGasPriceWaiver, err)
+	}
+
+	// A non-zero tip (with feeCap >= tip so the tip-above-feeCap guard passes)
+	// should also be rejected.
+	tx = priorityTx(0, 21_000, big.NewInt(2), big.NewInt(1), key, priorityPrivateKeys[0])
+	if err := pool.AddRemote(tx); !errors.Is(err, errNoGasPriceWaiver) {
+		t.Fatalf("expected %v, got %v", errNoGasPriceWaiver, err)
+	}
+}
+
 // Test that a non-waiver priority tx with zero fees is rejected with
 // errNoGasPriceWaiver (the original rule), even before the base fee
 // comparison is reached.
