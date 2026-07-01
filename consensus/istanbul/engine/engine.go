@@ -300,6 +300,22 @@ func (e *Engine) verifySigner(chain consensus.ChainHeaderReader, header *types.H
 	// Pre-fork: Coinbase is not cryptographically bound to the proposer.
 	// Proposer authenticity is enforced at the consensus message layer
 	// (handlePreprepareMsg). Here we can only verify validator-set membership.
+	//
+	// Reject any non-empty ProposerSeal pre-fork. Honest nodes never write a
+	// ProposerSeal before FutureFork (Seal() gates it on IsFutureFork), so a
+	// present seal can only come from a Byzantine proposer. Without this check
+	// the field is silently accepted here but later fails in Author(), which
+	// unconditionally recovers from any 65-byte ProposerSeal — an inconsistent
+	// validation path that lets a poisoned proposal be finalized and then
+	// breaks snapshot construction over that header.
+	extra, err := types.ExtractQBFTExtra(header)
+	if err != nil {
+		return err
+	}
+	if len(extra.ProposerSeal) != 0 {
+		return istanbulcommon.ErrInvalidSignature
+	}
+
 	if _, v := validators.GetByAddress(header.Coinbase); v == nil {
 		return istanbulcommon.ErrUnauthorized
 	}

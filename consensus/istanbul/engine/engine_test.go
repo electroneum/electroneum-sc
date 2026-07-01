@@ -900,3 +900,51 @@ func TestPreFork_AuthorReturnsCoinbase(t *testing.T) {
 		t.Fatalf("Author() mismatch: have %s, want %s", author.Hex(), addr.Hex())
 	}
 }
+
+// TestPreFork_VerifySignerRejectsProposerSeal is a regression test for a
+// consensus-liveness bug: pre-fork, verifySigner used to only check Coinbase
+// validator-set membership and silently ignore ProposerSeal, while Author()
+// unconditionally recovers from any 65-byte ProposerSeal. A Byzantine proposer
+// could therefore poison a pre-fork proposal with a malformed seal that passed
+// verification but later broke snapshot construction in Author(). verifySigner
+// must now reject any non-empty ProposerSeal pre-fork.
+func TestPreFork_VerifySignerRejectsProposerSeal(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	valSet := validator.NewSet([]common.Address{addr}, istanbul.NewProposerPolicy(istanbul.RoundRobin))
+
+	engine := NewEngine(&istanbul.Config{}, addr, func(data []byte) ([]byte, error) {
+		return crypto.Sign(crypto.Keccak256(data), key)
+	})
+	chain := newForkAwareChain(preForkConfig())
+
+	header := &types.Header{
+		Number:     big.NewInt(1),
+		MixDigest:  types.IstanbulDigest,
+		Difficulty: istanbulcommon.DefaultDifficulty,
+		Coinbase:   addr,
+		UncleHash:  types.EmptyUncleHash,
+		Time:       2,
+		GasLimit:   30_000_000,
+	}
+	if err := ApplyHeaderQBFTExtra(header, WriteValidators([]common.Address{addr})); err != nil {
+		t.Fatalf("apply extra: %v", err)
+	}
+
+	// A clean pre-fork header (no ProposerSeal) must still be accepted.
+	if err := engine.verifySigner(chain, header, nil, valSet); err != nil {
+		t.Fatalf("verifySigner rejected clean pre-fork header: %v", err)
+	}
+
+	// Poison it with a malformed 65-byte ProposerSeal.
+	if err := ApplyHeaderQBFTExtra(header, writeProposerSeal(bytes.Repeat([]byte{0xff}, types.IstanbulExtraSeal))); err != nil {
+		t.Fatalf("write proposer seal: %v", err)
+	}
+
+	if err := engine.verifySigner(chain, header, nil, valSet); err != istanbulcommon.ErrInvalidSignature {
+		t.Fatalf("verifySigner should reject pre-fork ProposerSeal with %v, got %v", istanbulcommon.ErrInvalidSignature, err)
+	}
+}
