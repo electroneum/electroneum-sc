@@ -66,7 +66,7 @@ func NewWithCap(size int) *Database {
 }
 
 // Close deallocates the internal map and ensures any consecutive data access op
-// failes with an error.
+// fails with an error.
 func (db *Database) Close() error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -244,6 +244,9 @@ func (b *batch) Write() error {
 	b.db.lock.Lock()
 	defer b.db.lock.Unlock()
 
+	if b.db.db == nil {
+		return errMemorydbClosed
+	}
 	for _, keyvalue := range b.writes {
 		if keyvalue.delete {
 			delete(b.db.db, string(keyvalue.key))
@@ -342,7 +345,7 @@ func newSnapshot(db *Database) *snapshot {
 	db.lock.RLock()
 	defer db.lock.RUnlock()
 
-	copied := make(map[string][]byte)
+	copied := make(map[string][]byte, len(db.db))
 	for key, val := range db.db {
 		copied[key] = common.CopyBytes(val)
 	}

@@ -20,17 +20,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"reflect"
 	"testing"
 	"time"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/ethash"
 	"github.com/electroneum/electroneum-sc/core"
-	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/eth"
@@ -42,21 +40,21 @@ import (
 
 // Verify that Client implements the ethereum interfaces.
 var (
-	_ = electroneum.ChainReader(&Client{})
-	_ = electroneum.TransactionReader(&Client{})
-	_ = electroneum.ChainStateReader(&Client{})
-	_ = electroneum.ChainSyncReader(&Client{})
-	_ = electroneum.ContractCaller(&Client{})
-	_ = electroneum.GasEstimator(&Client{})
-	_ = electroneum.GasPricer(&Client{})
-	_ = electroneum.LogFilterer(&Client{})
-	_ = electroneum.PendingStateReader(&Client{})
+	_ = ethereum.ChainReader(&Client{})
+	_ = ethereum.TransactionReader(&Client{})
+	_ = ethereum.ChainStateReader(&Client{})
+	_ = ethereum.ChainSyncReader(&Client{})
+	_ = ethereum.ContractCaller(&Client{})
+	_ = ethereum.GasEstimator(&Client{})
+	_ = ethereum.GasPricer(&Client{})
+	_ = ethereum.LogFilterer(&Client{})
+	_ = ethereum.PendingStateReader(&Client{})
 	// _ = ethereum.PendingStateEventer(&Client{})
-	_ = electroneum.PendingContractCaller(&Client{})
+	_ = ethereum.PendingContractCaller(&Client{})
 )
 
 func TestToFilterArg(t *testing.T) {
-	blockHashErr := fmt.Errorf("cannot specify both BlockHash and FromBlock/ToBlock")
+	blockHashErr := errors.New("cannot specify both BlockHash and FromBlock/ToBlock")
 	addresses := []common.Address{
 		common.HexToAddress("0xD36722ADeC3EdCB29c8e7b5a47f352D701393462"),
 	}
@@ -66,13 +64,13 @@ func TestToFilterArg(t *testing.T) {
 
 	for _, testCase := range []struct {
 		name   string
-		input  electroneum.FilterQuery
+		input  ethereum.FilterQuery
 		output interface{}
 		err    error
 	}{
 		{
 			"without BlockHash",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				FromBlock: big.NewInt(1),
 				ToBlock:   big.NewInt(2),
@@ -88,7 +86,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with nil fromBlock and nil toBlock",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				Topics:    [][]common.Hash{},
 			},
@@ -102,7 +100,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with negative fromBlock and negative toBlock",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				FromBlock: big.NewInt(-1),
 				ToBlock:   big.NewInt(-1),
@@ -118,7 +116,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with blockhash",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				BlockHash: &blockHash,
 				Topics:    [][]common.Hash{},
@@ -132,7 +130,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with blockhash and from block",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				BlockHash: &blockHash,
 				FromBlock: big.NewInt(1),
@@ -143,7 +141,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with blockhash and to block",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				BlockHash: &blockHash,
 				ToBlock:   big.NewInt(1),
@@ -154,7 +152,7 @@ func TestToFilterArg(t *testing.T) {
 		},
 		{
 			"with blockhash and both from / to block",
-			electroneum.FilterQuery{
+			ethereum.FilterQuery{
 				Addresses: addresses,
 				BlockHash: &blockHash,
 				FromBlock: big.NewInt(1),
@@ -222,7 +220,6 @@ func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {
 	}
 	// Create Ethereum Service
 	config := &ethconfig.Config{Genesis: genesis}
-	config.Ethash.PowMode = ethash.ModeFake
 	ethservice, err := eth.New(n, config)
 	if err != nil {
 		t.Fatalf("can't create new ethereum service: %v", err)
@@ -238,7 +235,6 @@ func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {
 }
 
 func generateTestChain() []*types.Block {
-	db := rawdb.NewMemoryDatabase()
 	generate := func(i int, g *core.BlockGen) {
 		g.OffsetTime(5)
 		g.SetExtra([]byte("test"))
@@ -248,16 +244,13 @@ func generateTestChain() []*types.Block {
 			g.AddTx(testTx2)
 		}
 	}
-	gblock := genesis.ToBlock(db)
-	engine := ethash.NewFaker()
-	blocks, _ := core.GenerateChain(genesis.Config, gblock, engine, db, 2, generate)
-	blocks = append([]*types.Block{gblock}, blocks...)
-	return blocks
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 2, generate)
+	return append([]*types.Block{genesis.ToBlock()}, blocks...)
 }
 
 func TestEthClient(t *testing.T) {
 	backend, chain := newTestBackend(t)
-	client, _ := backend.Attach()
+	client := backend.Attach()
 	defer backend.Close()
 	defer client.Close()
 
@@ -319,7 +312,7 @@ func testHeader(t *testing.T, chain []*types.Block, client *rpc.Client) {
 		"future_block": {
 			block:   big.NewInt(1000000000),
 			want:    nil,
-			wantErr: electroneum.NotFound,
+			wantErr: ethereum.NotFound,
 		},
 	}
 	for name, tt := range tests {
@@ -397,19 +390,19 @@ func testTransactionInBlockInterrupted(t *testing.T, client *rpc.Client) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Test tx in block interupted.
+	// Test tx in block interrupted.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	tx, err := ec.TransactionInBlock(ctx, block.Hash(), 0)
 	if tx != nil {
 		t.Fatal("transaction should be nil")
 	}
-	if err == nil || err == electroneum.NotFound {
+	if err == nil || err == ethereum.NotFound {
 		t.Fatal("error should not be nil/notfound")
 	}
 
 	// Test tx in block not found.
-	if _, err := ec.TransactionInBlock(context.Background(), block.Hash(), 20); err != electroneum.NotFound {
+	if _, err := ec.TransactionInBlock(context.Background(), block.Hash(), 20); err != ethereum.NotFound {
 		t.Fatal("error should be ethereum.NotFound")
 	}
 }
@@ -508,13 +501,36 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 	if gasTipCap.Cmp(big.NewInt(234375000)) != 0 {
 		t.Fatalf("unexpected gas tip cap: %v", gasTipCap)
 	}
+
+	// FeeHistory
+	history, err := ec.FeeHistory(context.Background(), 1, big.NewInt(2), []float64{95, 99})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := &ethereum.FeeHistory{
+		OldestBlock: big.NewInt(2),
+		Reward: [][]*big.Int{
+			{
+				big.NewInt(234375000),
+				big.NewInt(234375000),
+			},
+		},
+		BaseFee: []*big.Int{
+			big.NewInt(765625000),
+			big.NewInt(671627818),
+		},
+		GasUsedRatio: []float64{0.008912678667376286},
+	}
+	if !reflect.DeepEqual(history, want) {
+		t.Fatalf("FeeHistory result doesn't match expected: (got: %v, want: %v)", history, want)
+	}
 }
 
 func testCallContractAtHash(t *testing.T, client *rpc.Client) {
 	ec := NewClient(client)
 
 	// EstimateGas
-	msg := electroneum.CallMsg{
+	msg := ethereum.CallMsg{
 		From:  testAddr,
 		To:    &common.Address{},
 		Gas:   21000,
@@ -541,7 +557,7 @@ func testCallContract(t *testing.T, client *rpc.Client) {
 	ec := NewClient(client)
 
 	// EstimateGas
-	msg := electroneum.CallMsg{
+	msg := ethereum.CallMsg{
 		From:  testAddr,
 		To:    &common.Address{},
 		Gas:   21000,
@@ -558,7 +574,7 @@ func testCallContract(t *testing.T, client *rpc.Client) {
 	if _, err := ec.CallContract(context.Background(), msg, big.NewInt(1)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// PendingCallCOntract
+	// PendingCallContract
 	if _, err := ec.PendingCallContract(context.Background(), msg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

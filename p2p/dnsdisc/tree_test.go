@@ -63,6 +63,7 @@ func TestParseRoot(t *testing.T) {
 func TestParseEntry(t *testing.T) {
 	testENRs := []string{"enr:-HW4QES8QIeXTYlDzbfr1WEzE-XKY4f8gJFJzjJL-9D7TC9lJb4Z3JPRRz1lP4pL_N_QpT6rGQjAU9Apnc-C1iMP36OAgmlkgnY0iXNlY3AyNTZrMaED5IdwfMxdmR8W37HqSFdQLjDkIwBd4Q_MjxgZifgKSdM"}
 	testNodes := parseNodes(testENRs)
+
 	tests := []struct {
 		input string
 		e     entry

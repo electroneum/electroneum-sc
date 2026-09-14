@@ -20,180 +20,120 @@ import (
 	"math/big"
 	"reflect"
 	"testing"
+	"time"
 
-	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/math"
 )
 
 func TestCheckCompatible(t *testing.T) {
 	type test struct {
-		stored, new *ChainConfig
-		head        uint64
-		wantErr     *ConfigCompatError
+		stored, new   *ChainConfig
+		headBlock     uint64
+		headTimestamp uint64
+		wantErr       *ConfigCompatError
 	}
 	tests := []test{
-		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, head: 0, wantErr: nil},
-		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, head: 100, wantErr: nil},
+		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, headBlock: 0, headTimestamp: 0, wantErr: nil},
+		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, headBlock: 0, headTimestamp: uint64(time.Now().Unix()), wantErr: nil},
+		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, headBlock: 100, wantErr: nil},
 		{
-			stored:  &ChainConfig{EIP150Block: big.NewInt(10)},
-			new:     &ChainConfig{EIP150Block: big.NewInt(20)},
-			head:    9,
-			wantErr: nil,
+			stored:    &ChainConfig{EIP150Block: big.NewInt(10)},
+			new:       &ChainConfig{EIP150Block: big.NewInt(20)},
+			headBlock: 9,
+			wantErr:   nil,
 		},
 		{
-			stored: AllEthashProtocolChanges,
-			new:    &ChainConfig{HomesteadBlock: nil},
-			head:   3,
+			stored:    AllEthashProtocolChanges,
+			new:       &ChainConfig{HomesteadBlock: nil},
+			headBlock: 3,
 			wantErr: &ConfigCompatError{
-				What:         "Homestead fork block",
-				StoredConfig: big.NewInt(0),
-				NewConfig:    nil,
-				RewindTo:     0,
+				What:          "Homestead fork block",
+				StoredBlock:   big.NewInt(0),
+				NewBlock:      nil,
+				RewindToBlock: 0,
 			},
 		},
 		{
-			stored: AllEthashProtocolChanges,
-			new:    &ChainConfig{HomesteadBlock: big.NewInt(1)},
-			head:   3,
+			stored:    AllEthashProtocolChanges,
+			new:       &ChainConfig{HomesteadBlock: big.NewInt(1)},
+			headBlock: 3,
 			wantErr: &ConfigCompatError{
-				What:         "Homestead fork block",
-				StoredConfig: big.NewInt(0),
-				NewConfig:    big.NewInt(1),
-				RewindTo:     0,
+				What:          "Homestead fork block",
+				StoredBlock:   big.NewInt(0),
+				NewBlock:      big.NewInt(1),
+				RewindToBlock: 0,
 			},
 		},
 		{
-			stored: &ChainConfig{HomesteadBlock: big.NewInt(30), EIP150Block: big.NewInt(10)},
-			new:    &ChainConfig{HomesteadBlock: big.NewInt(25), EIP150Block: big.NewInt(20)},
-			head:   25,
+			stored:    &ChainConfig{HomesteadBlock: big.NewInt(30), EIP150Block: big.NewInt(10)},
+			new:       &ChainConfig{HomesteadBlock: big.NewInt(25), EIP150Block: big.NewInt(20)},
+			headBlock: 25,
 			wantErr: &ConfigCompatError{
-				What:         "EIP150 fork block",
-				StoredConfig: big.NewInt(10),
-				NewConfig:    big.NewInt(20),
-				RewindTo:     9,
+				What:          "EIP150 fork block",
+				StoredBlock:   big.NewInt(10),
+				NewBlock:      big.NewInt(20),
+				RewindToBlock: 9,
 			},
 		},
 		{
-			stored:  &ChainConfig{ConstantinopleBlock: big.NewInt(30)},
-			new:     &ChainConfig{ConstantinopleBlock: big.NewInt(30), PetersburgBlock: big.NewInt(30)},
-			head:    40,
-			wantErr: nil,
+			stored:    &ChainConfig{ConstantinopleBlock: big.NewInt(30)},
+			new:       &ChainConfig{ConstantinopleBlock: big.NewInt(30), PetersburgBlock: big.NewInt(30)},
+			headBlock: 40,
+			wantErr:   nil,
 		},
 		{
-			stored: &ChainConfig{ConstantinopleBlock: big.NewInt(30)},
-			new:    &ChainConfig{ConstantinopleBlock: big.NewInt(30), PetersburgBlock: big.NewInt(31)},
-			head:   40,
+			stored:    &ChainConfig{ConstantinopleBlock: big.NewInt(30)},
+			new:       &ChainConfig{ConstantinopleBlock: big.NewInt(30), PetersburgBlock: big.NewInt(31)},
+			headBlock: 40,
 			wantErr: &ConfigCompatError{
-				What:         "Petersburg fork block",
-				StoredConfig: nil,
-				NewConfig:    big.NewInt(31),
-				RewindTo:     30,
+				What:          "Petersburg fork block",
+				StoredBlock:   nil,
+				NewBlock:      big.NewInt(31),
+				RewindToBlock: 30,
+			},
+		},
+		{
+			stored:        &ChainConfig{ShanghaiTime: newUint64(10)},
+			new:           &ChainConfig{ShanghaiTime: newUint64(20)},
+			headTimestamp: 9,
+			wantErr:       nil,
+		},
+		{
+			stored:        &ChainConfig{ShanghaiTime: newUint64(10)},
+			new:           &ChainConfig{ShanghaiTime: newUint64(20)},
+			headTimestamp: 25,
+			wantErr: &ConfigCompatError{
+				What:         "Shanghai fork timestamp",
+				StoredTime:   newUint64(10),
+				NewTime:      newUint64(20),
+				RewindToTime: 9,
 			},
 		},
 	}
 
 	for _, test := range tests {
-		err := test.stored.CheckCompatible(test.new, test.head)
+		err := test.stored.CheckCompatible(test.new, test.headBlock, test.headTimestamp)
 		if !reflect.DeepEqual(err, test.wantErr) {
-			t.Errorf("error mismatch:\nstored: %v\nnew: %v\nhead: %v\nerr: %v\nwant: %v", test.stored, test.new, test.head, err, test.wantErr)
+			t.Errorf("error mismatch:\nstored: %v\nnew: %v\nheadBlock: %v\nheadTimestamp: %v\nerr: %v\nwant: %v", test.stored, test.new, test.headBlock, test.headTimestamp, err, test.wantErr)
 		}
 	}
 }
 
-func TestCheckTransitionsData(t *testing.T) {
-	type test struct {
-		stored  *ChainConfig
-		wantErr error
+func TestConfigRules(t *testing.T) {
+	c := &ChainConfig{
+		LondonBlock:  new(big.Int),
+		ShanghaiTime: newUint64(500),
 	}
-	var ibftTransitionsConfig, qbftTransitionsConfig, invalidBlockOrder []Transition
-	tranI0 := Transition{big.NewInt(0), 30000, 5, 10, 60, common.Address{}, 0}
-	tranI5 := Transition{big.NewInt(5), 30000, 5, 10, 60, common.Address{}, 0}
-	tranI8 := Transition{big.NewInt(8), 30000, 5, 10, 60, common.Address{}, 0}
-	tranI10 := Transition{big.NewInt(10), 30000, 5, 10, 60, common.Address{}, 0}
-
-	ibftTransitionsConfig = append(ibftTransitionsConfig, tranI0, tranI5, tranI8, tranI10)
-	invalidBlockOrder = append(invalidBlockOrder, tranI8, tranI5)
-
-	tests := []test{
-		{stored: MainnetChainConfig, wantErr: nil},
-		{stored: AllEthashProtocolChanges, wantErr: nil},
-		{stored: AllCliqueProtocolChanges, wantErr: nil},
-		{stored: TestChainConfig, wantErr: nil},
-		{
-			stored:  &ChainConfig{IBFT: &IBFTConfig{}},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: ibftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{IBFT: &IBFTConfig{}, Transitions: qbftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{Transitions: ibftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{Transitions: qbftTransitionsConfig},
-			wantErr: nil,
-		},
-		{
-			stored:  &ChainConfig{Transitions: invalidBlockOrder},
-			wantErr: ErrBlockOrder,
-		},
-		{
-			stored:  &ChainConfig{Transitions: []Transition{{nil, 30000, 5, 10, 60, common.Address{}, 0}}},
-			wantErr: ErrBlockNumberMissing,
-		},
-		{
-			stored:  &ChainConfig{Transitions: []Transition{{Block: big.NewInt(0)}}},
-			wantErr: nil,
-		},
+	var stamp uint64
+	if r := c.Rules(big.NewInt(0), true, stamp); r.IsShanghai {
+		t.Errorf("expected %v to not be shanghai", stamp)
 	}
-
-	for _, test := range tests {
-		err := test.stored.CheckTransitionsData()
-		if !reflect.DeepEqual(err, test.wantErr) {
-			t.Errorf("error mismatch:\nstored: %v\nerr: %v\nwant: %v", test.stored, err, test.wantErr)
-		}
+	stamp = 500
+	if r := c.Rules(big.NewInt(0), true, stamp); !r.IsShanghai {
+		t.Errorf("expected %v to be shanghai", stamp)
 	}
-}
-
-func TestGetPriorityTransactorsContractAddress(t *testing.T) {
-	address, address1, address2, address3 := common.Address{}, common.Address{0x2}, common.Address{0x4}, common.Address{0x6}
-
-	config := TestChainConfig
-	config.Transitions = []Transition{{
-		Block:                              big.NewInt(2),
-		PriorityTransactorsContractAddress: address1,
-	}, {
-		Block:                              big.NewInt(4),
-		PriorityTransactorsContractAddress: address2,
-	}, {
-		Block:                              big.NewInt(6),
-		PriorityTransactorsContractAddress: address3,
-	}}
-
-	type test struct {
-		blockNumber     int64
-		expectedAddress common.Address
-	}
-	tests := []test{
-		{0, address},
-		{1, address},
-		{2, address1},
-		{3, address1},
-		{4, address2},
-		{5, address2},
-		{10, address3},
-		{100, address3},
-	}
-
-	for _, test := range tests {
-		c := config.GetPriorityTransactorsContractAddress(big.NewInt(test.blockNumber))
-		if !reflect.DeepEqual(c, test.expectedAddress) {
-			t.Errorf("error mismatch:\nexpected: %v\ngot: %v\n", test.expectedAddress, c)
-		}
+	stamp = math.MaxInt64
+	if r := c.Rules(big.NewInt(0), true, stamp); !r.IsShanghai {
+		t.Errorf("expected %v to be shanghai", stamp)
 	}
 }

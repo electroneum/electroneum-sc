@@ -28,14 +28,19 @@ import (
 )
 
 const (
-	DefaultHTTPHost    = "localhost" // Default host interface for the HTTP RPC server
-	DefaultHTTPPort    = 8545        // Default TCP port for the HTTP RPC server
-	DefaultWSHost      = "localhost" // Default host interface for the websocket RPC server
-	DefaultWSPort      = 8546        // Default TCP port for the websocket RPC server
-	DefaultGraphQLHost = "localhost" // Default host interface for the GraphQL server
-	DefaultGraphQLPort = 8547        // Default TCP port for the GraphQL server
-	DefaultAuthHost    = "localhost" // Default host interface for the authenticated apis
-	DefaultAuthPort    = 8551        // Default port for the authenticated apis
+	DefaultHTTPHost = "localhost" // Default host interface for the HTTP RPC server
+	DefaultHTTPPort = 8545        // Default TCP port for the HTTP RPC server
+	DefaultWSHost   = "localhost" // Default host interface for the websocket RPC server
+	DefaultWSPort   = 8546        // Default TCP port for the websocket RPC server
+	DefaultAuthHost = "localhost" // Default host interface for the authenticated apis
+	DefaultAuthPort = 8551        // Default port for the authenticated apis
+)
+
+const (
+	// Engine API batch limits: these are not configurable by users, and should cover the
+	// needs of all CLs.
+	engineAPIBatchItemLimit         = 2000
+	engineAPIBatchResponseSizeLimit = 250 * 1000 * 1000
 )
 
 var (
@@ -48,22 +53,32 @@ var (
 
 // DefaultConfig contains reasonable default settings.
 var DefaultConfig = Config{
-	DataDir:             DefaultDataDir(),
-	HTTPPort:            DefaultHTTPPort,
-	AuthAddr:            DefaultAuthHost,
-	AuthPort:            DefaultAuthPort,
-	AuthVirtualHosts:    DefaultAuthVhosts,
-	HTTPModules:         []string{"net", "web3"},
-	HTTPVirtualHosts:    []string{"localhost"},
-	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-	WSPort:              DefaultWSPort,
-	WSModules:           []string{"net", "web3"},
-	GraphQLVirtualHosts: []string{"localhost"},
+	DataDir:          DefaultDataDir(),
+	HTTPPort:         DefaultHTTPPort,
+	AuthAddr:         DefaultAuthHost,
+	AuthPort:         DefaultAuthPort,
+	AuthVirtualHosts: DefaultAuthVhosts,
+	HTTPModules:      []string{"net", "web3"},
+	HTTPVirtualHosts: []string{"localhost"},
+	HTTPTimeouts:     rpc.DefaultHTTPTimeouts,
+	WSPort:           DefaultWSPort,
+	WSModules:        []string{"net", "web3"},
+	// Both caps are new in v1.13 and 0 disables them, which is what the
+	// v1.10.18 binary Electroneum ships effectively did -- it had no batch
+	// limits at all. Keeping upstream's 1000-item / 25MB defaults would newly
+	// reject or truncate batches that work against every other ETN node today,
+	// and ElectroSwap's own indexer batches heavily. Re-enable per node with
+	// --rpc.batch-request-limit / --rpc.batch-response-max-size if a node is
+	// ever exposed publicly.
+	BatchRequestLimit:    0,
+	BatchResponseMaxSize: 0,
+	GraphQLVirtualHosts:  []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr: ":30303",
 		MaxPeers:   50,
 		NAT:        nat.Any(),
 	},
+	DBEngine: "", // Use whatever exists, will default to Pebble if non-existent and supported
 }
 
 // DefaultDataDir is the default data directory to use for the databases and other
@@ -74,19 +89,19 @@ func DefaultDataDir() string {
 	if home != "" {
 		switch runtime.GOOS {
 		case "darwin":
-			return filepath.Join(home, "Library", "Electroneum-sc")
+			return filepath.Join(home, "Library", "Ethereum")
 		case "windows":
 			// We used to put everything in %HOME%\AppData\Roaming, but this caused
 			// problems with non-typical setups. If this fallback location exists and
 			// is non-empty, use it, otherwise DTRT and check %LOCALAPPDATA%.
-			fallback := filepath.Join(home, "AppData", "Roaming", "Electroneum-sc")
+			fallback := filepath.Join(home, "AppData", "Roaming", "Ethereum")
 			appdata := windowsAppData()
 			if appdata == "" || isNonEmptyDir(fallback) {
 				return fallback
 			}
-			return filepath.Join(appdata, "Electroneum-sc")
+			return filepath.Join(appdata, "Ethereum")
 		default:
-			return filepath.Join(home, ".electroneum-sc")
+			return filepath.Join(home, ".ethereum")
 		}
 	}
 	// As we cannot guess a stable location, return empty and handle later

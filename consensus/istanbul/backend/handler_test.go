@@ -71,7 +71,7 @@ func TestHandleNewBlockMessage_whenNotAProposedBlock(t *testing.T) {
 		Root:      common.StringToHash("someroot"),
 		GasLimit:  1,
 		MixDigest: types.IstanbulDigest,
-	}, nil, nil, nil, new(trie.Trie)), t)
+	}, nil, nil, nil, trie.NewStackTrie(nil)), t)
 
 	handled, err := tryUntilMessageIsHandled(backend, arbitraryAddress, arbitraryP2PMessage)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestHandleNewBlockMessage_whenFailToDecode(t *testing.T) {
 		Number:    big.NewInt(1),
 		GasLimit:  1,
 		MixDigest: types.IstanbulDigest,
-	}, nil, nil, nil, new(trie.Trie)), t)
+	}, nil, nil, nil, trie.NewStackTrie(nil)), t)
 
 	handled, err := tryUntilMessageIsHandled(backend, arbitraryAddress, arbitraryP2PMessage)
 	if err != nil {
@@ -130,7 +130,7 @@ func buildArbitraryP2PNewBlockMessage(t *testing.T, invalidMsg bool) (*types.Blo
 		Number:    big.NewInt(1),
 		GasLimit:  0,
 		MixDigest: types.IstanbulDigest,
-	}, nil, nil, nil, new(trie.Trie))
+	}, nil, nil, nil, trie.NewStackTrie(nil))
 	request := []interface{}{&arbitraryBlock, big.NewInt(1)}
 	if invalidMsg {
 		request = []interface{}{"invalid msg"}

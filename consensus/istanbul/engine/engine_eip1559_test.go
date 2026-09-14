@@ -27,7 +27,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
-	"github.com/electroneum/electroneum-sc/consensus/misc"
+	"github.com/electroneum/electroneum-sc/consensus/misc/eip1559"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/params"
@@ -103,7 +103,7 @@ func newEIP1559Fixture(t *testing.T) *eip1559TestFixture {
 		UncleHash:  types.EmptyUncleHash,
 		Time:       1,
 		GasLimit:   parentGasLimit,
-		GasUsed:    parentGasLimit / params.ElasticityMultiplier,
+		GasUsed:    parentGasLimit / params.DefaultElasticityMultiplier,
 		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}
 	if err := ApplyHeaderQBFTExtra(parent, WriteValidators(addrs), writeRoundNumber(big.NewInt(0))); err != nil {
@@ -159,7 +159,7 @@ func (f *eip1559TestFixture) verify(h *types.Header) error {
 // headers do not carry seals — that is the post-EIP-1559 stop point.
 func TestVerifyCascadingFields_BaseFeeCorrect_Accepts(t *testing.T) {
 	f := newEIP1559Fixture(t)
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	h := f.childHeader(t, expected, f.parent.GasLimit)
 
 	err := f.verify(h)
@@ -173,7 +173,7 @@ func TestVerifyCascadingFields_BaseFeeCorrect_Accepts(t *testing.T) {
 // be rejected.
 func TestVerifyCascadingFields_BaseFeeZero_Rejected(t *testing.T) {
 	f := newEIP1559Fixture(t)
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	if expected.Sign() == 0 {
 		// Sanity guard: the test is meaningless if the expected value is also
 		// zero, which would only happen on a long-idle chain. With our genesis
@@ -213,7 +213,7 @@ func TestVerifyCascadingFields_GasLimitTooHigh_Rejected(t *testing.T) {
 	f := newEIP1559Fixture(t)
 	// One unit beyond the upper bound (parent.GasLimit + parent.GasLimit/1024).
 	tooHigh := f.parent.GasLimit + (f.parent.GasLimit / 1024) + 1
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	h := f.childHeader(t, expected, tooHigh)
 
 	err := f.verify(h)
@@ -230,7 +230,7 @@ func TestVerifyCascadingFields_GasLimitTooHigh_Rejected(t *testing.T) {
 func TestVerifyCascadingFields_GasLimitTooLow_Rejected(t *testing.T) {
 	f := newEIP1559Fixture(t)
 	tooLow := f.parent.GasLimit - (f.parent.GasLimit / 1024) - 1
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	h := f.childHeader(t, expected, tooLow)
 
 	err := f.verify(h)

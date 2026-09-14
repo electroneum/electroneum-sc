@@ -82,7 +82,7 @@ func TestClientSyncTreeBadNode(t *testing.T) {
 	// tree, _ := MakeTree(3, nil, []string{"enrtree://AM5FCQLWIZX2QFPNJAP7VUERCCRNGRHWZG3YYHIUV7BVDQ5FDPRT2@morenodes.example.org"})
 	// tree.entries[badHash] = &b
 	// tree.root.eroot = badHash
-	// url, _ := tree.Sign(testKey(signingKeySeed), "n")
+	// url, _ := tree.Sign(signingKeyForTesting, "n")
 	// fmt.Println(url)
 	// fmt.Printf("%#v\n", tree.ToTXT("n"))
 
@@ -107,6 +107,7 @@ func TestIterator(t *testing.T) {
 		tree, url = makeTestTree("n", nodes, nil)
 		r         = mapResolver(tree.ToTXT("n"))
 	)
+
 	c := NewClient(Config{
 		Resolver:  r,
 		Logger:    testlog.Logger(t, log.LvlTrace),
@@ -142,6 +143,7 @@ func TestIteratorClose(t *testing.T) {
 		nodes       = testNodes(keys)
 		tree1, url1 = makeTestTree("t1", nodes, nil)
 	)
+
 	c := NewClient(Config{Resolver: newMapResolver(tree1.ToTXT("t1"))})
 	it, err := c.NewIterator(url1)
 	if err != nil {
@@ -169,6 +171,7 @@ func TestIteratorLinks(t *testing.T) {
 		tree1, url1 = makeTestTree("t1", nodes[:10], nil)
 		tree2, url2 = makeTestTree("t2", nodes[10:], []string{url1})
 	)
+
 	c := NewClient(Config{
 		Resolver:  newMapResolver(tree1.ToTXT("t1"), tree2.ToTXT("t2")),
 		Logger:    testlog.Logger(t, log.LvlTrace),
@@ -279,7 +282,7 @@ func TestIteratorEmptyTree(t *testing.T) {
 	resolver.add(tree1.ToTXT("n"))
 
 	// Start the iterator.
-	node := make(chan *enode.Node)
+	node := make(chan *enode.Node, 1)
 	it, err := c.NewIterator(url)
 	if err != nil {
 		t.Fatal(err)
@@ -436,7 +439,7 @@ func testNodes(keys []*ecdsa.PrivateKey) []*enode.Node {
 type mapResolver map[string]string
 
 func newMapResolver(maps ...map[string]string) mapResolver {
-	mr := make(mapResolver)
+	mr := make(mapResolver, len(maps))
 	for _, m := range maps {
 		mr.add(m)
 	}

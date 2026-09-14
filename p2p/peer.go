@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sort"
 	"sync"
 	"time"
 
@@ -32,9 +31,12 @@ import (
 	"github.com/electroneum/electroneum-sc/p2p/enode"
 	"github.com/electroneum/electroneum-sc/p2p/enr"
 	"github.com/electroneum/electroneum-sc/rlp"
+	"golang.org/x/exp/slices"
 )
 
-var ErrShuttingDown = errors.New("shutting down")
+var (
+	ErrShuttingDown = errors.New("shutting down")
+)
 
 const (
 	baseProtocolVersion    = 5
@@ -110,13 +112,16 @@ type Peer struct {
 	wg       sync.WaitGroup
 	protoErr chan error
 	closed   chan struct{}
+	pingRecv chan struct{}
 	disc     chan DiscReason
 
 	// events receives message send / receive events if set
 	events   *event.Feed
 	testPipe *MsgPipeRW // for testing
 
-	// Quorum
+	// The IBFT consensus subprotocol starts before the eth subprotocol has
+	// necessarily registered its peer. These let it wait for registration
+	// rather than racing it, and learn if the peer went away instead.
 	EthPeerRegistered   chan struct{}
 	EthPeerDisconnected chan struct{}
 }
@@ -213,14 +218,6 @@ func (p *Peer) Disconnect(reason DiscReason) {
 	case p.disc <- reason:
 	case <-p.closed:
 	}
-
-	// Quorum
-	// if a quorum eth service subprotocol is waiting on EthPeerRegistered, notify the peer that it was not registered.
-	select {
-	case p.EthPeerDisconnected <- struct{}{}:
-	default:
-	}
-	// Quorum
 }
 
 // String implements fmt.Stringer.
@@ -243,8 +240,9 @@ func newPeer(log log.Logger, conn *conn, protocols []Protocol) *Peer {
 		disc:     make(chan DiscReason),
 		protoErr: make(chan error, len(protomap)+1), // protocols + pingLoop
 		closed:   make(chan struct{}),
+		pingRecv: make(chan struct{}, 16),
 		log:      log.New("id", conn.node.ID(), "conn", conn.flags),
-		// Quorum
+
 		EthPeerRegistered:   make(chan struct{}, 1),
 		EthPeerDisconnected: make(chan struct{}, 1),
 	}
@@ -256,6 +254,15 @@ func (p *Peer) Log() log.Logger {
 }
 
 func (p *Peer) run() (remoteRequested bool, err error) {
+	// If the IBFT subprotocol is waiting for this peer's eth registration,
+	// make sure it learns the peer went away instead of blocking forever.
+	defer func() {
+		select {
+		case p.EthPeerDisconnected <- struct{}{}:
+		default:
+		}
+	}()
+
 	var (
 		writeStart = make(chan struct{}, 1)
 		writeErr   = make(chan error, 1)
@@ -306,9 +313,11 @@ loop:
 }
 
 func (p *Peer) pingLoop() {
-	ping := time.NewTimer(pingInterval)
 	defer p.wg.Done()
+
+	ping := time.NewTimer(pingInterval)
 	defer ping.Stop()
+
 	for {
 		select {
 		case <-ping.C:
@@ -317,6 +326,10 @@ func (p *Peer) pingLoop() {
 				return
 			}
 			ping.Reset(pingInterval)
+
+		case <-p.pingRecv:
+			SendItems(p.rw, pongMsg)
+
 		case <-p.closed:
 			return
 		}
@@ -343,7 +356,10 @@ func (p *Peer) handle(msg Msg) error {
 	switch {
 	case msg.Code == pingMsg:
 		msg.Discard()
-		go SendItems(p.rw, pongMsg)
+		select {
+		case p.pingRecv <- struct{}{}:
+		case <-p.closed:
+		}
 	case msg.Code == discMsg:
 		// This is the last message. We don't need to discard or
 		// check errors because, the connection will be closed after it.
@@ -388,7 +404,7 @@ func countMatchingProtocols(protocols []Protocol, caps []Cap) int {
 
 // matchProtocols creates structures for matching named subprotocols.
 func matchProtocols(protocols []Protocol, caps []Cap, rw MsgReadWriter) map[string]*protoRW {
-	sort.Sort(capsByNameAndVersion(caps))
+	slices.SortFunc(caps, Cap.Cmp)
 	offset := baseProtocolLength
 	result := make(map[string]*protoRW)
 
@@ -414,6 +430,7 @@ outer:
 func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error) {
 	p.wg.Add(len(p.running))
 	for _, proto := range p.running {
+		proto := proto
 		proto.closed = p.closed
 		proto.wstart = writeStart
 		proto.werr = writeErr
@@ -428,7 +445,7 @@ func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error)
 			if err == nil {
 				p.log.Trace(fmt.Sprintf("Protocol %s/%d returned", proto.Name, proto.Version))
 				err = errProtocolReturned
-			} else if err != io.EOF {
+			} else if !errors.Is(err, io.EOF) {
 				p.log.Trace(fmt.Sprintf("Protocol %s/%d failed", proto.Name, proto.Version), "err", err)
 			}
 			p.protoErr <- err
@@ -522,7 +539,7 @@ func (p *Peer) Info() *PeerInfo {
 		ID:        p.ID().String(),
 		Name:      p.Fullname(),
 		Caps:      caps,
-		Protocols: make(map[string]interface{}),
+		Protocols: make(map[string]interface{}, len(p.running)),
 	}
 	if p.Node().Seq() > 0 {
 		info.ENR = p.Node().String()

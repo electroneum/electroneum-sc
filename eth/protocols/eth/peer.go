@@ -21,7 +21,7 @@ import (
 	"math/rand"
 	"sync"
 
-	mapset "github.com/deckarep/golang-set"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/p2p"
@@ -75,12 +75,12 @@ type Peer struct {
 	head common.Hash // Latest advertised head block hash
 	td   *big.Int    // Latest advertised head block total difficulty
 
-	knownBlocks     mapset.Set             // Set of block hashes known to be known by this peer
+	knownBlocks     *knownCache            // Set of block hashes known to be known by this peer
 	queuedBlocks    chan *blockPropagation // Queue of blocks to broadcast to the peer
 	queuedBlockAnns chan *types.Block      // Queue of blocks to announce to the peer
 
 	txpool      TxPool             // Transaction pool used by the broadcasters for liveness checks
-	knownTxs    mapset.Set         // Set of transaction hashes known to be known by this peer
+	knownTxs    *knownCache        // Set of transaction hashes known to be known by this peer
 	txBroadcast chan []common.Hash // Channel used to queue transaction propagation requests
 	txAnnounce  chan []common.Hash // Channel used to queue transaction announcement requests
 
@@ -91,7 +91,40 @@ type Peer struct {
 	term chan struct{} // Termination channel to stop the broadcasters
 	lock sync.RWMutex  // Mutex protecting the internal fields
 
-	consensusRw p2p.MsgReadWriter // Quorum: this is the RW for the consensus devp2p protocol, e.g. "istanbul/100"
+	// consensusRw is the read/writer for Electroneum's IBFT consensus
+	// subprotocol ("etn-istanbul/100"), which rides alongside the eth protocol
+	// on the same peer.
+	consensusRw p2p.MsgReadWriter
+}
+
+// SendConsensus sends a message over the IBFT consensus subprotocol.
+func (p *Peer) SendConsensus(msgcode uint64, data interface{}) error {
+	if p.consensusRw == nil {
+		return nil
+	}
+	return p2p.Send(p.consensusRw, msgcode, data)
+}
+
+// SendQBFTConsensus sends a consensus message whose payload is already encoded.
+func (p *Peer) SendQBFTConsensus(msgcode uint64, payload []byte) error {
+	if p.consensusRw == nil {
+		return nil
+	}
+	return p2p.SendWithNoEncoding(p.consensusRw, msgcode, payload)
+}
+
+// Send satisfies consensus.Peer. The IBFT engine only ever uses the two
+// consensus-specific senders above; this exists so *Peer implements the
+// interface.
+func (p *Peer) Send(msgcode uint64, data interface{}) error {
+	return p2p.Send(p.rw, msgcode, data)
+}
+
+// AddConsensusProtoRW attaches the IBFT consensus subprotocol's read/writer to
+// this peer.
+func (p *Peer) AddConsensusProtoRW(rw p2p.MsgReadWriter) *Peer {
+	p.consensusRw = rw
+	return p
 }
 
 // NewPeer create a wrapper for a network connection and negotiated  protocol
@@ -102,8 +135,8 @@ func NewPeer(version uint, p *p2p.Peer, rw p2p.MsgReadWriter, txpool TxPool) *Pe
 		Peer:            p,
 		rw:              rw,
 		version:         version,
-		knownTxs:        mapset.NewSet(),
-		knownBlocks:     mapset.NewSet(),
+		knownTxs:        newKnownCache(maxKnownTxs),
+		knownBlocks:     newKnownCache(maxKnownBlocks),
 		queuedBlocks:    make(chan *blockPropagation, maxQueuedBlocks),
 		queuedBlockAnns: make(chan *types.Block, maxQueuedBlockAnns),
 		txBroadcast:     make(chan []common.Hash),
@@ -135,7 +168,7 @@ func (p *Peer) ID() string {
 	return p.id
 }
 
-// Version retrieves the peer's negoatiated `eth` protocol version.
+// Version retrieves the peer's negotiated `eth` protocol version.
 func (p *Peer) Version() uint {
 	return p.version
 }
@@ -172,9 +205,6 @@ func (p *Peer) KnownTransaction(hash common.Hash) bool {
 // never be propagated to this particular peer.
 func (p *Peer) markBlock(hash common.Hash) {
 	// If we reached the memory allowance, drop a previously known block hash
-	for p.knownBlocks.Cardinality() >= maxKnownBlocks {
-		p.knownBlocks.Pop()
-	}
 	p.knownBlocks.Add(hash)
 }
 
@@ -182,9 +212,6 @@ func (p *Peer) markBlock(hash common.Hash) {
 // will never be propagated to this particular peer.
 func (p *Peer) markTransaction(hash common.Hash) {
 	// If we reached the memory allowance, drop a previously known transaction hash
-	for p.knownTxs.Cardinality() >= maxKnownTxs {
-		p.knownTxs.Pop()
-	}
 	p.knownTxs.Add(hash)
 }
 
@@ -196,12 +223,9 @@ func (p *Peer) markTransaction(hash common.Hash) {
 // not be managed directly.
 //
 // The reasons this is public is to allow packages using this protocol to write
-// tests that directly send messages without having to do the asyn queueing.
+// tests that directly send messages without having to do the async queueing.
 func (p *Peer) SendTransactions(txs types.Transactions) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
-	for p.knownTxs.Cardinality() > max(0, maxKnownTxs-len(txs)) {
-		p.knownTxs.Pop()
-	}
 	for _, tx := range txs {
 		p.knownTxs.Add(tx.Hash())
 	}
@@ -215,32 +239,35 @@ func (p *Peer) AsyncSendTransactions(hashes []common.Hash) {
 	select {
 	case p.txBroadcast <- hashes:
 		// Mark all the transactions as known, but ensure we don't overflow our limits
-		for p.knownTxs.Cardinality() > max(0, maxKnownTxs-len(hashes)) {
-			p.knownTxs.Pop()
-		}
-		for _, hash := range hashes {
-			p.knownTxs.Add(hash)
-		}
+		p.knownTxs.Add(hashes...)
 	case <-p.term:
 		p.Log().Debug("Dropping transaction propagation", "count", len(hashes))
 	}
 }
 
-// sendPooledTransactionHashes sends transaction hashes to the peer and includes
+// sendPooledTransactionHashes66 sends transaction hashes to the peer and includes
 // them in its transaction hash set for future reference.
 //
 // This method is a helper used by the async transaction announcer. Don't call it
 // directly as the queueing (memory) and transmission (bandwidth) costs should
 // not be managed directly.
-func (p *Peer) sendPooledTransactionHashes(hashes []common.Hash) error {
+func (p *Peer) sendPooledTransactionHashes66(hashes []common.Hash) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
-	for p.knownTxs.Cardinality() > max(0, maxKnownTxs-len(hashes)) {
-		p.knownTxs.Pop()
-	}
-	for _, hash := range hashes {
-		p.knownTxs.Add(hash)
-	}
-	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket(hashes))
+	p.knownTxs.Add(hashes...)
+	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(hashes))
+}
+
+// sendPooledTransactionHashes68 sends transaction hashes (tagged with their type
+// and size) to the peer and includes them in its transaction hash set for future
+// reference.
+//
+// This method is a helper used by the async transaction announcer. Don't call it
+// directly as the queueing (memory) and transmission (bandwidth) costs should
+// not be managed directly.
+func (p *Peer) sendPooledTransactionHashes68(hashes []common.Hash, types []byte, sizes []uint32) error {
+	// Mark all the transactions as known, but ensure we don't overflow our limits
+	p.knownTxs.Add(hashes...)
+	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket68{Types: types, Sizes: sizes, Hashes: hashes})
 }
 
 // AsyncSendPooledTransactionHashes queues a list of transactions hashes to eventually
@@ -250,12 +277,7 @@ func (p *Peer) AsyncSendPooledTransactionHashes(hashes []common.Hash) {
 	select {
 	case p.txAnnounce <- hashes:
 		// Mark all the transactions as known, but ensure we don't overflow our limits
-		for p.knownTxs.Cardinality() > max(0, maxKnownTxs-len(hashes)) {
-			p.knownTxs.Pop()
-		}
-		for _, hash := range hashes {
-			p.knownTxs.Add(hash)
-		}
+		p.knownTxs.Add(hashes...)
 	case <-p.term:
 		p.Log().Debug("Dropping transaction announcement", "count", len(hashes))
 	}
@@ -264,14 +286,10 @@ func (p *Peer) AsyncSendPooledTransactionHashes(hashes []common.Hash) {
 // ReplyPooledTransactionsRLP is the eth/66 version of SendPooledTransactionsRLP.
 func (p *Peer) ReplyPooledTransactionsRLP(id uint64, hashes []common.Hash, txs []rlp.RawValue) error {
 	// Mark all the transactions as known, but ensure we don't overflow our limits
-	for p.knownTxs.Cardinality() > max(0, maxKnownTxs-len(hashes)) {
-		p.knownTxs.Pop()
-	}
-	for _, hash := range hashes {
-		p.knownTxs.Add(hash)
-	}
+	p.knownTxs.Add(hashes...)
+
 	// Not packed into PooledTransactionsPacket to avoid RLP decoding
-	return p2p.Send(p.rw, PooledTransactionsMsg, PooledTransactionsRLPPacket66{
+	return p2p.Send(p.rw, PooledTransactionsMsg, &PooledTransactionsRLPPacket66{
 		RequestId:                   id,
 		PooledTransactionsRLPPacket: txs,
 	})
@@ -281,12 +299,8 @@ func (p *Peer) ReplyPooledTransactionsRLP(id uint64, hashes []common.Hash, txs [
 // a hash notification.
 func (p *Peer) SendNewBlockHashes(hashes []common.Hash, numbers []uint64) error {
 	// Mark all the block hashes as known, but ensure we don't overflow our limits
-	for p.knownBlocks.Cardinality() > max(0, maxKnownBlocks-len(hashes)) {
-		p.knownBlocks.Pop()
-	}
-	for _, hash := range hashes {
-		p.knownBlocks.Add(hash)
-	}
+	p.knownBlocks.Add(hashes...)
+
 	request := make(NewBlockHashesPacket, len(hashes))
 	for i := 0; i < len(hashes); i++ {
 		request[i].Hash = hashes[i]
@@ -302,9 +316,6 @@ func (p *Peer) AsyncSendNewBlockHash(block *types.Block) {
 	select {
 	case p.queuedBlockAnns <- block:
 		// Mark all the block hash as known, but ensure we don't overflow our limits
-		for p.knownBlocks.Cardinality() >= maxKnownBlocks {
-			p.knownBlocks.Pop()
-		}
 		p.knownBlocks.Add(block.Hash())
 	default:
 		p.Log().Debug("Dropping block announcement", "number", block.NumberU64(), "hash", block.Hash())
@@ -314,9 +325,6 @@ func (p *Peer) AsyncSendNewBlockHash(block *types.Block) {
 // SendNewBlock propagates an entire block to a remote peer.
 func (p *Peer) SendNewBlock(block *types.Block, td *big.Int) error {
 	// Mark all the block hash as known, but ensure we don't overflow our limits
-	for p.knownBlocks.Cardinality() >= maxKnownBlocks {
-		p.knownBlocks.Pop()
-	}
 	p.knownBlocks.Add(block.Hash())
 	return p2p.Send(p.rw, NewBlockMsg, &NewBlockPacket{
 		Block: block,
@@ -330,9 +338,6 @@ func (p *Peer) AsyncSendNewBlock(block *types.Block, td *big.Int) {
 	select {
 	case p.queuedBlocks <- &blockPropagation{block: block, td: td}:
 		// Mark all the block hash as known, but ensure we don't overflow our limits
-		for p.knownBlocks.Cardinality() >= maxKnownBlocks {
-			p.knownBlocks.Pop()
-		}
 		p.knownBlocks.Add(block.Hash())
 	default:
 		p.Log().Debug("Dropping block propagation", "number", block.NumberU64(), "hash", block.Hash())
@@ -453,10 +458,6 @@ func (p *Peer) RequestHeadersByNumber(origin uint64, amount int, skip int, rever
 	return req, nil
 }
 
-func (p *Peer) ExpectPeerMessage(code uint64, content types.Transactions) error {
-	return p2p.ExpectMsg(p.rw, code, content)
-}
-
 // RequestBodies fetches a batch of blocks' bodies corresponding to the hashes
 // specified.
 func (p *Peer) RequestBodies(hashes []common.Hash, sink chan *Response) (*Request, error) {
@@ -536,7 +537,7 @@ func (p *Peer) RequestTxs(hashes []common.Hash) error {
 
 // knownCache is a cache for known hashes.
 type knownCache struct {
-	hashes mapset.Set
+	hashes mapset.Set[common.Hash]
 	max    int
 }
 
@@ -544,7 +545,7 @@ type knownCache struct {
 func newKnownCache(max int) *knownCache {
 	return &knownCache{
 		max:    max,
-		hashes: mapset.NewSet(),
+		hashes: mapset.NewSet[common.Hash](),
 	}
 }
 
@@ -566,31 +567,4 @@ func (k *knownCache) Contains(hash common.Hash) bool {
 // Cardinality returns the number of elements in the set.
 func (k *knownCache) Cardinality() int {
 	return k.hashes.Cardinality()
-}
-
-// Quorum
-
-// SendConsensus Used to send consensus subprotocol messages from an "eth" peer, e.g.  "istanbul/100" subprotocol messages.
-func (p *Peer) SendConsensus(msgcode uint64, data interface{}) error {
-	if p.consensusRw == nil {
-		return nil
-	}
-	return p2p.Send(p.consensusRw, msgcode, data)
-}
-
-// SendQBFTConsensus is used to send consensus subprotocol messages from an "eth" peer without encoding the payload
-func (p *Peer) SendQBFTConsensus(msgcode uint64, payload []byte) error {
-	if p.consensusRw == nil {
-		return nil
-	}
-	return p2p.SendWithNoEncoding(p.consensusRw, msgcode, payload)
-}
-
-func (p *Peer) AddConsensusProtoRW(rw p2p.MsgReadWriter) *Peer {
-	p.consensusRw = rw
-	return p
-}
-
-func (p *Peer) Send(msgcode uint64, data interface{}) error {
-	panic("implement me")
 }

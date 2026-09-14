@@ -43,9 +43,9 @@ func newTestCore(valSet istanbul.ValidatorSet, seq, round int64) *core {
 		state:             StateAcceptRequest,
 		logger:            log.New(),
 		valSet:            valSet,
-		backlogs:          make(map[common.Address]*prque.Prque),
+		backlogs:          make(map[common.Address]*prque.Prque[int64, interface{}]),
 		backlogsMu:        new(sync.Mutex),
-		pendingRequests:   prque.New(nil),
+		pendingRequests:   prque.New[int64, interface{}](nil),
 		pendingRequestsMu: new(sync.Mutex),
 		current:           newRoundState(view, valSet, nil, nil, nil, nil, func(common.Hash) bool { return false }),
 	}

@@ -6,7 +6,7 @@
 
 GOBIN = ./build/bin
 GO ?= latest
-GORUN = env GO111MODULE=on go run
+GORUN = go run
 
 etn-sc:
 	$(GORUN) build/ci.go install ./cmd/etn-sc
@@ -16,18 +16,6 @@ etn-sc:
 all:
 	$(GORUN) build/ci.go install
 
-android:
-	$(GORUN) build/ci.go aar --local
-	@echo "Done building."
-	@echo "Import \"$(GOBIN)/etn-sc.aar\" to use the library."
-	@echo "Import \"$(GOBIN)/etn-sc-sources.jar\" to add javadocs"
-	@echo "For more info see https://stackoverflow.com/questions/20994336/android-studio-how-to-attach-javadoc"
-
-ios:
-	$(GORUN) build/ci.go xcode --local
-	@echo "Done building."
-	@echo "Import \"$(GOBIN)/Etn-SC.framework\" to use the library."
-
 test: all
 	$(GORUN) build/ci.go test
 
@@ -35,7 +23,7 @@ lint: ## Run linters.
 	$(GORUN) build/ci.go lint
 
 clean:
-	env GO111MODULE=on go clean -cache
+	go clean -cache
 	rm -fr build/_workspace/pkg/ $(GOBIN)/*
 
 # The devtools target installs tools required for 'go generate'.
@@ -44,7 +32,7 @@ clean:
 devtools:
 	env GOBIN= go install golang.org/x/tools/cmd/stringer@latest
 	env GOBIN= go install github.com/fjl/gencodec@latest
-	env GOBIN= go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	env GOBIN= go install github.com/golang/protobuf/protoc-gen-go@latest
 	env GOBIN= go install ./cmd/abigen
 	@type "solc" 2> /dev/null || echo 'Please install solc'
 	@type "protoc" 2> /dev/null || echo 'Please install protoc'

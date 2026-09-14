@@ -21,7 +21,7 @@ import (
 	"errors"
 	"time"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/log"
@@ -40,7 +40,7 @@ func WaitMined(ctx context.Context, b DeployBackend, tx *types.Transaction) (*ty
 			return receipt, nil
 		}
 
-		if errors.Is(err, electroneum.NotFound) {
+		if errors.Is(err, ethereum.NotFound) {
 			logger.Trace("Transaction not yet mined")
 		} else {
 			logger.Trace("Receipt retrieval failed", "err", err)

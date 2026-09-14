@@ -53,7 +53,7 @@ func TestDatadirCreation(t *testing.T) {
 		t.Fatalf("freshly created datadir not accessible: %v", err)
 	}
 	// Verify that an impossible datadir fails creation
-	file, err := os.CreateTemp(t.TempDir(), "")
+	file, err := os.CreateTemp("", "")
 	if err != nil {
 		t.Fatalf("failed to create temporary file: %v", err)
 	}
@@ -80,15 +80,15 @@ func TestIPCPathResolution(t *testing.T) {
 	}{
 		{"", "", false, ""},
 		{"data", "", false, ""},
-		{"", "etn-sc.ipc", false, filepath.Join(os.TempDir(), "etn-sc.ipc")},
-		{"data", "etn-sc.ipc", false, "data/etn-sc.ipc"},
-		{"data", "./etn-sc.ipc", false, "./etn-sc.ipc"},
-		{"data", "/etn-sc.ipc", false, "/etn-sc.ipc"},
+		{"", "geth.ipc", false, filepath.Join(os.TempDir(), "geth.ipc")},
+		{"data", "geth.ipc", false, "data/geth.ipc"},
+		{"data", "./geth.ipc", false, "./geth.ipc"},
+		{"data", "/geth.ipc", false, "/geth.ipc"},
 		{"", "", true, ``},
 		{"data", "", true, ``},
-		{"", "etn-sc.ipc", true, `\\.\pipe\etn-sc.ipc`},
-		{"data", "etn-sc.ipc", true, `\\.\pipe\etn-sc.ipc`},
-		{"data", `\\.\pipe\etn-sc.ipc`, true, `\\.\pipe\etn-sc.ipc`},
+		{"", "geth.ipc", true, `\\.\pipe\geth.ipc`},
+		{"data", "geth.ipc", true, `\\.\pipe\geth.ipc`},
+		{"data", `\\.\pipe\geth.ipc`, true, `\\.\pipe\geth.ipc`},
 	}
 	for i, test := range tests {
 		// Only run when platform/test match
@@ -115,7 +115,7 @@ func TestNodeKeyPersistency(t *testing.T) {
 	}
 	config := &Config{Name: "unit-test", DataDir: dir, P2P: p2p.Config{PrivateKey: key}}
 	config.NodeKey()
-	if _, err := os.Stat(filepath.Join(keyfile)); err == nil {
+	if _, err := os.Stat(keyfile); err == nil {
 		t.Fatalf("one-shot node key persisted to data directory")
 	}
 
@@ -136,7 +136,7 @@ func TestNodeKeyPersistency(t *testing.T) {
 	// Configure a new node and ensure the previously persisted key is loaded
 	config = &Config{Name: "unit-test", DataDir: dir}
 	config.NodeKey()
-	blob2, err := os.ReadFile(filepath.Join(keyfile))
+	blob2, err := os.ReadFile(keyfile)
 	if err != nil {
 		t.Fatalf("failed to read previously persisted node key: %v", err)
 	}

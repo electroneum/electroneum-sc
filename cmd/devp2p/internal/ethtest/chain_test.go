@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/p2p"
 	"github.com/stretchr/testify/assert"
@@ -39,9 +40,9 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 65,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
-				{Name: "etn", Version: 65},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
+				{Name: "eth", Version: 65},
 			},
 			expected: uint32(65),
 		},
@@ -50,9 +51,9 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 65,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
-				{Name: "etn", Version: 65},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
+				{Name: "eth", Version: 65},
 			},
 			expected: uint32(65),
 		},
@@ -61,9 +62,9 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 65,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
-				{Name: "etn", Version: 65},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
+				{Name: "eth", Version: 65},
 			},
 			expected: uint32(65),
 		},
@@ -72,9 +73,9 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 64,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
-				{Name: "etn", Version: 65},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
+				{Name: "eth", Version: 65},
 			},
 			expected: 64,
 		},
@@ -83,9 +84,9 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 65,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 0},
-				{Name: "etn", Version: 89},
-				{Name: "etn", Version: 65},
+				{Name: "eth", Version: 0},
+				{Name: "eth", Version: 89},
+				{Name: "eth", Version: 65},
 			},
 			expected: uint32(65),
 		},
@@ -94,8 +95,8 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 64,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
 				{Name: "wrongProto", Version: 65},
 			},
 			expected: uint32(64),
@@ -105,8 +106,8 @@ func TestEthProtocolNegotiation(t *testing.T) {
 				ourHighestProtoVersion: 65,
 			},
 			caps: []p2p.Cap{
-				{Name: "etn", Version: 63},
-				{Name: "etn", Version: 64},
+				{Name: "eth", Version: 63},
+				{Name: "eth", Version: 64},
 				{Name: "wrongProto", Version: 65},
 			},
 			expected: uint32(64),
@@ -140,18 +141,18 @@ func TestChain_GetHeaders(t *testing.T) {
 
 	var tests = []struct {
 		req      GetBlockHeaders
-		expected BlockHeaders
+		expected []*types.Header
 	}{
 		{
 			req: GetBlockHeaders{
-				Origin: eth.HashOrNumber{
-					Number: uint64(2),
+				GetBlockHeadersPacket: &eth.GetBlockHeadersPacket{
+					Origin:  eth.HashOrNumber{Number: uint64(2)},
+					Amount:  uint64(5),
+					Skip:    1,
+					Reverse: false,
 				},
-				Amount:  uint64(5),
-				Skip:    1,
-				Reverse: false,
 			},
-			expected: BlockHeaders{
+			expected: []*types.Header{
 				chain.blocks[2].Header(),
 				chain.blocks[4].Header(),
 				chain.blocks[6].Header(),
@@ -161,14 +162,14 @@ func TestChain_GetHeaders(t *testing.T) {
 		},
 		{
 			req: GetBlockHeaders{
-				Origin: eth.HashOrNumber{
-					Number: uint64(chain.Len() - 1),
+				GetBlockHeadersPacket: &eth.GetBlockHeadersPacket{
+					Origin:  eth.HashOrNumber{Number: uint64(chain.Len() - 1)},
+					Amount:  uint64(3),
+					Skip:    0,
+					Reverse: true,
 				},
-				Amount:  uint64(3),
-				Skip:    0,
-				Reverse: true,
 			},
-			expected: BlockHeaders{
+			expected: []*types.Header{
 				chain.blocks[chain.Len()-1].Header(),
 				chain.blocks[chain.Len()-2].Header(),
 				chain.blocks[chain.Len()-3].Header(),
@@ -176,14 +177,14 @@ func TestChain_GetHeaders(t *testing.T) {
 		},
 		{
 			req: GetBlockHeaders{
-				Origin: eth.HashOrNumber{
-					Hash: chain.Head().Hash(),
+				GetBlockHeadersPacket: &eth.GetBlockHeadersPacket{
+					Origin:  eth.HashOrNumber{Hash: chain.Head().Hash()},
+					Amount:  uint64(1),
+					Skip:    0,
+					Reverse: false,
 				},
-				Amount:  uint64(1),
-				Skip:    0,
-				Reverse: false,
 			},
-			expected: BlockHeaders{
+			expected: []*types.Header{
 				chain.Head().Header(),
 			},
 		},
@@ -191,7 +192,7 @@ func TestChain_GetHeaders(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			headers, err := chain.GetHeaders(tt.req)
+			headers, err := chain.GetHeaders(&tt.req)
 			if err != nil {
 				t.Fatal(err)
 			}

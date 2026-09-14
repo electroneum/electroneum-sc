@@ -40,16 +40,15 @@ const (
 
 // Supported versions of the les protocol (first is primary)
 var (
-	ClientProtocolVersions    = []uint{lpv2, lpv3, lpv4}
-	ServerProtocolVersions    = []uint{lpv2, lpv3, lpv4}
-	AdvertiseProtocolVersions = []uint{lpv2} // clients are searching for the first advertised protocol in the list
+	ClientProtocolVersions = []uint{lpv2, lpv3, lpv4}
+	ServerProtocolVersions = []uint{lpv2, lpv3, lpv4}
 )
 
-// Number of implemented message corresponding to different protocol versions.
+// ProtocolLengths is the number of implemented message corresponding to different protocol versions.
 var ProtocolLengths = map[uint]uint64{lpv2: 22, lpv3: 24, lpv4: 24}
 
 const (
-	NetworkId          = 52014
+	NetworkId          = 1
 	ProtocolMaxMsgSize = 10 * 1024 * 1024 // Maximum cap on the size of a protocol message
 	blockSafetyMargin  = 4                // safety margin applied to block ranges specified relative to head block
 

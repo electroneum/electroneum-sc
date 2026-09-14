@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"math/big"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/event"
@@ -98,7 +98,7 @@ type Wallet interface {
 	//
 	// You can disable automatic account discovery by calling SelfDerive with a nil
 	// chain state reader.
-	SelfDerive(bases []DerivationPath, chain electroneum.ChainStateReader)
+	SelfDerive(bases []DerivationPath, chain ethereum.ChainStateReader)
 
 	// SignData requests the wallet to sign the hash of the given data
 	// It looks up the account specified either solely via its address contained within,
@@ -195,7 +195,7 @@ func TextHash(data []byte) []byte {
 //
 // This gives context to the signed message and prevents signing of transactions.
 func TextAndHash(data []byte) ([]byte, string) {
-	msg := fmt.Sprintf("\x19Electroneum Signed Message:\n%d%s", len(data), string(data))
+	msg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(data), string(data))
 	hasher := sha3.NewLegacyKeccak256()
 	hasher.Write([]byte(msg))
 	return hasher.Sum(nil), msg

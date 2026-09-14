@@ -21,11 +21,20 @@ import (
 )
 
 const (
+	// Electroneum's own version line, not go-ethereum's: this binary follows the
+	// Electroneum chain, and tooling that reads web3_clientVersion expects the
+	// v6 series.
+	//
+	// The metadata deliberately names the geth base. A node on the network that
+	// misbehaves has to be distinguishable from stock etn-sc v6.0.0, and nobody
+	// should ever have to guess which binary is running:
+	//
+	//	etn-sc/v6.0.0-electroswap-geth1.13.2/linux-amd64/go1.27.1
 	VersionName  = "Aurelius"
-	VersionMajor = 6        // Major version component of the current release
-	VersionMinor = 0        // Minor version component of the current release
-	VersionPatch = 0        // Patch version component of the current release
-	VersionMeta  = "stable" // Version metadata to append to the version string
+	VersionMajor = 6
+	VersionMinor = 0
+	VersionPatch = 0
+	VersionMeta  = "electroswap-geth1.13.2"
 )
 
 // Version holds the textual version string.
@@ -35,7 +44,7 @@ var Version = func() string {
 
 // VersionWithMeta holds the textual version string including the metadata.
 var VersionWithMeta = func() string {
-	v := VersionName + "-" + Version
+	v := Version
 	if VersionMeta != "" {
 		v += "-" + VersionMeta
 	}

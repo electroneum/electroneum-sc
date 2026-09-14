@@ -17,7 +17,6 @@
 package downloader
 
 import (
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -27,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/ethash"
 	"github.com/electroneum/electroneum-sc/core"
@@ -68,9 +67,12 @@ func newTesterWithNotification(t *testing.T, success func()) *downloadTester {
 	t.Cleanup(func() {
 		db.Close()
 	})
-	core.GenesisBlockForTesting(db, testAddress, big.NewInt(1000000000000000))
-
-	chain, err := core.NewBlockChain(db, nil, params.TestChainConfig, ethash.NewFaker(), vm.Config{}, nil, nil)
+	gspec := &core.Genesis{
+		Config:  params.TestChainConfig,
+		Alloc:   core.GenesisAlloc{testAddress: {Balance: big.NewInt(1000000000000000)}},
+		BaseFee: big.NewInt(params.InitialBaseFee),
+	}
+	chain, err := core.NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -79,7 +81,7 @@ func newTesterWithNotification(t *testing.T, success func()) *downloadTester {
 		chain:   chain,
 		peers:   make(map[string]*downloadTesterPeer),
 	}
-	tester.downloader = New(0, db, new(event.TypeMux), tester.chain, nil, tester.dropPeer, success)
+	tester.downloader = New(db, new(event.TypeMux), tester.chain, nil, tester.dropPeer, success)
 	return tester
 }
 
@@ -97,7 +99,7 @@ func (dl *downloadTester) sync(id string, td *big.Int, mode SyncMode) error {
 	head := dl.peers[id].chain.CurrentBlock()
 	if td == nil {
 		// If no particular TD was requested, load from the peer's blockchain
-		td = dl.peers[id].chain.GetTd(head.Hash(), head.NumberU64())
+		td = dl.peers[id].chain.GetTd(head.Hash(), head.Number.Uint64())
 	}
 	// Synchronise with the chosen peer and ensure proper cleanup afterwards
 	err := dl.downloader.synchronise(id, head.Hash(), td, nil, mode, false, nil)
@@ -155,7 +157,7 @@ type downloadTesterPeer struct {
 // and total difficulty.
 func (dlp *downloadTesterPeer) Head() (common.Hash, *big.Int) {
 	head := dlp.chain.CurrentBlock()
-	return head.Hash(), dlp.chain.GetTd(head.Hash(), head.NumberU64())
+	return head.Hash(), dlp.chain.GetTd(head.Hash(), head.Number.Uint64())
 }
 
 func unmarshalRlpHeaders(rlpdata []rlp.RawValue) []*types.Header {
@@ -270,8 +272,9 @@ func (dlp *downloadTesterPeer) RequestBodies(hashes []common.Hash, sink chan *et
 		rlp.DecodeBytes(blob, bodies[i])
 	}
 	var (
-		txsHashes   = make([]common.Hash, len(bodies))
-		uncleHashes = make([]common.Hash, len(bodies))
+		txsHashes        = make([]common.Hash, len(bodies))
+		uncleHashes      = make([]common.Hash, len(bodies))
+		withdrawalHashes = make([]common.Hash, len(bodies))
 	)
 	hasher := trie.NewStackTrie(nil)
 	for i, body := range bodies {
@@ -284,7 +287,7 @@ func (dlp *downloadTesterPeer) RequestBodies(hashes []common.Hash, sink chan *et
 	res := &eth.Response{
 		Req:  req,
 		Res:  (*eth.BlockBodiesPacket)(&bodies),
-		Meta: [][]common.Hash{txsHashes, uncleHashes},
+		Meta: [][]common.Hash{txsHashes, uncleHashes, withdrawalHashes},
 		Time: 1,
 		Done: make(chan error, 1), // Ignore the returned status
 	}
@@ -356,7 +359,7 @@ func (dlp *downloadTesterPeer) RequestAccountRange(id uint64, root, origin, limi
 }
 
 // RequestStorageRanges fetches a batch of storage slots belonging to one or
-// more accounts. If slots from only one accout is requested, an origin marker
+// more accounts. If slots from only one account is requested, an origin marker
 // may also be used to retrieve from there.
 func (dlp *downloadTesterPeer) RequestStorageRanges(id uint64, root common.Hash, accounts []common.Hash, origin, limit []byte, bytes uint64) error {
 	// Create the request and service it
@@ -395,7 +398,7 @@ func (dlp *downloadTesterPeer) RequestByteCodes(id uint64, hashes []common.Hash,
 }
 
 // RequestTrieNodes fetches a batch of account or storage trie nodes rooted in
-// a specificstate trie.
+// a specific state trie.
 func (dlp *downloadTesterPeer) RequestTrieNodes(id uint64, root common.Hash, paths []snap.TrieNodePathSet, bytes uint64) error {
 	req := &snap.GetTrieNodesPacket{
 		ID:    id,
@@ -426,10 +429,10 @@ func assertOwnChain(t *testing.T, tester *downloadTester, length int) {
 	if hs := int(tester.chain.CurrentHeader().Number.Uint64()) + 1; hs != headers {
 		t.Fatalf("synchronised headers mismatch: have %v, want %v", hs, headers)
 	}
-	if bs := int(tester.chain.CurrentBlock().NumberU64()) + 1; bs != blocks {
+	if bs := int(tester.chain.CurrentBlock().Number.Uint64()) + 1; bs != blocks {
 		t.Fatalf("synchronised blocks mismatch: have %v, want %v", bs, blocks)
 	}
-	if rs := int(tester.chain.CurrentFastBlock().NumberU64()) + 1; rs != receipts {
+	if rs := int(tester.chain.CurrentSnapBlock().Number.Uint64()) + 1; rs != receipts {
 		t.Fatalf("synchronised receipts mismatch: have %v, want %v", rs, receipts)
 	}
 }
@@ -437,6 +440,9 @@ func assertOwnChain(t *testing.T, tester *downloadTester, length int) {
 func TestCanonicalSynchronisation66Full(t *testing.T)  { testCanonSync(t, eth.ETH66, FullSync) }
 func TestCanonicalSynchronisation66Snap(t *testing.T)  { testCanonSync(t, eth.ETH66, SnapSync) }
 func TestCanonicalSynchronisation66Light(t *testing.T) { testCanonSync(t, eth.ETH66, LightSync) }
+func TestCanonicalSynchronisation67Full(t *testing.T)  { testCanonSync(t, eth.ETH67, FullSync) }
+func TestCanonicalSynchronisation67Snap(t *testing.T)  { testCanonSync(t, eth.ETH67, SnapSync) }
+func TestCanonicalSynchronisation67Light(t *testing.T) { testCanonSync(t, eth.ETH67, LightSync) }
 
 func testCanonSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -457,6 +463,8 @@ func testCanonSync(t *testing.T, protocol uint, mode SyncMode) {
 // until the cached blocks are retrieved.
 func TestThrottling66Full(t *testing.T) { testThrottling(t, eth.ETH66, FullSync) }
 func TestThrottling66Snap(t *testing.T) { testThrottling(t, eth.ETH66, SnapSync) }
+func TestThrottling67Full(t *testing.T) { testThrottling(t, eth.ETH67, FullSync) }
+func TestThrottling67Snap(t *testing.T) { testThrottling(t, eth.ETH67, SnapSync) }
 
 func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -467,9 +475,10 @@ func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 	tester.newPeer("peer", protocol, testChainBase.blocks[1:])
 
 	// Wrap the importer to allow stepping
-	blocked, proceed := uint32(0), make(chan struct{})
+	var blocked atomic.Uint32
+	proceed := make(chan struct{})
 	tester.downloader.chainInsertHook = func(results []*fetchResult) {
-		atomic.StoreUint32(&blocked, uint32(len(results)))
+		blocked.Store(uint32(len(results)))
 		<-proceed
 	}
 	// Start a synchronisation concurrently
@@ -481,7 +490,7 @@ func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 	for {
 		// Check the retrieval count synchronously (! reason for this ugly block)
 		tester.lock.RLock()
-		retrieved := int(tester.chain.CurrentFastBlock().Number().Uint64()) + 1
+		retrieved := int(tester.chain.CurrentSnapBlock().Number.Uint64()) + 1
 		tester.lock.RUnlock()
 		if retrieved >= targetBlocks+1 {
 			break
@@ -496,8 +505,8 @@ func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 			tester.downloader.queue.resultCache.lock.Lock()
 			{
 				cached = tester.downloader.queue.resultCache.countCompleted()
-				frozen = int(atomic.LoadUint32(&blocked))
-				retrieved = int(tester.chain.CurrentFastBlock().Number().Uint64()) + 1
+				frozen = int(blocked.Load())
+				retrieved = int(tester.chain.CurrentSnapBlock().Number.Uint64()) + 1
 			}
 			tester.downloader.queue.resultCache.lock.Unlock()
 			tester.downloader.queue.lock.Unlock()
@@ -513,14 +522,14 @@ func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 		// Make sure we filled up the cache, then exhaust it
 		time.Sleep(25 * time.Millisecond) // give it a chance to screw up
 		tester.lock.RLock()
-		retrieved = int(tester.chain.CurrentFastBlock().Number().Uint64()) + 1
+		retrieved = int(tester.chain.CurrentSnapBlock().Number.Uint64()) + 1
 		tester.lock.RUnlock()
 		if cached != blockCacheMaxItems && cached != blockCacheMaxItems-reorgProtHeaderDelay && retrieved+cached+frozen != targetBlocks+1 && retrieved+cached+frozen != targetBlocks+1-reorgProtHeaderDelay {
 			t.Fatalf("block count mismatch: have %v, want %v (owned %v, blocked %v, target %v)", cached, blockCacheMaxItems, retrieved, frozen, targetBlocks+1)
 		}
 		// Permit the blocked blocks to import
-		if atomic.LoadUint32(&blocked) > 0 {
-			atomic.StoreUint32(&blocked, uint32(0))
+		if blocked.Load() > 0 {
+			blocked.Store(uint32(0))
 			proceed <- struct{}{}
 		}
 	}
@@ -537,6 +546,9 @@ func testThrottling(t *testing.T, protocol uint, mode SyncMode) {
 func TestForkedSync66Full(t *testing.T)  { testForkedSync(t, eth.ETH66, FullSync) }
 func TestForkedSync66Snap(t *testing.T)  { testForkedSync(t, eth.ETH66, SnapSync) }
 func TestForkedSync66Light(t *testing.T) { testForkedSync(t, eth.ETH66, LightSync) }
+func TestForkedSync67Full(t *testing.T)  { testForkedSync(t, eth.ETH67, FullSync) }
+func TestForkedSync67Snap(t *testing.T)  { testForkedSync(t, eth.ETH67, SnapSync) }
+func TestForkedSync67Light(t *testing.T) { testForkedSync(t, eth.ETH67, LightSync) }
 
 func testForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -559,11 +571,14 @@ func testForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 	assertOwnChain(t, tester, len(chainB.blocks))
 }
 
-// Tests that synchronising against a much shorter but much heavyer fork works
-// corrently and is not dropped.
+// Tests that synchronising against a much shorter but much heavier fork works
+// currently and is not dropped.
 func TestHeavyForkedSync66Full(t *testing.T)  { testHeavyForkedSync(t, eth.ETH66, FullSync) }
 func TestHeavyForkedSync66Snap(t *testing.T)  { testHeavyForkedSync(t, eth.ETH66, SnapSync) }
 func TestHeavyForkedSync66Light(t *testing.T) { testHeavyForkedSync(t, eth.ETH66, LightSync) }
+func TestHeavyForkedSync67Full(t *testing.T)  { testHeavyForkedSync(t, eth.ETH67, FullSync) }
+func TestHeavyForkedSync67Snap(t *testing.T)  { testHeavyForkedSync(t, eth.ETH67, SnapSync) }
+func TestHeavyForkedSync67Light(t *testing.T) { testHeavyForkedSync(t, eth.ETH67, LightSync) }
 
 func testHeavyForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -593,6 +608,9 @@ func testHeavyForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 func TestBoundedForkedSync66Full(t *testing.T)  { testBoundedForkedSync(t, eth.ETH66, FullSync) }
 func TestBoundedForkedSync66Snap(t *testing.T)  { testBoundedForkedSync(t, eth.ETH66, SnapSync) }
 func TestBoundedForkedSync66Light(t *testing.T) { testBoundedForkedSync(t, eth.ETH66, LightSync) }
+func TestBoundedForkedSync67Full(t *testing.T)  { testBoundedForkedSync(t, eth.ETH67, FullSync) }
+func TestBoundedForkedSync67Snap(t *testing.T)  { testBoundedForkedSync(t, eth.ETH67, SnapSync) }
+func TestBoundedForkedSync67Light(t *testing.T) { testBoundedForkedSync(t, eth.ETH67, LightSync) }
 
 func testBoundedForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -627,6 +645,15 @@ func TestBoundedHeavyForkedSync66Snap(t *testing.T) {
 func TestBoundedHeavyForkedSync66Light(t *testing.T) {
 	testBoundedHeavyForkedSync(t, eth.ETH66, LightSync)
 }
+func TestBoundedHeavyForkedSync67Full(t *testing.T) {
+	testBoundedHeavyForkedSync(t, eth.ETH67, FullSync)
+}
+func TestBoundedHeavyForkedSync67Snap(t *testing.T) {
+	testBoundedHeavyForkedSync(t, eth.ETH67, SnapSync)
+}
+func TestBoundedHeavyForkedSync67Light(t *testing.T) {
+	testBoundedHeavyForkedSync(t, eth.ETH67, LightSync)
+}
 
 func testBoundedHeavyForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -654,6 +681,9 @@ func testBoundedHeavyForkedSync(t *testing.T, protocol uint, mode SyncMode) {
 func TestCancel66Full(t *testing.T)  { testCancel(t, eth.ETH66, FullSync) }
 func TestCancel66Snap(t *testing.T)  { testCancel(t, eth.ETH66, SnapSync) }
 func TestCancel66Light(t *testing.T) { testCancel(t, eth.ETH66, LightSync) }
+func TestCancel67Full(t *testing.T)  { testCancel(t, eth.ETH67, FullSync) }
+func TestCancel67Snap(t *testing.T)  { testCancel(t, eth.ETH67, SnapSync) }
+func TestCancel67Light(t *testing.T) { testCancel(t, eth.ETH67, LightSync) }
 
 func testCancel(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -681,6 +711,9 @@ func testCancel(t *testing.T, protocol uint, mode SyncMode) {
 func TestMultiSynchronisation66Full(t *testing.T)  { testMultiSynchronisation(t, eth.ETH66, FullSync) }
 func TestMultiSynchronisation66Snap(t *testing.T)  { testMultiSynchronisation(t, eth.ETH66, SnapSync) }
 func TestMultiSynchronisation66Light(t *testing.T) { testMultiSynchronisation(t, eth.ETH66, LightSync) }
+func TestMultiSynchronisation67Full(t *testing.T)  { testMultiSynchronisation(t, eth.ETH67, FullSync) }
+func TestMultiSynchronisation67Snap(t *testing.T)  { testMultiSynchronisation(t, eth.ETH67, SnapSync) }
+func TestMultiSynchronisation67Light(t *testing.T) { testMultiSynchronisation(t, eth.ETH67, LightSync) }
 
 func testMultiSynchronisation(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -705,6 +738,9 @@ func testMultiSynchronisation(t *testing.T, protocol uint, mode SyncMode) {
 func TestMultiProtoSynchronisation66Full(t *testing.T)  { testMultiProtoSync(t, eth.ETH66, FullSync) }
 func TestMultiProtoSynchronisation66Snap(t *testing.T)  { testMultiProtoSync(t, eth.ETH66, SnapSync) }
 func TestMultiProtoSynchronisation66Light(t *testing.T) { testMultiProtoSync(t, eth.ETH66, LightSync) }
+func TestMultiProtoSynchronisation67Full(t *testing.T)  { testMultiProtoSync(t, eth.ETH67, FullSync) }
+func TestMultiProtoSynchronisation67Snap(t *testing.T)  { testMultiProtoSync(t, eth.ETH67, SnapSync) }
+func TestMultiProtoSynchronisation67Light(t *testing.T) { testMultiProtoSync(t, eth.ETH67, LightSync) }
 
 func testMultiProtoSync(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -715,7 +751,7 @@ func testMultiProtoSync(t *testing.T, protocol uint, mode SyncMode) {
 
 	// Create peers of every type
 	tester.newPeer("peer 66", eth.ETH66, chain.blocks[1:])
-	//tester.newPeer("peer 65", eth.ETH67, chain.blocks[1:)
+	tester.newPeer("peer 67", eth.ETH67, chain.blocks[1:])
 
 	// Synchronise with the requested peer and make sure all blocks were retrieved
 	if err := tester.sync(fmt.Sprintf("peer %d", protocol), nil, mode); err != nil {
@@ -724,7 +760,7 @@ func testMultiProtoSync(t *testing.T, protocol uint, mode SyncMode) {
 	assertOwnChain(t, tester, len(chain.blocks))
 
 	// Check that no peers have been dropped off
-	for _, version := range []int{66} {
+	for _, version := range []int{66, 67} {
 		peer := fmt.Sprintf("peer %d", version)
 		if _, ok := tester.peers[peer]; !ok {
 			t.Errorf("%s dropped", peer)
@@ -737,6 +773,9 @@ func testMultiProtoSync(t *testing.T, protocol uint, mode SyncMode) {
 func TestEmptyShortCircuit66Full(t *testing.T)  { testEmptyShortCircuit(t, eth.ETH66, FullSync) }
 func TestEmptyShortCircuit66Snap(t *testing.T)  { testEmptyShortCircuit(t, eth.ETH66, SnapSync) }
 func TestEmptyShortCircuit66Light(t *testing.T) { testEmptyShortCircuit(t, eth.ETH66, LightSync) }
+func TestEmptyShortCircuit67Full(t *testing.T)  { testEmptyShortCircuit(t, eth.ETH67, FullSync) }
+func TestEmptyShortCircuit67Snap(t *testing.T)  { testEmptyShortCircuit(t, eth.ETH67, SnapSync) }
+func TestEmptyShortCircuit67Light(t *testing.T) { testEmptyShortCircuit(t, eth.ETH67, LightSync) }
 
 func testEmptyShortCircuit(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -747,12 +786,12 @@ func testEmptyShortCircuit(t *testing.T, protocol uint, mode SyncMode) {
 	tester.newPeer("peer", protocol, chain.blocks[1:])
 
 	// Instrument the downloader to signal body requests
-	bodiesHave, receiptsHave := int32(0), int32(0)
+	var bodiesHave, receiptsHave atomic.Int32
 	tester.downloader.bodyFetchHook = func(headers []*types.Header) {
-		atomic.AddInt32(&bodiesHave, int32(len(headers)))
+		bodiesHave.Add(int32(len(headers)))
 	}
 	tester.downloader.receiptFetchHook = func(headers []*types.Header) {
-		atomic.AddInt32(&receiptsHave, int32(len(headers)))
+		receiptsHave.Add(int32(len(headers)))
 	}
 	// Synchronise with the peer and make sure all blocks were retrieved
 	if err := tester.sync("peer", nil, mode); err != nil {
@@ -772,11 +811,11 @@ func testEmptyShortCircuit(t *testing.T, protocol uint, mode SyncMode) {
 			receiptsNeeded++
 		}
 	}
-	if int(bodiesHave) != bodiesNeeded {
-		t.Errorf("body retrieval count mismatch: have %v, want %v", bodiesHave, bodiesNeeded)
+	if int(bodiesHave.Load()) != bodiesNeeded {
+		t.Errorf("body retrieval count mismatch: have %v, want %v", bodiesHave.Load(), bodiesNeeded)
 	}
-	if int(receiptsHave) != receiptsNeeded {
-		t.Errorf("receipt retrieval count mismatch: have %v, want %v", receiptsHave, receiptsNeeded)
+	if int(receiptsHave.Load()) != receiptsNeeded {
+		t.Errorf("receipt retrieval count mismatch: have %v, want %v", receiptsHave.Load(), receiptsNeeded)
 	}
 }
 
@@ -785,6 +824,9 @@ func testEmptyShortCircuit(t *testing.T, protocol uint, mode SyncMode) {
 func TestMissingHeaderAttack66Full(t *testing.T)  { testMissingHeaderAttack(t, eth.ETH66, FullSync) }
 func TestMissingHeaderAttack66Snap(t *testing.T)  { testMissingHeaderAttack(t, eth.ETH66, SnapSync) }
 func TestMissingHeaderAttack66Light(t *testing.T) { testMissingHeaderAttack(t, eth.ETH66, LightSync) }
+func TestMissingHeaderAttack67Full(t *testing.T)  { testMissingHeaderAttack(t, eth.ETH67, FullSync) }
+func TestMissingHeaderAttack67Snap(t *testing.T)  { testMissingHeaderAttack(t, eth.ETH67, SnapSync) }
+func TestMissingHeaderAttack67Light(t *testing.T) { testMissingHeaderAttack(t, eth.ETH67, LightSync) }
 
 func testMissingHeaderAttack(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -811,6 +853,9 @@ func testMissingHeaderAttack(t *testing.T, protocol uint, mode SyncMode) {
 func TestShiftedHeaderAttack66Full(t *testing.T)  { testShiftedHeaderAttack(t, eth.ETH66, FullSync) }
 func TestShiftedHeaderAttack66Snap(t *testing.T)  { testShiftedHeaderAttack(t, eth.ETH66, SnapSync) }
 func TestShiftedHeaderAttack66Light(t *testing.T) { testShiftedHeaderAttack(t, eth.ETH66, LightSync) }
+func TestShiftedHeaderAttack67Full(t *testing.T)  { testShiftedHeaderAttack(t, eth.ETH67, FullSync) }
+func TestShiftedHeaderAttack67Snap(t *testing.T)  { testShiftedHeaderAttack(t, eth.ETH67, SnapSync) }
+func TestShiftedHeaderAttack67Light(t *testing.T) { testShiftedHeaderAttack(t, eth.ETH67, LightSync) }
 
 func testShiftedHeaderAttack(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -833,85 +878,6 @@ func testShiftedHeaderAttack(t *testing.T, protocol uint, mode SyncMode) {
 	assertOwnChain(t, tester, len(chain.blocks))
 }
 
-// Tests that upon detecting an invalid header, the recent ones are rolled back
-// for various failure scenarios. Afterwards a full sync is attempted to make
-// sure no state was corrupted.
-func TestInvalidHeaderRollback66Snap(t *testing.T) { testInvalidHeaderRollback(t, eth.ETH66, SnapSync) }
-
-func testInvalidHeaderRollback(t *testing.T, protocol uint, mode SyncMode) {
-	tester := newTester(t)
-	defer tester.terminate()
-
-	// Create a small enough block chain to download
-	targetBlocks := 3*fsHeaderSafetyNet + 256 + fsMinFullBlocks
-	chain := testChainBase.shorten(targetBlocks)
-
-	// Attempt to sync with an attacker that feeds junk during the fast sync phase.
-	// This should result in the last fsHeaderSafetyNet headers being rolled back.
-	missing := fsHeaderSafetyNet + MaxHeaderFetch + 1
-
-	fastAttacker := tester.newPeer("fast-attack", protocol, chain.blocks[1:])
-	fastAttacker.withholdHeaders[chain.blocks[missing].Hash()] = struct{}{}
-
-	if err := tester.sync("fast-attack", nil, mode); err == nil {
-		t.Fatalf("succeeded fast attacker synchronisation")
-	}
-	if head := tester.chain.CurrentHeader().Number.Int64(); int(head) > MaxHeaderFetch {
-		t.Errorf("rollback head mismatch: have %v, want at most %v", head, MaxHeaderFetch)
-	}
-	// Attempt to sync with an attacker that feeds junk during the block import phase.
-	// This should result in both the last fsHeaderSafetyNet number of headers being
-	// rolled back, and also the pivot point being reverted to a non-block status.
-	missing = 3*fsHeaderSafetyNet + MaxHeaderFetch + 1
-
-	blockAttacker := tester.newPeer("block-attack", protocol, chain.blocks[1:])
-	fastAttacker.withholdHeaders[chain.blocks[missing].Hash()] = struct{}{} // Make sure the fast-attacker doesn't fill in
-	blockAttacker.withholdHeaders[chain.blocks[missing].Hash()] = struct{}{}
-
-	if err := tester.sync("block-attack", nil, mode); err == nil {
-		t.Fatalf("succeeded block attacker synchronisation")
-	}
-	if head := tester.chain.CurrentHeader().Number.Int64(); int(head) > 2*fsHeaderSafetyNet+MaxHeaderFetch {
-		t.Errorf("rollback head mismatch: have %v, want at most %v", head, 2*fsHeaderSafetyNet+MaxHeaderFetch)
-	}
-	if mode == SnapSync {
-		if head := tester.chain.CurrentBlock().NumberU64(); head != 0 {
-			t.Errorf("fast sync pivot block #%d not rolled back", head)
-		}
-	}
-	// Attempt to sync with an attacker that withholds promised blocks after the
-	// fast sync pivot point. This could be a trial to leave the node with a bad
-	// but already imported pivot block.
-	withholdAttacker := tester.newPeer("withhold-attack", protocol, chain.blocks[1:])
-
-	tester.downloader.syncInitHook = func(uint64, uint64) {
-		for i := missing; i < len(chain.blocks); i++ {
-			withholdAttacker.withholdHeaders[chain.blocks[i].Hash()] = struct{}{}
-		}
-		tester.downloader.syncInitHook = nil
-	}
-	if err := tester.sync("withhold-attack", nil, mode); err == nil {
-		t.Fatalf("succeeded withholding attacker synchronisation")
-	}
-	if head := tester.chain.CurrentHeader().Number.Int64(); int(head) > 2*fsHeaderSafetyNet+MaxHeaderFetch {
-		t.Errorf("rollback head mismatch: have %v, want at most %v", head, 2*fsHeaderSafetyNet+MaxHeaderFetch)
-	}
-	if mode == SnapSync {
-		if head := tester.chain.CurrentBlock().NumberU64(); head != 0 {
-			t.Errorf("fast sync pivot block #%d not rolled back", head)
-		}
-	}
-	// Synchronise with the valid peer and make sure sync succeeds. Since the last rollback
-	// should also disable fast syncing for this process, verify that we did a fresh full
-	// sync. Note, we can't assert anything about the receipts since we won't purge the
-	// database of them, hence we can't use assertOwnChain.
-	tester.newPeer("valid", protocol, chain.blocks[1:])
-	if err := tester.sync("valid", nil, mode); err != nil {
-		t.Fatalf("failed to synchronise blocks: %v", err)
-	}
-	assertOwnChain(t, tester, len(chain.blocks))
-}
-
 // Tests that a peer advertising a high TD doesn't get to stall the downloader
 // afterwards by not sending any useful hashes.
 func TestHighTDStarvationAttack66Full(t *testing.T) {
@@ -922,6 +888,15 @@ func TestHighTDStarvationAttack66Snap(t *testing.T) {
 }
 func TestHighTDStarvationAttack66Light(t *testing.T) {
 	testHighTDStarvationAttack(t, eth.ETH66, LightSync)
+}
+func TestHighTDStarvationAttack67Full(t *testing.T) {
+	testHighTDStarvationAttack(t, eth.ETH67, FullSync)
+}
+func TestHighTDStarvationAttack67Snap(t *testing.T) {
+	testHighTDStarvationAttack(t, eth.ETH67, SnapSync)
+}
+func TestHighTDStarvationAttack67Light(t *testing.T) {
+	testHighTDStarvationAttack(t, eth.ETH67, LightSync)
 }
 
 func testHighTDStarvationAttack(t *testing.T, protocol uint, mode SyncMode) {
@@ -937,6 +912,7 @@ func testHighTDStarvationAttack(t *testing.T, protocol uint, mode SyncMode) {
 
 // Tests that misbehaving peers are disconnected, whilst behaving ones are not.
 func TestBlockHeaderAttackerDropping66(t *testing.T) { testBlockHeaderAttackerDropping(t, eth.ETH66) }
+func TestBlockHeaderAttackerDropping67(t *testing.T) { testBlockHeaderAttackerDropping(t, eth.ETH67) }
 
 func testBlockHeaderAttackerDropping(t *testing.T, protocol uint) {
 	// Define the disconnection requirement for individual hash fetch errors
@@ -987,6 +963,9 @@ func testBlockHeaderAttackerDropping(t *testing.T, protocol uint) {
 func TestSyncProgress66Full(t *testing.T)  { testSyncProgress(t, eth.ETH66, FullSync) }
 func TestSyncProgress66Snap(t *testing.T)  { testSyncProgress(t, eth.ETH66, SnapSync) }
 func TestSyncProgress66Light(t *testing.T) { testSyncProgress(t, eth.ETH66, LightSync) }
+func TestSyncProgress67Full(t *testing.T)  { testSyncProgress(t, eth.ETH67, FullSync) }
+func TestSyncProgress67Snap(t *testing.T)  { testSyncProgress(t, eth.ETH67, SnapSync) }
+func TestSyncProgress67Light(t *testing.T) { testSyncProgress(t, eth.ETH67, LightSync) }
 
 func testSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -1002,7 +981,7 @@ func testSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		starting <- struct{}{}
 		<-progress
 	}
-	checkProgress(t, tester.downloader, "pristine", electroneum.SyncProgress{})
+	checkProgress(t, tester.downloader, "pristine", ethereum.SyncProgress{})
 
 	// Synchronise half the blocks and check initial progress
 	tester.newPeer("peer-half", protocol, chain.shorten(len(chain.blocks) / 2).blocks[1:])
@@ -1016,7 +995,7 @@ func testSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "initial", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "initial", ethereum.SyncProgress{
 		HighestBlock: uint64(len(chain.blocks)/2 - 1),
 	})
 	progress <- struct{}{}
@@ -1032,7 +1011,7 @@ func testSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "completing", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "completing", ethereum.SyncProgress{
 		StartingBlock: uint64(len(chain.blocks)/2 - 1),
 		CurrentBlock:  uint64(len(chain.blocks)/2 - 1),
 		HighestBlock:  uint64(len(chain.blocks) - 1),
@@ -1041,14 +1020,14 @@ func testSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	// Check final progress after successful sync
 	progress <- struct{}{}
 	pending.Wait()
-	checkProgress(t, tester.downloader, "final", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "final", ethereum.SyncProgress{
 		StartingBlock: uint64(len(chain.blocks)/2 - 1),
 		CurrentBlock:  uint64(len(chain.blocks) - 1),
 		HighestBlock:  uint64(len(chain.blocks) - 1),
 	})
 }
 
-func checkProgress(t *testing.T, d *Downloader, stage string, want electroneum.SyncProgress) {
+func checkProgress(t *testing.T, d *Downloader, stage string, want ethereum.SyncProgress) {
 	// Mark this method as a helper to report errors at callsite, not in here
 	t.Helper()
 
@@ -1064,6 +1043,9 @@ func checkProgress(t *testing.T, d *Downloader, stage string, want electroneum.S
 func TestForkedSyncProgress66Full(t *testing.T)  { testForkedSyncProgress(t, eth.ETH66, FullSync) }
 func TestForkedSyncProgress66Snap(t *testing.T)  { testForkedSyncProgress(t, eth.ETH66, SnapSync) }
 func TestForkedSyncProgress66Light(t *testing.T) { testForkedSyncProgress(t, eth.ETH66, LightSync) }
+func TestForkedSyncProgress67Full(t *testing.T)  { testForkedSyncProgress(t, eth.ETH67, FullSync) }
+func TestForkedSyncProgress67Snap(t *testing.T)  { testForkedSyncProgress(t, eth.ETH67, SnapSync) }
+func TestForkedSyncProgress67Light(t *testing.T) { testForkedSyncProgress(t, eth.ETH67, LightSync) }
 
 func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -1080,7 +1062,7 @@ func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		starting <- struct{}{}
 		<-progress
 	}
-	checkProgress(t, tester.downloader, "pristine", electroneum.SyncProgress{})
+	checkProgress(t, tester.downloader, "pristine", ethereum.SyncProgress{})
 
 	// Synchronise with one of the forks and check progress
 	tester.newPeer("fork A", protocol, chainA.blocks[1:])
@@ -1094,7 +1076,7 @@ func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	}()
 	<-starting
 
-	checkProgress(t, tester.downloader, "initial", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "initial", ethereum.SyncProgress{
 		HighestBlock: uint64(len(chainA.blocks) - 1),
 	})
 	progress <- struct{}{}
@@ -1113,7 +1095,7 @@ func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "forking", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "forking", ethereum.SyncProgress{
 		StartingBlock: uint64(len(testChainBase.blocks)) - 1,
 		CurrentBlock:  uint64(len(chainA.blocks) - 1),
 		HighestBlock:  uint64(len(chainB.blocks) - 1),
@@ -1122,7 +1104,7 @@ func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	// Check final progress after successful sync
 	progress <- struct{}{}
 	pending.Wait()
-	checkProgress(t, tester.downloader, "final", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "final", ethereum.SyncProgress{
 		StartingBlock: uint64(len(testChainBase.blocks)) - 1,
 		CurrentBlock:  uint64(len(chainB.blocks) - 1),
 		HighestBlock:  uint64(len(chainB.blocks) - 1),
@@ -1135,6 +1117,9 @@ func testForkedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 func TestFailedSyncProgress66Full(t *testing.T)  { testFailedSyncProgress(t, eth.ETH66, FullSync) }
 func TestFailedSyncProgress66Snap(t *testing.T)  { testFailedSyncProgress(t, eth.ETH66, SnapSync) }
 func TestFailedSyncProgress66Light(t *testing.T) { testFailedSyncProgress(t, eth.ETH66, LightSync) }
+func TestFailedSyncProgress67Full(t *testing.T)  { testFailedSyncProgress(t, eth.ETH67, FullSync) }
+func TestFailedSyncProgress67Snap(t *testing.T)  { testFailedSyncProgress(t, eth.ETH67, SnapSync) }
+func TestFailedSyncProgress67Light(t *testing.T) { testFailedSyncProgress(t, eth.ETH67, LightSync) }
 
 func testFailedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -1150,7 +1135,7 @@ func testFailedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		starting <- struct{}{}
 		<-progress
 	}
-	checkProgress(t, tester.downloader, "pristine", electroneum.SyncProgress{})
+	checkProgress(t, tester.downloader, "pristine", ethereum.SyncProgress{})
 
 	// Attempt a full sync with a faulty peer
 	missing := len(chain.blocks)/2 - 1
@@ -1167,7 +1152,7 @@ func testFailedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "initial", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "initial", ethereum.SyncProgress{
 		HighestBlock: uint64(len(chain.blocks) - 1),
 	})
 	progress <- struct{}{}
@@ -1190,7 +1175,7 @@ func testFailedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	// Check final progress after successful sync
 	progress <- struct{}{}
 	pending.Wait()
-	checkProgress(t, tester.downloader, "final", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "final", ethereum.SyncProgress{
 		CurrentBlock: uint64(len(chain.blocks) - 1),
 		HighestBlock: uint64(len(chain.blocks) - 1),
 	})
@@ -1201,6 +1186,9 @@ func testFailedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 func TestFakedSyncProgress66Full(t *testing.T)  { testFakedSyncProgress(t, eth.ETH66, FullSync) }
 func TestFakedSyncProgress66Snap(t *testing.T)  { testFakedSyncProgress(t, eth.ETH66, SnapSync) }
 func TestFakedSyncProgress66Light(t *testing.T) { testFakedSyncProgress(t, eth.ETH66, LightSync) }
+func TestFakedSyncProgress67Full(t *testing.T)  { testFakedSyncProgress(t, eth.ETH67, FullSync) }
+func TestFakedSyncProgress67Snap(t *testing.T)  { testFakedSyncProgress(t, eth.ETH67, SnapSync) }
+func TestFakedSyncProgress67Light(t *testing.T) { testFakedSyncProgress(t, eth.ETH67, LightSync) }
 
 func testFakedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 	tester := newTester(t)
@@ -1215,7 +1203,7 @@ func testFakedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		starting <- struct{}{}
 		<-progress
 	}
-	checkProgress(t, tester.downloader, "pristine", electroneum.SyncProgress{})
+	checkProgress(t, tester.downloader, "pristine", ethereum.SyncProgress{})
 
 	// Create and sync with an attacker that promises a higher chain than available.
 	attacker := tester.newPeer("attack", protocol, chain.blocks[1:])
@@ -1232,7 +1220,7 @@ func testFakedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "initial", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "initial", ethereum.SyncProgress{
 		HighestBlock: uint64(len(chain.blocks) - 1),
 	})
 	progress <- struct{}{}
@@ -1252,14 +1240,14 @@ func testFakedSyncProgress(t *testing.T, protocol uint, mode SyncMode) {
 		}
 	}()
 	<-starting
-	checkProgress(t, tester.downloader, "completing", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "completing", ethereum.SyncProgress{
 		CurrentBlock: afterFailedSync.CurrentBlock,
 		HighestBlock: uint64(len(validChain.blocks) - 1),
 	})
 	// Check final progress after successful sync.
 	progress <- struct{}{}
 	pending.Wait()
-	checkProgress(t, tester.downloader, "final", electroneum.SyncProgress{
+	checkProgress(t, tester.downloader, "final", ethereum.SyncProgress{
 		CurrentBlock: uint64(len(validChain.blocks) - 1),
 		HighestBlock: uint64(len(validChain.blocks) - 1),
 	})
@@ -1342,39 +1330,6 @@ func TestRemoteHeaderRequestSpan(t *testing.T) {
 
 // Tests that peers below a pre-configured checkpoint block are prevented from
 // being fast-synced from, avoiding potential cheap eclipse attacks.
-func TestCheckpointEnforcement66Full(t *testing.T) { testCheckpointEnforcement(t, eth.ETH66, FullSync) }
-func TestCheckpointEnforcement66Snap(t *testing.T) { testCheckpointEnforcement(t, eth.ETH66, SnapSync) }
-func TestCheckpointEnforcement66Light(t *testing.T) {
-	testCheckpointEnforcement(t, eth.ETH66, LightSync)
-}
-
-func testCheckpointEnforcement(t *testing.T, protocol uint, mode SyncMode) {
-	// Create a new tester with a particular hard coded checkpoint block
-	tester := newTester(t)
-	defer tester.terminate()
-
-	tester.downloader.checkpoint = uint64(fsMinFullBlocks) + 256
-	chain := testChainBase.shorten(int(tester.downloader.checkpoint) - 1)
-
-	// Attempt to sync with the peer and validate the result
-	tester.newPeer("peer", protocol, chain.blocks[1:])
-
-	var expect error
-	if mode == SnapSync || mode == LightSync {
-		expect = errUnsyncedPeer
-	}
-	if err := tester.sync("peer", nil, mode); !errors.Is(err, expect) {
-		t.Fatalf("block sync error mismatch: have %v, want %v", err, expect)
-	}
-	if mode == SnapSync || mode == LightSync {
-		assertOwnChain(t, tester, 1)
-	} else {
-		assertOwnChain(t, tester, len(chain.blocks))
-	}
-}
-
-// Tests that peers below a pre-configured checkpoint block are prevented from
-// being fast-synced from, avoiding potential cheap eclipse attacks.
 func TestBeaconSync66Full(t *testing.T) { testBeaconSync(t, eth.ETH66, FullSync) }
 func TestBeaconSync66Snap(t *testing.T) { testBeaconSync(t, eth.ETH66, SnapSync) }
 
@@ -1405,13 +1360,13 @@ func testBeaconSync(t *testing.T, protocol uint, mode SyncMode) {
 			if c.local > 0 {
 				tester.chain.InsertChain(chain.blocks[1 : c.local+1])
 			}
-			if err := tester.downloader.BeaconSync(mode, chain.blocks[len(chain.blocks)-1].Header()); err != nil {
+			if err := tester.downloader.BeaconSync(mode, chain.blocks[len(chain.blocks)-1].Header(), nil); err != nil {
 				t.Fatalf("Failed to beacon sync chain %v %v", c.name, err)
 			}
 			select {
 			case <-success:
 				// Ok, downloader fully cancelled after sync cycle
-				if bs := int(tester.chain.CurrentBlock().NumberU64()) + 1; bs != len(chain.blocks) {
+				if bs := int(tester.chain.CurrentBlock().Number.Uint64()) + 1; bs != len(chain.blocks) {
 					t.Fatalf("synchronised blocks mismatch: have %v, want %v", bs, len(chain.blocks))
 				}
 			case <-time.NewTimer(time.Second * 3).C:

@@ -23,7 +23,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/electroneum/electroneum-sc/crypto"
@@ -31,6 +30,7 @@ import (
 	"github.com/electroneum/electroneum-sc/p2p/enr"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"golang.org/x/crypto/sha3"
+	"golang.org/x/exp/slices"
 )
 
 // Tree is a merkle tree of node records.
@@ -136,9 +136,11 @@ UPD Payload length:
 So the total size is roughly a fixed overhead of `39`, and the size of the query (domain
 name) and response. The query size is, for example,
 FVY6INQ6LZ33WLCHO3BPR3FH6Y.snap.mainnet.ethdisco.net (52)
+
 We also have some static data in the response, such as `enrtree-branch:`, and potentially
 splitting the response up with `" "`, leaving us with a size of roughly `400` that we need
 to stay below.
+
 The number `370` is used to have some margin for extra overhead (for example, the dns
 query may be larger - more subdomains).
 */
@@ -212,8 +214,8 @@ func (t *Tree) build(entries []entry) entry {
 }
 
 func sortByID(nodes []*enode.Node) []*enode.Node {
-	sort.Slice(nodes, func(i, j int) bool {
-		return bytes.Compare(nodes[i].ID().Bytes(), nodes[j].ID().Bytes()) < 0
+	slices.SortFunc(nodes, func(a, b *enode.Node) int {
+		return bytes.Compare(a.ID().Bytes(), b.ID().Bytes())
 	})
 	return nodes
 }

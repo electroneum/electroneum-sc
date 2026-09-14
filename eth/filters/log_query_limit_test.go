@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"strings"
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -28,6 +27,7 @@ import (
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/trie"
 )
 
 // makeAddresses returns n distinct synthetic addresses.
@@ -48,11 +48,23 @@ func makeTopics(n int) [][]common.Hash {
 	return [][]common.Hash{row}
 }
 
-// newAPIWithLimit builds a PublicFilterAPI backed by an empty in-memory
-// database with the supplied log-query cap.
-func newAPIWithLimit(limit int) *PublicFilterAPI {
+// newAPIWithLimit builds a FilterAPI backed by an empty in-memory database with
+// the supplied log-query cap.
+//
+// go-ethereum 1.13 renamed PublicFilterAPI to FilterAPI and moved the per-node
+// settings out of the constructor into the FilterSystem's Config, so the caps
+// are installed there rather than passed positionally.
+func newAPIWithLimit(limit int) *FilterAPI {
 	backend := &testBackend{db: rawdb.NewMemoryDatabase()}
-	return NewPublicFilterAPI(backend, false, deadline, limit, 0)
+	sys := NewFilterSystem(backend, Config{LogQueryLimit: limit})
+	return NewFilterAPI(sys, false)
+}
+
+// newAPIWithRangeLimit builds a FilterAPI whose block-range cap is set.
+func newAPIWithRangeLimit(limit uint64) *FilterAPI {
+	backend := &testBackend{db: rawdb.NewMemoryDatabase()}
+	sys := NewFilterSystem(backend, Config{RangeLimit: limit})
+	return NewFilterAPI(sys, false)
 }
 
 func TestCheckLogQueryLimit(t *testing.T) {
@@ -178,12 +190,22 @@ func TestUnderLimitIsAccepted(t *testing.T) {
 
 // newBackendWithChain returns a testBackend whose canonical chain has the given
 // number of blocks above genesis, so that "latest" resolves to height n.
+//
+// go-ethereum 1.13 removed core.GenesisBlockForTesting, so the genesis is
+// committed through a core.Genesis spec instead.
 func newBackendWithChain(t *testing.T, n int) *testBackend {
 	t.Helper()
 	db := rawdb.NewMemoryDatabase()
 	addr := common.BytesToAddress([]byte("tester"))
-	genesis := core.GenesisBlockForTesting(db, addr, big.NewInt(1000000))
-	chain, receipts := core.GenerateChain(params.TestChainConfig, genesis, ethash.NewFaker(), db, n, func(i int, gen *core.BlockGen) {})
+	gspec := &core.Genesis{
+		Config:  params.TestChainConfig,
+		Alloc:   core.GenesisAlloc{addr: {Balance: big.NewInt(1000000)}},
+		BaseFee: big.NewInt(params.InitialBaseFee),
+	}
+	if _, err := gspec.Commit(db, trie.NewDatabase(db, nil)); err != nil {
+		t.Fatalf("commit genesis: %v", err)
+	}
+	chain, receipts := core.GenerateChain(gspec.Config, gspec.ToBlock(), ethash.NewFaker(), db, n, func(i int, gen *core.BlockGen) {})
 	for i, block := range chain {
 		rawdb.WriteBlock(db, block)
 		rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
@@ -205,9 +227,12 @@ func TestRangeLimit(t *testing.T) {
 
 	assertExceeds := func(t *testing.T, begin, end int64, limit uint64, want bool) {
 		t.Helper()
-		filter := NewRangeFilter(backend, begin, end, nil, nil, limit)
+		// 1.13 moved NewRangeFilter onto FilterSystem and takes the cap from its
+		// Config rather than as an argument.
+		sys := NewFilterSystem(backend, Config{RangeLimit: limit})
+		filter := sys.NewRangeFilter(begin, end, nil, nil)
 		_, err := filter.Logs(context.Background())
-		got := err != nil && strings.Contains(err.Error(), "exceed maximum block range")
+		got := errors.Is(err, ErrExceedRangeLimit)
 		if got != want {
 			t.Fatalf("begin=%d end=%d limit=%d: range-limit error = %v (err=%v), want %v", begin, end, limit, got, err, want)
 		}

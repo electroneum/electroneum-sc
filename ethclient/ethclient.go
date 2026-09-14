@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"math/big"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -41,6 +41,7 @@ func Dial(rawurl string) (*Client, error) {
 	return DialContext(context.Background(), rawurl)
 }
 
+// DialContext connects a client to the given URL with context.
 func DialContext(ctx context.Context, rawurl string) (*Client, error) {
 	c, err := rpc.DialContext(ctx, rawurl)
 	if err != nil {
@@ -54,8 +55,14 @@ func NewClient(c *rpc.Client) *Client {
 	return &Client{c}
 }
 
+// Close closes the underlying RPC connection.
 func (ec *Client) Close() {
 	ec.c.Close()
+}
+
+// Client gets the underlying RPC client.
+func (ec *Client) Client() *rpc.Client {
+	return ec.c
 }
 
 // Blockchain Access
@@ -101,10 +108,21 @@ func (ec *Client) PeerCount(ctx context.Context) (uint64, error) {
 	return uint64(result), err
 }
 
+// BlockReceipts returns the receipts of a given block number or hash.
+func (ec *Client) BlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) ([]*types.Receipt, error) {
+	var r []*types.Receipt
+	err := ec.c.CallContext(ctx, &r, "eth_getBlockReceipts", blockNrOrHash.String())
+	if err == nil && r == nil {
+		return nil, ethereum.NotFound
+	}
+	return r, err
+}
+
 type rpcBlock struct {
-	Hash         common.Hash      `json:"hash"`
-	Transactions []rpcTransaction `json:"transactions"`
-	UncleHashes  []common.Hash    `json:"uncles"`
+	Hash         common.Hash         `json:"hash"`
+	Transactions []rpcTransaction    `json:"transactions"`
+	UncleHashes  []common.Hash       `json:"uncles"`
+	Withdrawals  []*types.Withdrawal `json:"withdrawals,omitempty"`
 }
 
 func (ec *Client) getBlock(ctx context.Context, method string, args ...interface{}) (*types.Block, error) {
@@ -112,30 +130,34 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 	err := ec.c.CallContext(ctx, &raw, method, args...)
 	if err != nil {
 		return nil, err
-	} else if len(raw) == 0 {
-		return nil, electroneum.NotFound
 	}
+
 	// Decode header and transactions.
 	var head *types.Header
-	var body rpcBlock
 	if err := json.Unmarshal(raw, &head); err != nil {
 		return nil, err
 	}
+	// When the block is not found, the API returns JSON null.
+	if head == nil {
+		return nil, ethereum.NotFound
+	}
+
+	var body rpcBlock
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
 	// Quick-verify transaction and uncle lists. This mostly helps with debugging the server.
 	if head.UncleHash == types.EmptyUncleHash && len(body.UncleHashes) > 0 {
-		return nil, fmt.Errorf("server returned non-empty uncle list but block header indicates no uncles")
+		return nil, errors.New("server returned non-empty uncle list but block header indicates no uncles")
 	}
 	if head.UncleHash != types.EmptyUncleHash && len(body.UncleHashes) == 0 {
-		return nil, fmt.Errorf("server returned empty uncle list but block header indicates uncles")
+		return nil, errors.New("server returned empty uncle list but block header indicates uncles")
 	}
-	if head.TxHash == types.EmptyRootHash && len(body.Transactions) > 0 {
-		return nil, fmt.Errorf("server returned non-empty transaction list but block header indicates no transactions")
+	if head.TxHash == types.EmptyTxsHash && len(body.Transactions) > 0 {
+		return nil, errors.New("server returned non-empty transaction list but block header indicates no transactions")
 	}
-	if head.TxHash != types.EmptyRootHash && len(body.Transactions) == 0 {
-		return nil, fmt.Errorf("server returned empty transaction list but block header indicates transactions")
+	if head.TxHash != types.EmptyTxsHash && len(body.Transactions) == 0 {
+		return nil, errors.New("server returned empty transaction list but block header indicates transactions")
 	}
 	// Load uncles because they are not included in the block response.
 	var uncles []*types.Header
@@ -169,7 +191,7 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 		}
 		txs[i] = tx.tx
 	}
-	return types.NewBlockWithHeader(head).WithBody(txs, uncles), nil
+	return types.NewBlockWithHeader(head).WithBody(txs, uncles).WithWithdrawals(body.Withdrawals), nil
 }
 
 // HeaderByHash returns the block header with the given hash.
@@ -177,7 +199,7 @@ func (ec *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.He
 	var head *types.Header
 	err := ec.c.CallContext(ctx, &head, "eth_getBlockByHash", hash, false)
 	if err == nil && head == nil {
-		err = electroneum.NotFound
+		err = ethereum.NotFound
 	}
 	return head, err
 }
@@ -188,7 +210,7 @@ func (ec *Client) HeaderByNumber(ctx context.Context, number *big.Int) (*types.H
 	var head *types.Header
 	err := ec.c.CallContext(ctx, &head, "eth_getBlockByNumber", toBlockNumArg(number), false)
 	if err == nil && head == nil {
-		err = electroneum.NotFound
+		err = ethereum.NotFound
 	}
 	return head, err
 }
@@ -218,9 +240,9 @@ func (ec *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *
 	if err != nil {
 		return nil, false, err
 	} else if json == nil {
-		return nil, false, electroneum.NotFound
+		return nil, false, ethereum.NotFound
 	} else if _, r, _ := json.tx.RawSignatureValues(); r == nil {
-		return nil, false, fmt.Errorf("server returned transaction without signature")
+		return nil, false, errors.New("server returned transaction without signature")
 	}
 	if json.From != nil && json.BlockHash != nil {
 		setSenderFromServer(json.tx, *json.From, *json.BlockHash)
@@ -270,9 +292,9 @@ func (ec *Client) TransactionInBlock(ctx context.Context, blockHash common.Hash,
 		return nil, err
 	}
 	if json == nil {
-		return nil, electroneum.NotFound
+		return nil, ethereum.NotFound
 	} else if _, r, _ := json.tx.RawSignatureValues(); r == nil {
-		return nil, fmt.Errorf("server returned transaction without signature")
+		return nil, errors.New("server returned transaction without signature")
 	}
 	if json.From != nil && json.BlockHash != nil {
 		setSenderFromServer(json.tx, *json.From, *json.BlockHash)
@@ -287,7 +309,7 @@ func (ec *Client) TransactionReceipt(ctx context.Context, txHash common.Hash) (*
 	err := ec.c.CallContext(ctx, &r, "eth_getTransactionReceipt", txHash)
 	if err == nil {
 		if r == nil {
-			return nil, electroneum.NotFound
+			return nil, ethereum.NotFound
 		}
 	}
 	return r, err
@@ -295,7 +317,7 @@ func (ec *Client) TransactionReceipt(ctx context.Context, txHash common.Hash) (*
 
 // SyncProgress retrieves the current progress of the sync algorithm. If there's
 // no sync currently running, it returns nil.
-func (ec *Client) SyncProgress(ctx context.Context) (*electroneum.SyncProgress, error) {
+func (ec *Client) SyncProgress(ctx context.Context) (*ethereum.SyncProgress, error) {
 	var raw json.RawMessage
 	if err := ec.c.CallContext(ctx, &raw, "eth_syncing"); err != nil {
 		return nil, err
@@ -314,13 +336,20 @@ func (ec *Client) SyncProgress(ctx context.Context) (*electroneum.SyncProgress, 
 
 // SubscribeNewHead subscribes to notifications about the current blockchain head
 // on the given channel.
-func (ec *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (electroneum.Subscription, error) {
-	return ec.c.EthSubscribe(ctx, ch, "newHeads")
+func (ec *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	sub, err := ec.c.EthSubscribe(ctx, ch, "newHeads")
+	if err != nil {
+		// Defensively prefer returning nil interface explicitly on error-path, instead
+		// of letting default golang behavior wrap it with non-nil interface that stores
+		// nil concrete type value.
+		return nil, err
+	}
+	return sub, nil
 }
 
 // State Access
 
-// NetworkID returns the network ID (also known as the chain ID) for this chain.
+// NetworkID returns the network ID for this client.
 func (ec *Client) NetworkID(ctx context.Context) (*big.Int, error) {
 	version := new(big.Int)
 	var ver string
@@ -368,7 +397,7 @@ func (ec *Client) NonceAt(ctx context.Context, account common.Address, blockNumb
 // Filters
 
 // FilterLogs executes a filter query.
-func (ec *Client) FilterLogs(ctx context.Context, q electroneum.FilterQuery) ([]types.Log, error) {
+func (ec *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
 	var result []types.Log
 	arg, err := toFilterArg(q)
 	if err != nil {
@@ -379,15 +408,22 @@ func (ec *Client) FilterLogs(ctx context.Context, q electroneum.FilterQuery) ([]
 }
 
 // SubscribeFilterLogs subscribes to the results of a streaming filter query.
-func (ec *Client) SubscribeFilterLogs(ctx context.Context, q electroneum.FilterQuery, ch chan<- types.Log) (electroneum.Subscription, error) {
+func (ec *Client) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
 	arg, err := toFilterArg(q)
 	if err != nil {
 		return nil, err
 	}
-	return ec.c.EthSubscribe(ctx, ch, "logs", arg)
+	sub, err := ec.c.EthSubscribe(ctx, ch, "logs", arg)
+	if err != nil {
+		// Defensively prefer returning nil interface explicitly on error-path, instead
+		// of letting default golang behavior wrap it with non-nil interface that stores
+		// nil concrete type value.
+		return nil, err
+	}
+	return sub, nil
 }
 
-func toFilterArg(q electroneum.FilterQuery) (interface{}, error) {
+func toFilterArg(q ethereum.FilterQuery) (interface{}, error) {
 	arg := map[string]interface{}{
 		"address": q.Addresses,
 		"topics":  q.Topics,
@@ -395,7 +431,7 @@ func toFilterArg(q electroneum.FilterQuery) (interface{}, error) {
 	if q.BlockHash != nil {
 		arg["blockHash"] = *q.BlockHash
 		if q.FromBlock != nil || q.ToBlock != nil {
-			return nil, fmt.Errorf("cannot specify both BlockHash and FromBlock/ToBlock")
+			return nil, errors.New("cannot specify both BlockHash and FromBlock/ToBlock")
 		}
 	} else {
 		if q.FromBlock == nil {
@@ -454,7 +490,7 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 // blockNumber selects the block height at which the call runs. It can be nil, in which
 // case the code is taken from the latest known block. Note that state from very old
 // blocks might not be available.
-func (ec *Client) CallContract(ctx context.Context, msg electroneum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+func (ec *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), toBlockNumArg(blockNumber))
 	if err != nil {
@@ -465,7 +501,7 @@ func (ec *Client) CallContract(ctx context.Context, msg electroneum.CallMsg, blo
 
 // CallContractAtHash is almost the same as CallContract except that it selects
 // the block by block hash instead of block height.
-func (ec *Client) CallContractAtHash(ctx context.Context, msg electroneum.CallMsg, blockHash common.Hash) ([]byte, error) {
+func (ec *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), rpc.BlockNumberOrHashWithHash(blockHash, false))
 	if err != nil {
@@ -476,7 +512,7 @@ func (ec *Client) CallContractAtHash(ctx context.Context, msg electroneum.CallMs
 
 // PendingCallContract executes a message call transaction using the EVM.
 // The state seen by the contract call is the pending state.
-func (ec *Client) PendingCallContract(ctx context.Context, msg electroneum.CallMsg) ([]byte, error) {
+func (ec *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), "pending")
 	if err != nil {
@@ -505,11 +541,43 @@ func (ec *Client) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
 	return (*big.Int)(&hex), nil
 }
 
+type feeHistoryResultMarshaling struct {
+	OldestBlock  *hexutil.Big     `json:"oldestBlock"`
+	Reward       [][]*hexutil.Big `json:"reward,omitempty"`
+	BaseFee      []*hexutil.Big   `json:"baseFeePerGas,omitempty"`
+	GasUsedRatio []float64        `json:"gasUsedRatio"`
+}
+
+// FeeHistory retrieves the fee market history.
+func (ec *Client) FeeHistory(ctx context.Context, blockCount uint64, lastBlock *big.Int, rewardPercentiles []float64) (*ethereum.FeeHistory, error) {
+	var res feeHistoryResultMarshaling
+	if err := ec.c.CallContext(ctx, &res, "eth_feeHistory", hexutil.Uint(blockCount), toBlockNumArg(lastBlock), rewardPercentiles); err != nil {
+		return nil, err
+	}
+	reward := make([][]*big.Int, len(res.Reward))
+	for i, r := range res.Reward {
+		reward[i] = make([]*big.Int, len(r))
+		for j, r := range r {
+			reward[i][j] = (*big.Int)(r)
+		}
+	}
+	baseFee := make([]*big.Int, len(res.BaseFee))
+	for i, b := range res.BaseFee {
+		baseFee[i] = (*big.Int)(b)
+	}
+	return &ethereum.FeeHistory{
+		OldestBlock:  (*big.Int)(res.OldestBlock),
+		Reward:       reward,
+		BaseFee:      baseFee,
+		GasUsedRatio: res.GasUsedRatio,
+	}, nil
+}
+
 // EstimateGas tries to estimate the gas needed to execute a specific transaction based on
 // the current pending state of the backend blockchain. There is no guarantee that this is
 // the true gas limit requirement as other transactions may be added or removed by miners,
 // but it should provide a basis for setting a reasonable default.
-func (ec *Client) EstimateGas(ctx context.Context, msg electroneum.CallMsg) (uint64, error) {
+func (ec *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
 	var hex hexutil.Uint64
 	err := ec.c.CallContext(ctx, &hex, "eth_estimateGas", toCallArg(msg))
 	if err != nil {
@@ -534,20 +602,24 @@ func toBlockNumArg(number *big.Int) string {
 	if number == nil {
 		return "latest"
 	}
-	pending := big.NewInt(-1)
-	if number.Cmp(pending) == 0 {
-		return "pending"
+	if number.Sign() >= 0 {
+		return hexutil.EncodeBig(number)
 	}
-	return hexutil.EncodeBig(number)
+	// It's negative.
+	if number.IsInt64() {
+		return rpc.BlockNumber(number.Int64()).String()
+	}
+	// It's negative and large, which is invalid.
+	return fmt.Sprintf("<invalid %d>", number)
 }
 
-func toCallArg(msg electroneum.CallMsg) interface{} {
+func toCallArg(msg ethereum.CallMsg) interface{} {
 	arg := map[string]interface{}{
 		"from": msg.From,
 		"to":   msg.To,
 	}
 	if len(msg.Data) > 0 {
-		arg["data"] = hexutil.Bytes(msg.Data)
+		arg["input"] = hexutil.Bytes(msg.Data)
 	}
 	if msg.Value != nil {
 		arg["value"] = (*hexutil.Big)(msg.Value)
@@ -584,11 +656,11 @@ type rpcProgress struct {
 	HealingBytecode     hexutil.Uint64
 }
 
-func (p *rpcProgress) toSyncProgress() *electroneum.SyncProgress {
+func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 	if p == nil {
 		return nil
 	}
-	return &electroneum.SyncProgress{
+	return &ethereum.SyncProgress{
 		StartingBlock:       uint64(p.StartingBlock),
 		CurrentBlock:        uint64(p.CurrentBlock),
 		HighestBlock:        uint64(p.HighestBlock),

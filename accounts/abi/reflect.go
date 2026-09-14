@@ -53,7 +53,7 @@ func ConvertType(in interface{}, proto interface{}) interface{} {
 // indirect recursively dereferences the value until it either gets the value
 // or finds a big.Int
 func indirect(v reflect.Value) reflect.Value {
-	if v.Kind() == reflect.Pointer && v.Elem().Type() != reflect.TypeOf(big.Int{}) {
+	if v.Kind() == reflect.Ptr && v.Elem().Type() != reflect.TypeOf(big.Int{}) {
 		return indirect(v.Elem())
 	}
 	return v
@@ -102,9 +102,9 @@ func mustArrayToByteSlice(value reflect.Value) reflect.Value {
 func set(dst, src reflect.Value) error {
 	dstType, srcType := dst.Type(), src.Type()
 	switch {
-	case dstType.Kind() == reflect.Interface && dst.Elem().IsValid():
+	case dstType.Kind() == reflect.Interface && dst.Elem().IsValid() && (dst.Elem().Type().Kind() == reflect.Ptr || dst.Elem().CanSet()):
 		return set(dst.Elem(), src)
-	case dstType.Kind() == reflect.Pointer && dstType.Elem() != reflect.TypeOf(big.Int{}):
+	case dstType.Kind() == reflect.Ptr && dstType.Elem() != reflect.TypeOf(big.Int{}):
 		return set(dst.Elem(), src)
 	case srcType.AssignableTo(dstType) && dst.CanSet():
 		dst.Set(src)
@@ -134,11 +134,11 @@ func setSlice(dst, src reflect.Value) error {
 		dst.Set(slice)
 		return nil
 	}
-	return errors.New("cannot set slice, destination not settable")
+	return errors.New("Cannot set slice, destination not settable")
 }
 
 func setArray(dst, src reflect.Value) error {
-	if src.Kind() == reflect.Pointer {
+	if src.Kind() == reflect.Ptr {
 		return set(dst, indirect(src))
 	}
 	array := reflect.New(dst.Type()).Elem()
@@ -155,7 +155,7 @@ func setArray(dst, src reflect.Value) error {
 		dst.Set(array)
 		return nil
 	}
-	return errors.New("cannot set array, destination not settable")
+	return errors.New("Cannot set array, destination not settable")
 }
 
 func setStruct(dst, src reflect.Value) error {
@@ -163,7 +163,7 @@ func setStruct(dst, src reflect.Value) error {
 		srcField := src.Field(i)
 		dstField := dst.Field(i)
 		if !dstField.IsValid() || !srcField.IsValid() {
-			return fmt.Errorf("could not find src field: %v value: %v in destination", srcField.Type().Name(), srcField)
+			return fmt.Errorf("Could not find src field: %v value: %v in destination", srcField.Type().Name(), srcField)
 		}
 		if err := set(dstField, srcField); err != nil {
 			return err
@@ -228,7 +228,7 @@ func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[stri
 		structFieldName := ToCamelCase(argName)
 
 		if structFieldName == "" {
-			return nil, fmt.Errorf("abi: purely underscored output cannot unpack to struct")
+			return nil, errors.New("abi: purely underscored output cannot unpack to struct")
 		}
 
 		// this abi has already been paired, skip it... unless there exists another, yet unassigned

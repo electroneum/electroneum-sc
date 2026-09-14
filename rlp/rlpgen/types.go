@@ -47,7 +47,7 @@ func typeReflectKind(typ types.Type) reflect.Kind {
 	case *types.Map:
 		return reflect.Map
 	case *types.Pointer:
-		return reflect.Pointer
+		return reflect.Ptr
 	case *types.Signature:
 		return reflect.Func
 	case *types.Slice:
@@ -95,6 +95,16 @@ func isBigInt(typ types.Type) bool {
 	}
 	name := named.Obj()
 	return name.Pkg().Path() == "math/big" && name.Name() == "Int"
+}
+
+// isUint256 checks whether 'typ' is "github.com/holiman/uint256".Int.
+func isUint256(typ types.Type) bool {
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return false
+	}
+	name := named.Obj()
+	return name.Pkg().Path() == "github.com/holiman/uint256" && name.Name() == "Int"
 }
 
 // isByte checks whether the underlying type of 'typ' is uint8.

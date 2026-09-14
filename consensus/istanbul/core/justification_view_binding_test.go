@@ -380,12 +380,12 @@ func buildViewBindingCore(t *testing.T) (*core, *viewBindingBackend, common.Addr
 		validateFn: func(data []byte, sig []byte) (common.Address, error) {
 			return istanbul.CheckValidatorSignature(valSet, data, sig)
 		},
-		backlogs:          make(map[common.Address]*prque.Prque),
+		backlogs:          make(map[common.Address]*prque.Prque[int64, interface{}]),
 		backlogsMu:        new(sync.Mutex),
 		currentMutex:      new(sync.Mutex),
 		current:           newRoundState(view, valSet, nil, big.NewInt(1), lockedBlock, nil, func(common.Hash) bool { return false }),
 		roundChangeSet:    newRoundChangeSet(valSet),
-		pendingRequests:   prque.New(nil),
+		pendingRequests:   prque.New[int64, interface{}](nil),
 		pendingRequestsMu: new(sync.Mutex),
 	}
 

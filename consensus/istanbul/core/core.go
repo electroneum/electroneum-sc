@@ -48,10 +48,10 @@ func New(backend istanbul.Backend, config *istanbul.Config) istanbul.Core {
 		logger:             log.New("address", backend.Address()),
 		cleanLogger:        log.New(),
 		backend:            backend,
-		backlogs:           make(map[common.Address]*prque.Prque),
+		backlogs:           make(map[common.Address]*prque.Prque[int64, interface{}]),
 		backlogsBytes:      make(map[common.Address]int),
 		backlogsMu:         new(sync.Mutex),
-		pendingRequests:    prque.New(nil),
+		pendingRequests:    prque.New[int64, interface{}](nil),
 		pendingRequestsMu:  new(sync.Mutex),
 		consensusTimestamp: time.Time{},
 		currentMutex:       new(sync.Mutex),
@@ -79,7 +79,7 @@ type core struct {
 	valSet     istanbul.ValidatorSet
 	validateFn func([]byte, []byte) (common.Address, error)
 
-	backlogs      map[common.Address]*prque.Prque
+	backlogs      map[common.Address]*prque.Prque[int64, interface{}]
 	backlogsMu    *sync.Mutex
 	backlogsTotal int
 	// backlogsBytes tracks retained encoded bytes per source and in aggregate, so
@@ -97,7 +97,7 @@ type core struct {
 
 	QBFTPreparedPrepares []*qbfttypes.Prepare
 
-	pendingRequests   *prque.Prque
+	pendingRequests   *prque.Prque[int64, interface{}]
 	pendingRequestsMu *sync.Mutex
 
 	consensusTimestamp time.Time

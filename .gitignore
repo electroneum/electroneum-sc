@@ -19,7 +19,6 @@ build/_vendor/pkg
 .#*
 *#
 *~
-*.out
 .project
 .settings
 
@@ -27,7 +26,7 @@ build/_vendor/pkg
 /build/_workspace/
 /build/cache/
 /build/bin/
-/etn-sc*.zip
+/geth*.zip
 
 # travis
 profile.tmp
@@ -48,3 +47,4 @@ profile.cov
 /dashboard/assets/package-lock.json
 
 **/yarn-error.log
+logs/

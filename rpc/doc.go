@@ -31,7 +31,7 @@ Methods that satisfy the following criteria are made available for remote access
 
 An example method:
 
-func (s *CalcService) Add(a, b int) (int, error)
+	func (s *CalcService) Add(a, b int) (int, error)
 
 When the returned error isn't nil the returned integer is ignored and the error is sent
 back to the client. Otherwise the returned integer is sent back to the client.
@@ -40,7 +40,7 @@ Optional arguments are supported by accepting pointer values as arguments. E.g. 
 to do the addition in an optional finite field we can accept a mod argument as pointer
 value.
 
-func (s *CalcService) Add(a, b int, mod *int) (int, error)
+	func (s *CalcService) Add(a, b int, mod *int) (int, error)
 
 This RPC method can be called with 2 integers and a null value as third argument. In that
 case the mod argument will be nil. Or it can be called with 3 integers, in that case mod
@@ -56,15 +56,18 @@ to the client out of order.
 An example server which uses the JSON codec:
 
 	 type CalculatorService struct {}
+
 	 func (s *CalculatorService) Add(a, b int) int {
 		return a + b
 	 }
+
 	 func (s *CalculatorService) Div(a, b int) (int, error) {
 		if b == 0 {
 			return 0, errors.New("divide by zero")
 		}
 		return a/b, nil
 	 }
+
 	 calculator := new(CalculatorService)
 	 server := NewServer()
 	 server.RegisterName("calculator", calculator)

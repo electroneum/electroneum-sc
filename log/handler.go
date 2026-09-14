@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-stack/stack"
 )
@@ -158,7 +159,7 @@ func FilterHandler(fn func(r *Record) bool, h Handler) Handler {
 // context matches the value. For example, to only log records
 // from your ui package:
 //
-// log.MatchFilterHandler("pkg", "app/ui", log.StdoutHandler)
+//	log.MatchFilterHandler("pkg", "app/ui", log.StdoutHandler)
 func MatchFilterHandler(key string, value interface{}, h Handler) Handler {
 	return FilterHandler(func(r *Record) (pass bool) {
 		switch key {
@@ -184,7 +185,7 @@ func MatchFilterHandler(key string, value interface{}, h Handler) Handler {
 // level to the wrapped Handler. For example, to only
 // log Error/Crit records:
 //
-// log.LvlFilterHandler(log.LvlError, log.StdoutHandler)
+//	log.LvlFilterHandler(log.LvlError, log.StdoutHandler)
 func LvlFilterHandler(maxLvl Lvl, h Handler) Handler {
 	return FilterHandler(func(r *Record) (pass bool) {
 		return r.Lvl <= maxLvl
@@ -353,4 +354,22 @@ func (m muster) FileHandler(path string, fmtr Format) Handler {
 
 func (m muster) NetHandler(network, addr string, fmtr Format) Handler {
 	return must(NetHandler(network, addr, fmtr))
+}
+
+// swapHandler wraps another handler that may be swapped out
+// dynamically at runtime in a thread-safe fashion.
+type swapHandler struct {
+	handler atomic.Value
+}
+
+func (h *swapHandler) Log(r *Record) error {
+	return (*h.handler.Load().(*Handler)).Log(r)
+}
+
+func (h *swapHandler) Swap(newHandler Handler) {
+	h.handler.Store(&newHandler)
+}
+
+func (h *swapHandler) Get() Handler {
+	return *h.handler.Load().(*Handler)
 }

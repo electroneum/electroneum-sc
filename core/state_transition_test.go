@@ -10,7 +10,6 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
-	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
@@ -76,25 +75,27 @@ func newTestEVM(transactors common.PriorityTransactorMap, baseFee *big.Int) *vm.
 	return vm.NewEVM(blockCtx, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 }
 
-// newTestMessage creates a types.Message with the given fee fields and priority sender.
-// This uses types.NewMessage which sets the fields directly without signature verification,
-// suitable for unit testing the validation logic in isolation.
-func newTestMessage(feeCap, tipCap *big.Int, prioritySender common.PublicKey) types.Message {
+// newTestMessage creates a core.Message with the given fee fields and priority
+// sender, bypassing signature verification so the validation logic can be
+// exercised in isolation.
+//
+// v1.13 moved types.Message to core.Message and dropped types.NewMessage in
+// favour of the struct literal, so the fields are named rather than positional.
+func newTestMessage(feeCap, tipCap *big.Int, prioritySender common.PublicKey) *Message {
 	to := common.Address{}
-	return types.NewMessage(
-		common.Address{}, // from
-		&to,              // to
-		0,                // nonce
-		big.NewInt(0),    // amount
-		21000,            // gasLimit
-		big.NewInt(0),    // gasPrice (not used by validatePriorityGasFields)
-		feeCap,           // gasFeeCap
-		tipCap,           // gasTipCap
-		nil,              // data
-		nil,              // accessList
-		true,             // isFake
-		prioritySender,   // prioritySender
-	)
+	return &Message{
+		From:      common.Address{},
+		To:        &to,
+		Nonce:     0,
+		Value:     big.NewInt(0),
+		GasLimit:  21000,
+		GasPrice:  big.NewInt(0), // not used by validatePriorityGasFields
+		GasFeeCap: feeCap,
+		GasTipCap: tipCap,
+		// isFake became SkipAccountChecks.
+		SkipAccountChecks: true,
+		PrioritySender:    prioritySender,
+	}
 }
 
 // ============================================================================

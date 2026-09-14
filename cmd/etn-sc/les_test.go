@@ -107,11 +107,11 @@ func ipcEndpoint(ipcPath, datadir string) string {
 // but windows require pipes to sit in "\\.\pipe\". Therefore, to run several
 // nodes simultaneously, we need to distinguish between them, which we do by
 // the pipe filename instead of folder.
-var nextIPC = uint32(0)
+var nextIPC atomic.Uint32
 
 func startGethWithIpc(t *testing.T, name string, args ...string) *gethrpc {
-	ipcName := fmt.Sprintf("etn-sc-%d.ipc", atomic.AddUint32(&nextIPC, 1))
-	args = append([]string{"--networkid=42", "--port=0", "--ipcpath", ipcName}, args...)
+	ipcName := fmt.Sprintf("geth-%d.ipc", nextIPC.Add(1))
+	args = append([]string{"--networkid=42", "--port=0", "--authrpc.port", "0", "--ipcpath", ipcName}, args...)
 	t.Logf("Starting %v with rpc: %v", name, args)
 
 	g := &gethrpc{
@@ -144,15 +144,15 @@ func initGeth(t *testing.T) string {
 func startLightServer(t *testing.T) *gethrpc {
 	datadir := initGeth(t)
 	t.Logf("Importing keys to geth")
-	runGeth(t, "--datadir", datadir, "--password", "./testdata/password.txt", "account", "import", "./testdata/key.prv", "--lightkdf").WaitExit()
+	runGeth(t, "account", "import", "--datadir", datadir, "--password", "./testdata/password.txt", "--lightkdf", "./testdata/key.prv").WaitExit()
 	account := "0x02f0d131f1f97aef08aec6e3291b957d9efe7105"
-	server := startGethWithIpc(t, "lightserver", "--allow-insecure-unlock", "--datadir", datadir, "--password", "./testdata/password.txt", "--unlock", account, "--mine", "--light.serve=100", "--light.maxpeers=1", "--nodiscover", "--nat=extip:127.0.0.1", "--verbosity=4")
+	server := startGethWithIpc(t, "lightserver", "--allow-insecure-unlock", "--datadir", datadir, "--password", "./testdata/password.txt", "--unlock", account, "--miner.etherbase=0x02f0d131f1f97aef08aec6e3291b957d9efe7105", "--mine", "--light.serve=100", "--light.maxpeers=1", "--discv4=false", "--nat=extip:127.0.0.1", "--verbosity=4")
 	return server
 }
 
 func startClient(t *testing.T, name string) *gethrpc {
 	datadir := initGeth(t)
-	return startGethWithIpc(t, name, "--datadir", datadir, "--nodiscover", "--syncmode=light", "--nat=extip:127.0.0.1", "--verbosity=4")
+	return startGethWithIpc(t, name, "--datadir", datadir, "--discv4=false", "--syncmode=light", "--nat=extip:127.0.0.1", "--verbosity=4")
 }
 
 func TestPriorityClient(t *testing.T) {

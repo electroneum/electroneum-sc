@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/dop251/goja"
 
@@ -42,7 +41,16 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	tracers.RegisterLookup(true, newJsTracer)
+	type ctorFn = func(*tracers.Context, json.RawMessage) (tracers.Tracer, error)
+	lookup := func(code string) ctorFn {
+		return func(ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, error) {
+			return newJsTracer(code, ctx, cfg)
+		}
+	}
+	for name, code := range assetTracers {
+		tracers.DefaultDirectory.Register(name, lookup(code), true)
+	}
+	tracers.DefaultDirectory.RegisterJSEval(newJsTracer)
 }
 
 // bigIntProgram is compiled once and the exported function mostly invoked to convert
@@ -55,11 +63,7 @@ type fromBufFn = func(vm *goja.Runtime, buf goja.Value, allowString bool) ([]byt
 
 func toBuf(vm *goja.Runtime, bufType goja.Value, val []byte) (goja.Value, error) {
 	// bufType is usually Uint8Array. This is equivalent to `new Uint8Array(val)` in JS.
-	res, err := vm.New(bufType, vm.ToValue(val))
-	if err != nil {
-		return nil, err
-	}
-	return vm.ToValue(res), nil
+	return vm.New(bufType, vm.ToValue(vm.NewArrayBuffer(val)))
 }
 
 func fromBuf(vm *goja.Runtime, bufType goja.Value, buf goja.Value, allowString bool) ([]byte, error) {
@@ -70,6 +74,7 @@ func fromBuf(vm *goja.Runtime, bufType goja.Value, buf goja.Value, allowString b
 			break
 		}
 		return common.FromHex(obj.String()), nil
+
 	case "Array":
 		var b []byte
 		if err := vm.ExportTo(buf, &b); err != nil {
@@ -81,13 +86,10 @@ func fromBuf(vm *goja.Runtime, bufType goja.Value, buf goja.Value, allowString b
 		if !obj.Get("constructor").SameAs(bufType) {
 			break
 		}
-		var b []byte
-		if err := vm.ExportTo(buf, &b); err != nil {
-			return nil, err
-		}
+		b := obj.Export().([]byte)
 		return b, nil
 	}
-	return nil, fmt.Errorf("invalid buffer type")
+	return nil, errors.New("invalid buffer type")
 }
 
 // jsTracer is an implementation of the Tracer interface which evaluates
@@ -125,16 +127,14 @@ type jsTracer struct {
 	frameResultValue goja.Value
 }
 
-// newJsTracer instantiates a new JS tracer instance. code is either
-// the name of a built-in JS tracer or a Javascript snippet which
-// evaluates to an expression returning an object with certain methods.
+// newJsTracer instantiates a new JS tracer instance. code is a
+// Javascript snippet which evaluates to an expression returning
+// an object with certain methods:
+//
 // The methods `result` and `fault` are required to be present.
 // The methods `step`, `enter`, and `exit` are optional, but note that
 // `enter` and `exit` always go together.
-func newJsTracer(code string, ctx *tracers.Context) (tracers.Tracer, error) {
-	if c, ok := assetTracers[code]; ok {
-		code = c
-	}
+func newJsTracer(code string, ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, error) {
 	vm := goja.New()
 	// By default field names are exported to JS as is, i.e. capitalized.
 	vm.SetFieldNameMapper(goja.UncapFieldNameMapper())
@@ -183,6 +183,17 @@ func newJsTracer(code string, ctx *tracers.Context) (tracers.Tracer, error) {
 	t.exit = exit
 	t.result = result
 	t.fault = fault
+
+	// Pass in config
+	if setup, ok := goja.AssertFunction(obj.Get("setup")); ok {
+		cfgStr := "{}"
+		if cfg != nil {
+			cfgStr = string(cfg)
+		}
+		if _, err := setup(obj, vm.ToValue(cfgStr)); err != nil {
+			return nil, err
+		}
+	}
 	// Setup objects carrying data to JS. These are created once and re-used.
 	t.log = &steplog{
 		vm:       vm,
@@ -205,9 +216,11 @@ func (t *jsTracer) CaptureTxStart(gasLimit uint64) {
 	t.gasLimit = gasLimit
 }
 
-// CaptureTxStart implements the Tracer interface and is invoked at the end of
+// CaptureTxEnd implements the Tracer interface and is invoked at the end of
 // transaction processing.
-func (t *jsTracer) CaptureTxEnd(restGas uint64) {}
+func (t *jsTracer) CaptureTxEnd(restGas uint64) {
+	t.ctx["gasUsed"] = t.vm.ToValue(t.gasLimit - restGas)
+}
 
 // CaptureStart implements the Tracer interface to initialize the tracing operation.
 func (t *jsTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
@@ -222,8 +235,13 @@ func (t *jsTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Addr
 	t.ctx["from"] = t.vm.ToValue(from.Bytes())
 	t.ctx["to"] = t.vm.ToValue(to.Bytes())
 	t.ctx["input"] = t.vm.ToValue(input)
-	t.ctx["gas"] = t.vm.ToValue(gas)
-	t.ctx["gasPrice"] = t.vm.ToValue(env.TxContext.GasPrice)
+	t.ctx["gas"] = t.vm.ToValue(t.gasLimit)
+	gasPriceBig, err := t.toBig(t.vm, env.TxContext.GasPrice.String())
+	if err != nil {
+		t.err = err
+		return
+	}
+	t.ctx["gasPrice"] = gasPriceBig
 	valueBig, err := t.toBig(t.vm, value.String())
 	if err != nil {
 		t.err = err
@@ -232,9 +250,8 @@ func (t *jsTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Addr
 	t.ctx["value"] = valueBig
 	t.ctx["block"] = t.vm.ToValue(env.Context.BlockNumber.Uint64())
 	// Update list of precompiles based on current block
-	rules := env.ChainConfig().Rules(env.Context.BlockNumber, env.Context.Random != nil)
+	rules := env.ChainConfig().Rules(env.Context.BlockNumber, env.Context.Random != nil, env.Context.Time)
 	t.activePrecompiles = vm.ActivePrecompiles(rules)
-	t.ctx["intrinsicGas"] = t.vm.ToValue(t.gasLimit - gas)
 }
 
 // CaptureState implements the Tracer interface to trace a single step of VM execution.
@@ -251,10 +268,11 @@ func (t *jsTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope
 	log.memory.memory = scope.Memory
 	log.stack.stack = scope.Stack
 	log.contract.contract = scope.Contract
-	log.pc = uint(pc)
-	log.gas = uint(gas)
-	log.cost = uint(cost)
-	log.depth = uint(depth)
+	log.pc = pc
+	log.gas = gas
+	log.cost = cost
+	log.refund = t.env.StateDB.GetRefund()
+	log.depth = depth
 	log.err = err
 	if _, err := t.step(t.obj, t.logValue, t.dbValue); err != nil {
 		t.onError("step", err)
@@ -274,10 +292,8 @@ func (t *jsTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope
 }
 
 // CaptureEnd is called after the call finishes to finalize the tracing.
-func (t *jsTracer) CaptureEnd(output []byte, gasUsed uint64, duration time.Duration, err error) {
+func (t *jsTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
 	t.ctx["output"] = t.vm.ToValue(output)
-	t.ctx["time"] = t.vm.ToValue(duration.String())
-	t.ctx["gasUsed"] = t.vm.ToValue(gasUsed)
 	if err != nil {
 		t.ctx["error"] = t.vm.ToValue(err.Error())
 	}
@@ -554,12 +570,13 @@ func (mo *memoryObj) slice(begin, end int64) ([]byte, error) {
 		return []byte{}, nil
 	}
 	if end < begin || begin < 0 {
-		return nil, fmt.Errorf("Tracer accessed out of bound memory: offset %d, end %d", begin, end)
+		return nil, fmt.Errorf("tracer accessed out of bound memory: offset %d, end %d", begin, end)
 	}
-	if mo.memory.Len() < int(end) {
-		return nil, fmt.Errorf("Tracer accessed out of bound memory: available %d, offset %d, size %d", mo.memory.Len(), begin, end-begin)
+	slice, err := tracers.GetMemoryCopyPadded(mo.memory, begin, end-begin)
+	if err != nil {
+		return nil, err
 	}
-	return mo.memory.GetCopy(begin, end-begin), nil
+	return slice, nil
 }
 
 func (mo *memoryObj) GetUint(addr int64) goja.Value {
@@ -579,7 +596,7 @@ func (mo *memoryObj) GetUint(addr int64) goja.Value {
 // getUint returns the 32 bytes at the specified address interpreted as a uint.
 func (mo *memoryObj) getUint(addr int64) (*big.Int, error) {
 	if mo.memory.Len() < int(addr)+32 || addr < 0 {
-		return nil, fmt.Errorf("Tracer accessed out of bound memory: available %d, offset %d, size %d", mo.memory.Len(), addr, 32)
+		return nil, fmt.Errorf("tracer accessed out of bound memory: available %d, offset %d, size %d", mo.memory.Len(), addr, 32)
 	}
 	return new(big.Int).SetBytes(mo.memory.GetPtr(addr, 32)), nil
 }
@@ -588,11 +605,11 @@ func (mo *memoryObj) Length() int {
 	return mo.memory.Len()
 }
 
-func (mo *memoryObj) setupObject() *goja.Object {
-	o := mo.vm.NewObject()
-	o.Set("slice", mo.vm.ToValue(mo.Slice))
-	o.Set("getUint", mo.vm.ToValue(mo.GetUint))
-	o.Set("length", mo.vm.ToValue(mo.Length))
+func (m *memoryObj) setupObject() *goja.Object {
+	o := m.vm.NewObject()
+	o.Set("slice", m.vm.ToValue(m.Slice))
+	o.Set("getUint", m.vm.ToValue(m.GetUint))
+	o.Set("length", m.vm.ToValue(m.Length))
 	return o
 }
 
@@ -619,7 +636,7 @@ func (s *stackObj) Peek(idx int) goja.Value {
 // peek returns the nth-from-the-top element of the stack.
 func (s *stackObj) peek(idx int) (*big.Int, error) {
 	if len(s.stack.Data()) <= idx || idx < 0 {
-		return nil, fmt.Errorf("Tracer accessed out of bound stack: size %d, index %d", len(s.stack.Data()), idx)
+		return nil, fmt.Errorf("tracer accessed out of bound stack: size %d, index %d", len(s.stack.Data()), idx)
 	}
 	return s.stack.Back(idx).ToBig(), nil
 }
@@ -765,7 +782,7 @@ func (co *contractObj) GetValue() goja.Value {
 }
 
 func (co *contractObj) GetInput() goja.Value {
-	input := co.contract.Input
+	input := common.CopyBytes(co.contract.Input)
 	res, err := co.toBuf(co.vm, input)
 	if err != nil {
 		co.vm.Interrupt(err)
@@ -774,12 +791,12 @@ func (co *contractObj) GetInput() goja.Value {
 	return res
 }
 
-func (co *contractObj) setupObject() *goja.Object {
-	o := co.vm.NewObject()
-	o.Set("getCaller", co.vm.ToValue(co.GetCaller))
-	o.Set("getAddress", co.vm.ToValue(co.GetAddress))
-	o.Set("getValue", co.vm.ToValue(co.GetValue))
-	o.Set("getInput", co.vm.ToValue(co.GetInput))
+func (c *contractObj) setupObject() *goja.Object {
+	o := c.vm.NewObject()
+	o.Set("getCaller", c.vm.ToValue(c.GetCaller))
+	o.Set("getAddress", c.vm.ToValue(c.GetAddress))
+	o.Set("getValue", c.vm.ToValue(c.GetValue))
+	o.Set("getInput", c.vm.ToValue(c.GetInput))
 	return o
 }
 
@@ -902,33 +919,19 @@ type steplog struct {
 	stack    *stackObj
 	contract *contractObj
 
-	pc     uint
-	gas    uint
-	cost   uint
-	depth  uint
-	refund uint
+	pc     uint64
+	gas    uint64
+	cost   uint64
+	depth  int
+	refund uint64
 	err    error
 }
 
-func (l *steplog) GetPC() uint {
-	return l.pc
-}
-
-func (l *steplog) GetGas() uint {
-	return l.gas
-}
-
-func (l *steplog) GetCost() uint {
-	return l.cost
-}
-
-func (l *steplog) GetDepth() uint {
-	return l.depth
-}
-
-func (l *steplog) GetRefund() uint {
-	return l.refund
-}
+func (l *steplog) GetPC() uint64     { return l.pc }
+func (l *steplog) GetGas() uint64    { return l.gas }
+func (l *steplog) GetCost() uint64   { return l.cost }
+func (l *steplog) GetDepth() int     { return l.depth }
+func (l *steplog) GetRefund() uint64 { return l.refund }
 
 func (l *steplog) GetError() goja.Value {
 	if l.err != nil {

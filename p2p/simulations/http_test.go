@@ -487,6 +487,7 @@ func (t *expectEvents) expect(events ...*Event) {
 			if event.Type != expected.Type {
 				t.Fatalf("expected event %d to have type %q, got %q", i, expected.Type, event.Type)
 			}
+
 			switch expected.Type {
 			case EventTypeNode:
 				if event.Node == nil {
@@ -595,7 +596,7 @@ func TestHTTPSnapshot(t *testing.T) {
 	network, s := testHTTPServer(t)
 	defer s.Close()
 
-	var eventsDone = make(chan struct{})
+	var eventsDone = make(chan struct{}, 1)
 	count := 1
 	eventsDoneChan := make(chan *Event)
 	eventSub := network.Events().Subscribe(eventsDoneChan)

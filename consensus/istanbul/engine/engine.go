@@ -12,7 +12,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
-	"github.com/electroneum/electroneum-sc/consensus/misc"
+	"github.com/electroneum/electroneum-sc/consensus/misc/eip1559"
 	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/params"
@@ -108,7 +108,7 @@ func writeRoundNumber(round *big.Int) ApplyQBFTExtra {
 
 func (e *Engine) VerifyBlockProposal(chain consensus.ChainHeaderReader, block *types.Block, validators istanbul.ValidatorSet) (time.Duration, error) {
 	// check block body
-	txnHash := types.DeriveSha(block.Transactions(), new(trie.Trie))
+	txnHash := types.DeriveSha(block.Transactions(), trie.NewStackTrie(nil))
 	if txnHash != block.Header().TxHash {
 		return 0, istanbulcommon.ErrMismatchTxhashes
 	}
@@ -278,7 +278,7 @@ func (e *Engine) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 	if chain != nil {
 		cfg := chain.Config()
 		if cfg.IsLondon(header.Number) {
-			if err := misc.VerifyEip1559Header(cfg, parent, header); err != nil {
+			if err := eip1559.VerifyEIP1559Header(cfg, parent, header); err != nil {
 				return err
 			}
 		}
@@ -476,7 +476,7 @@ func WriteValidators(validators []common.Address) ApplyQBFTExtra {
 //
 // Note, the block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
-func (e *Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
+func (e *Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
 	// No block rewards in Istanbul, so the state remains as is and uncles are dropped
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = nilUncleHash
@@ -484,9 +484,9 @@ func (e *Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Heade
 
 // FinalizeAndAssemble implements consensus.Engine, ensuring no uncles are set,
 // nor block rewards given, and returns the final block.
-func (e *Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
+func (e *Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
 	// Assemble and return the final block for sealing
-	return types.NewBlock(header, txs, nil, receipts, new(trie.Trie)), nil
+	return types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil)), nil
 }
 
 // Seal generates a new block for the given input block with the local miner's

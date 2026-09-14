@@ -30,31 +30,30 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/trie"
 )
 
 type testTxRelay struct {
 	send, discard, mined chan int
 }
 
-func (p *testTxRelay) Send(txs types.Transactions) {
-	p.send <- len(txs)
+func (r *testTxRelay) Send(txs types.Transactions) {
+	r.send <- len(txs)
 }
 
-func (p *testTxRelay) NewHead(head common.Hash, mined []common.Hash, rollback []common.Hash) {
+func (r *testTxRelay) NewHead(head common.Hash, mined []common.Hash, rollback []common.Hash) {
 	m := len(mined)
 	if m != 0 {
-		p.mined <- m
+		r.mined <- m
 	}
 }
 
-func (p *testTxRelay) Discard(hashes []common.Hash) {
-	p.discard <- len(hashes)
+func (r *testTxRelay) Discard(hashes []common.Hash) {
+	r.discard <- len(hashes)
 }
 
-const (
-	poolTestTxs    = 1000
-	poolTestBlocks = 100
-)
+const poolTestTxs = 1000
+const poolTestBlocks = 100
 
 // test tx 0..n-1
 var testTx [poolTestTxs]*types.Transaction
@@ -85,27 +84,27 @@ func TestTxPool(t *testing.T) {
 	var (
 		sdb   = rawdb.NewMemoryDatabase()
 		ldb   = rawdb.NewMemoryDatabase()
-		gspec = core.Genesis{
+		gspec = &core.Genesis{
+			Config:  params.TestChainConfig,
 			Alloc:   core.GenesisAlloc{testBankAddress: {Balance: testBankFunds}},
 			BaseFee: big.NewInt(params.InitialBaseFee),
 		}
-		genesis = gspec.MustCommit(sdb)
 	)
-	gspec.MustCommit(ldb)
 	// Assemble the test environment
-	blockchain, _ := core.NewBlockChain(sdb, nil, params.TestChainConfig, ethash.NewFullFaker(), vm.Config{}, nil, nil)
-	gchain, _ := core.GenerateChain(params.TestChainConfig, genesis, ethash.NewFaker(), sdb, poolTestBlocks, txPoolTestChainGen)
+	blockchain, _ := core.NewBlockChain(sdb, nil, gspec, nil, ethash.NewFullFaker(), vm.Config{}, nil, nil)
+	_, gchain, _ := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), poolTestBlocks, txPoolTestChainGen)
 	if _, err := blockchain.InsertChain(gchain); err != nil {
 		panic(err)
 	}
 
-	odr := &testOdr{sdb: sdb, ldb: ldb, indexerConfig: TestClientIndexerConfig}
+	gspec.MustCommit(ldb, trie.NewDatabase(ldb, trie.HashDefaults))
+	odr := &testOdr{sdb: sdb, ldb: ldb, serverState: blockchain.StateCache(), indexerConfig: TestClientIndexerConfig}
 	relay := &testTxRelay{
 		send:    make(chan int, 1),
 		discard: make(chan int, 1),
 		mined:   make(chan int, 1),
 	}
-	lightchain, _ := NewLightChain(odr, params.TestChainConfig, ethash.NewFullFaker(), nil)
+	lightchain, _ := NewLightChain(odr, params.TestChainConfig, ethash.NewFullFaker())
 	txPermanent = 50
 	pool := NewTxPool(params.TestChainConfig, lightchain, relay)
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -124,7 +123,7 @@ func TestTxPool(t *testing.T) {
 			}
 		}
 
-		if _, err := lightchain.InsertHeaderChain([]*types.Header{block.Header()}, 1); err != nil {
+		if _, err := lightchain.InsertHeaderChain([]*types.Header{block.Header()}); err != nil {
 			panic(err)
 		}
 

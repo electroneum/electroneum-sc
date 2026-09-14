@@ -35,7 +35,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -62,7 +62,7 @@ func TestKDF(t *testing.T) {
 	}
 }
 
-var ErrBadSharedKeys = fmt.Errorf("ecies: shared keys don't match")
+var ErrBadSharedKeys = errors.New("ecies: shared keys don't match")
 
 // cmpParams compares a set of ECIES parameters. We assume, as per the
 // docs, that AES is the only supported symmetric encryption algorithm.
@@ -297,11 +297,10 @@ func TestDecryptShortBody(t *testing.T) {
 	// full AES block.
 	body := []byte{0xBE}
 
-	curve, ok := prv.PublicKey.Curve.(crypto.EllipticCurve)
-	if !ok {
-		t.Fatal("curve is not an EllipticCurve")
-	}
-	Rb := curve.Marshal(eph.PublicKey.X, eph.PublicKey.Y)
+	// The port follows go-ethereum 1.13.2 and marshals through the stdlib
+	// helper rather than electroneum's crypto.EllipticCurve interface, which
+	// this tree does not carry. Same bytes either way.
+	Rb := elliptic.Marshal(prv.PublicKey.Curve, eph.PublicKey.X, eph.PublicKey.Y)
 
 	// Assemble R || body || MAC with a MAC that verifies, so Decrypt does not
 	// bail at the MAC check and instead reaches symDecrypt.

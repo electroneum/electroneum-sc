@@ -25,6 +25,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common/math"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/params"
 )
 
@@ -42,7 +43,7 @@ func TestLoopInterrupt(t *testing.T) {
 	}
 
 	for i, tt := range loopInterruptTests {
-		statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
 		statedb.CreateAccount(address)
 		statedb.SetCode(address, common.Hex2Bytes(tt))
 		statedb.Finalise(true)

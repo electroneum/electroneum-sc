@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/mclock"
 	"github.com/electroneum/electroneum-sc/consensus"
@@ -57,6 +57,8 @@ const (
 	txChanSize = 4096
 	// chainHeadChanSize is the size of channel listening to ChainHeadEvent.
 	chainHeadChanSize = 10
+
+	messageSizeLimit = 15 * 1024 * 1024
 )
 
 // backend encompasses the bare-minimum functionality needed for ethstats reporting
@@ -67,7 +69,7 @@ type backend interface {
 	HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error)
 	GetTd(ctx context.Context, hash common.Hash) *big.Int
 	Stats() (pending int, queued int)
-	SyncProgress() electroneum.SyncProgress
+	SyncProgress() ethereum.SyncProgress
 }
 
 // fullNodeBackend encompasses the functionality necessary for a full node
@@ -121,6 +123,7 @@ type connWrapper struct {
 }
 
 func newConnectionWrapper(conn *websocket.Conn) *connWrapper {
+	conn.SetReadLimit(messageSizeLimit)
 	return &connWrapper{conn: conn}
 }
 
@@ -474,13 +477,10 @@ func (s *Service) login(conn *connWrapper) error {
 		protocols = append(protocols, fmt.Sprintf("%s/%d", proto.Name, proto.Version))
 	}
 	var network string
-	// Quorum
-	//must pass engine protocol name for quorum
-	p := s.engine.Protocol()
-	if info := infos.Protocols[p.Name]; info != nil {
+	if info := infos.Protocols["eth"]; info != nil {
 		network = fmt.Sprintf("%d", info.(*ethproto.NodeInfo).Network)
 	} else {
-		network = fmt.Sprintf("%d", infos.Protocols["etn-les"].(*les.NodeInfo).Network)
+		network = fmt.Sprintf("%d", infos.Protocols["les"].(*les.NodeInfo).Network)
 	}
 	auth := &authMsg{
 		ID: s.node,

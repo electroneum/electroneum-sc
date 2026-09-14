@@ -2,9 +2,11 @@
 package types
 
 import (
+	"bytes"
 	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
 
 type PriorityTx struct {
@@ -109,4 +111,31 @@ func (tx *PriorityTx) setSignatureValues(chainID, v, r, s *big.Int) {
 
 func (tx *PriorityTx) setPrioritySignatureValues(chainID, v, r, s *big.Int) {
 	tx.ChainID, tx.PriorityV, tx.PriorityR, tx.PriorityS = chainID, v, r, s
+}
+
+// effectiveGasPrice, encode and decode are required by TxData as of geth
+// v1.13; they did not exist on the interface at the v1.10.18 base this type was
+// written against.
+//
+// The dynamic-fee formula is correct for a priority transaction without any
+// special-casing. A waiver transaction carries all-zero fee fields, so the
+// computation is min(0-baseFee, 0) + baseFee, which is exactly 0 -- the same
+// answer Transaction.EffectiveGasTip returns via HasZeroFee.
+func (tx *PriorityTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	if baseFee == nil {
+		return dst.Set(tx.GasFeeCap)
+	}
+	tip := dst.Sub(tx.GasFeeCap, baseFee)
+	if tip.Cmp(tx.GasTipCap) > 0 {
+		tip.Set(tx.GasTipCap)
+	}
+	return tip.Add(tip, baseFee)
+}
+
+func (tx *PriorityTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *PriorityTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
 }

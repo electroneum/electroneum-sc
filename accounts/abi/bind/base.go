@@ -24,12 +24,19 @@ import (
 	"strings"
 	"sync"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/event"
+)
+
+const basefeeWiggleMultiplier = 2
+
+var (
+	errNoEventSignature       = errors.New("no event signature")
+	errEventSignatureMismatch = errors.New("event signature mismatch")
 )
 
 // SignerFn is a signer function callback when a contract requires a method to
@@ -160,7 +167,7 @@ func (c *BoundContract) Call(opts *CallOpts, results *[]interface{}, method stri
 		return err
 	}
 	var (
-		msg    = electroneum.CallMsg{From: opts.From, To: &c.address, Data: input}
+		msg    = ethereum.CallMsg{From: opts.From, To: &c.address, Data: input}
 		ctx    = ensureContext(opts.Context)
 		code   []byte
 		output []byte
@@ -254,7 +261,7 @@ func (c *BoundContract) createDynamicTx(opts *TransactOpts, contract *common.Add
 	if gasFeeCap == nil {
 		gasFeeCap = new(big.Int).Add(
 			gasTipCap,
-			new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
+			new(big.Int).Mul(head.BaseFee, big.NewInt(basefeeWiggleMultiplier)),
 		)
 	}
 	if gasFeeCap.Cmp(gasTipCap) < 0 {
@@ -338,7 +345,7 @@ func (c *BoundContract) estimateGasLimit(opts *TransactOpts, contract *common.Ad
 			return 0, ErrNoCode
 		}
 	}
-	msg := electroneum.CallMsg{
+	msg := ethereum.CallMsg{
 		From:      opts.From,
 		To:        contract,
 		GasPrice:  gasPrice,
@@ -371,6 +378,8 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	)
 	if opts.GasPrice != nil {
 		rawTx, err = c.createLegacyTx(opts, contract, input)
+	} else if opts.GasFeeCap != nil && opts.GasTipCap != nil {
+		rawTx, err = c.createDynamicTx(opts, contract, input, nil)
 	} else {
 		// Only query for basefee if gasPrice not specified
 		if head, errHead := c.transactor.HeaderByNumber(ensureContext(opts.Context), nil); errHead != nil {
@@ -419,7 +428,7 @@ func (c *BoundContract) FilterLogs(opts *FilterOpts, name string, query ...[]int
 	// Start the background filtering
 	logs := make(chan types.Log, 128)
 
-	config := electroneum.FilterQuery{
+	config := ethereum.FilterQuery{
 		Addresses: []common.Address{c.address},
 		Topics:    topics,
 		FromBlock: new(big.Int).SetUint64(opts.Start),
@@ -468,7 +477,7 @@ func (c *BoundContract) WatchLogs(opts *WatchOpts, name string, query ...[]inter
 	// Start the background filtering
 	logs := make(chan types.Log, 128)
 
-	config := electroneum.FilterQuery{
+	config := ethereum.FilterQuery{
 		Addresses: []common.Address{c.address},
 		Topics:    topics,
 	}
@@ -484,8 +493,12 @@ func (c *BoundContract) WatchLogs(opts *WatchOpts, name string, query ...[]inter
 
 // UnpackLog unpacks a retrieved log into the provided output structure.
 func (c *BoundContract) UnpackLog(out interface{}, event string, log types.Log) error {
+	// Anonymous events are not supported.
+	if len(log.Topics) == 0 {
+		return errNoEventSignature
+	}
 	if log.Topics[0] != c.abi.Events[event].ID {
-		return fmt.Errorf("event signature mismatch")
+		return errEventSignatureMismatch
 	}
 	if len(log.Data) > 0 {
 		if err := c.abi.UnpackIntoInterface(out, event, log.Data); err != nil {
@@ -503,8 +516,12 @@ func (c *BoundContract) UnpackLog(out interface{}, event string, log types.Log) 
 
 // UnpackLogIntoMap unpacks a retrieved log into the provided map.
 func (c *BoundContract) UnpackLogIntoMap(out map[string]interface{}, event string, log types.Log) error {
+	// Anonymous events are not supported.
+	if len(log.Topics) == 0 {
+		return errNoEventSignature
+	}
 	if log.Topics[0] != c.abi.Events[event].ID {
-		return fmt.Errorf("event signature mismatch")
+		return errEventSignatureMismatch
 	}
 	if len(log.Data) > 0 {
 		if err := c.abi.UnpackIntoMap(out, event, log.Data); err != nil {

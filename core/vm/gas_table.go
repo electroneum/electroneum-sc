@@ -60,6 +60,7 @@ func memoryGasCost(mem *Memory, newMemSize uint64) (uint64, error) {
 // as argument:
 // CALLDATACOPY (stack position 2)
 // CODECOPY (stack position 2)
+// MCOPY (stack position 2)
 // EXTCODECOPY (stack position 3)
 // RETURNDATACOPY (stack position 2)
 func memoryCopierGas(stackpos int) gasFunc {
@@ -89,6 +90,7 @@ func memoryCopierGas(stackpos int) gasFunc {
 var (
 	gasCallDataCopy   = memoryCopierGas(2)
 	gasCodeCopy       = memoryCopierGas(2)
+	gasMcopy          = memoryCopierGas(2)
 	gasExtCodeCopy    = memoryCopierGas(3)
 	gasReturnDataCopy = memoryCopierGas(2)
 )
@@ -117,6 +119,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 			return params.SstoreResetGas, nil
 		}
 	}
+
 	// The new gas metering is based on net gas costs (EIP-1283):
 	//
 	// (1.) If current value equals new value (this is a no-op), 200 gas is deducted.
@@ -162,7 +165,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 	return params.NetSstoreDirtyGas, nil
 }
 
-// Here come the EIP220 rules:
+// Here come the EIP2200 rules:
 //
 //	(0.) If *gasleft* is less than or equal to 2300, fail the current call.
 //	(1.) If current value equals new value (this is a no-op), SLOAD_GAS is deducted.
@@ -296,6 +299,39 @@ func gasCreate2(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memoryS
 		return 0, ErrGasUintOverflow
 	}
 	if gas, overflow = math.SafeAdd(gas, wordGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
+}
+
+func gasCreateEip3860(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	size, overflow := stack.Back(2).Uint64WithOverflow()
+	if overflow || size > params.MaxInitCodeSize {
+		return 0, ErrGasUintOverflow
+	}
+	// Since size <= params.MaxInitCodeSize, these multiplication cannot overflow
+	moreGas := params.InitCodeWordGas * ((size + 31) / 32)
+	if gas, overflow = math.SafeAdd(gas, moreGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
+}
+func gasCreate2Eip3860(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	size, overflow := stack.Back(2).Uint64WithOverflow()
+	if overflow || size > params.MaxInitCodeSize {
+		return 0, ErrGasUintOverflow
+	}
+	// Since size <= params.MaxInitCodeSize, these multiplication cannot overflow
+	moreGas := (params.InitCodeWordGas + params.Keccak256WordGas) * ((size + 31) / 32)
+	if gas, overflow = math.SafeAdd(gas, moreGas); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil
@@ -436,7 +472,7 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		}
 	}
 
-	if !evm.StateDB.HasSuicided(contract.Address()) {
+	if !evm.StateDB.HasSelfDestructed(contract.Address()) {
 		evm.StateDB.AddRefund(params.SelfdestructRefundGas)
 	}
 	return gas, nil

@@ -22,6 +22,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
@@ -84,7 +85,7 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 			break
 		}
 		if rlpData, err := rlp.EncodeToBytes(origin); err != nil {
-			log.Crit("Unable to decode our own headers", "err", err)
+			log.Crit("Unable to encode our own headers", "err", err)
 		} else {
 			headers = append(headers, rlp.RawValue(rlpData))
 			bytes += common.StorageSize(len(rlpData))
@@ -141,13 +142,6 @@ func serviceNonContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBloc
 
 func serviceContiguousBlockHeaderQuery(chain *core.BlockChain, query *GetBlockHeadersPacket) []rlp.RawValue {
 	count := query.Amount
-	if count == 0 {
-		// A zero-amount query returns no headers. Guard against the
-		// underflow of count-1 in hash mode, which would otherwise wrap to
-		// a huge uint64 and be clamped into serving the whole canonical
-		// prefix instead of an empty response.
-		return nil
-	}
 	if count > maxHeadersServe {
 		count = maxHeadersServe
 	}
@@ -253,6 +247,10 @@ func handleGetNodeData66(backend Backend, msg Decoder, peer *Peer) error {
 // ServiceGetNodeDataQuery assembles the response to a node data query. It is
 // exposed to allow external packages to test protocol behavior.
 func ServiceGetNodeDataQuery(chain *core.BlockChain, query GetNodeDataPacket) [][]byte {
+	// Request nodes by hash is not supported in path-based scheme.
+	if chain.TrieDB().Scheme() == rawdb.PathScheme {
+		return nil
+	}
 	// Gather state data until the fetch or network limits is reached
 	var (
 		bytes int
@@ -264,7 +262,7 @@ func ServiceGetNodeDataQuery(chain *core.BlockChain, query GetNodeDataPacket) []
 			break
 		}
 		// Retrieve the requested state entry
-		entry, err := chain.TrieNode(hash)
+		entry, err := chain.TrieDB().Node(hash)
 		if len(entry) == 0 || err != nil {
 			// Read the contract code with prefix only to save unnecessary lookups.
 			entry, err = chain.ContractCodeWithPrefix(hash)
@@ -386,15 +384,19 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 	}
 	metadata := func() interface{} {
 		var (
-			txsHashes   = make([]common.Hash, len(res.BlockBodiesPacket))
-			uncleHashes = make([]common.Hash, len(res.BlockBodiesPacket))
+			txsHashes        = make([]common.Hash, len(res.BlockBodiesPacket))
+			uncleHashes      = make([]common.Hash, len(res.BlockBodiesPacket))
+			withdrawalHashes = make([]common.Hash, len(res.BlockBodiesPacket))
 		)
 		hasher := trie.NewStackTrie(nil)
 		for i, body := range res.BlockBodiesPacket {
 			txsHashes[i] = types.DeriveSha(types.Transactions(body.Transactions), hasher)
 			uncleHashes[i] = types.CalcUncleHash(body.Uncles)
+			if body.Withdrawals != nil {
+				withdrawalHashes[i] = types.DeriveSha(types.Withdrawals(body.Withdrawals), hasher)
+			}
 		}
-		return [][]common.Hash{txsHashes, uncleHashes}
+		return [][]common.Hash{txsHashes, uncleHashes, withdrawalHashes}
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
@@ -437,18 +439,38 @@ func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 	}, metadata)
 }
 
-func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
+func handleNewPooledTransactionHashes66(backend Backend, msg Decoder, peer *Peer) error {
 	// New transaction announcement arrived, make sure we have
 	// a valid and fresh chain to handle them
 	if !backend.AcceptTxs() {
 		return nil
 	}
-	ann := new(NewPooledTransactionHashesPacket)
+	ann := new(NewPooledTransactionHashesPacket66)
 	if err := msg.Decode(ann); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	// Schedule all the unknown hashes for retrieval
 	for _, hash := range *ann {
+		peer.markTransaction(hash)
+	}
+	return backend.Handle(peer, ann)
+}
+
+func handleNewPooledTransactionHashes68(backend Backend, msg Decoder, peer *Peer) error {
+	// New transaction announcement arrived, make sure we have
+	// a valid and fresh chain to handle them
+	if !backend.AcceptTxs() {
+		return nil
+	}
+	ann := new(NewPooledTransactionHashesPacket68)
+	if err := msg.Decode(ann); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	if len(ann.Hashes) != len(ann.Types) || len(ann.Hashes) != len(ann.Sizes) {
+		return fmt.Errorf("%w: message %v: invalid len of fields: %v %v %v", errDecode, msg, len(ann.Hashes), len(ann.Types), len(ann.Sizes))
+	}
+	// Schedule all the unknown hashes for retrieval
+	for _, hash := range ann.Hashes {
 		peer.markTransaction(hash)
 	}
 	return backend.Handle(peer, ann)

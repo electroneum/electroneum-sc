@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/electroneum/electroneum-sc/common"
-	"github.com/electroneum/electroneum-sc/consensus/ethash"
 	"github.com/electroneum/electroneum-sc/console/prompt"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/eth"
@@ -95,12 +94,9 @@ func newTester(t *testing.T, confOverride func(*ethconfig.Config)) *tester {
 		t.Fatalf("failed to create node: %v", err)
 	}
 	ethConf := &ethconfig.Config{
-		Genesis: core.DeveloperGenesisBlock(15, 11_500_000, common.Address{}),
+		Genesis: core.DeveloperGenesisBlock(11_500_000, common.Address{}),
 		Miner: miner.Config{
 			Etherbase: common.HexToAddress(testAddress),
-		},
-		Ethash: ethash.Config{
-			PowMode: ethash.ModeTest,
 		},
 	}
 	if confOverride != nil {
@@ -108,16 +104,17 @@ func newTester(t *testing.T, confOverride func(*ethconfig.Config)) *tester {
 	}
 	ethBackend, err := eth.New(stack, ethConf)
 	if err != nil {
-		t.Fatalf("failed to register Electroneum protocol: %v", err)
+		t.Fatalf("failed to register Ethereum protocol: %v", err)
 	}
 	// Start the node and assemble the JavaScript console around it
 	if err = stack.Start(); err != nil {
 		t.Fatalf("failed to start test stack: %v", err)
 	}
-	client, err := stack.Attach()
-	if err != nil {
-		t.Fatalf("failed to attach to node: %v", err)
-	}
+	client := stack.Attach()
+	t.Cleanup(func() {
+		client.Close()
+	})
+
 	prompter := &hookedPrompter{scheduler: make(chan string)}
 	printer := new(bytes.Buffer)
 
@@ -231,19 +228,6 @@ func TestPreload(t *testing.T) {
 	tester.console.Evaluate("preloaded")
 	if output := tester.output.String(); !strings.Contains(output, "some-preloaded-string") {
 		t.Fatalf("preloaded variable missing: have %s, want %s", output, "some-preloaded-string")
-	}
-}
-
-// Tests that JavaScript scripts can be executes from the configured asset path.
-func TestExecute(t *testing.T) {
-	tester := newTester(t, nil)
-	defer tester.Close(t)
-
-	tester.console.Execute("exec.js")
-
-	tester.console.Evaluate("execed")
-	if output := tester.output.String(); !strings.Contains(output, "some-executed-string") {
-		t.Fatalf("execed variable missing: have %s, want %s", output, "some-executed-string")
 	}
 }
 

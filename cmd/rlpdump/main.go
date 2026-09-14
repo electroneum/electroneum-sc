@@ -83,7 +83,7 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		fmt.Printf("0x%x\n", data)
+		fmt.Printf("%#x\n", data)
 		return
 	} else {
 		err := rlpToText(r, out)
@@ -130,7 +130,7 @@ func dump(s *rlp.Stream, depth int, out io.Writer) error {
 		s.List()
 		defer s.ListEnd()
 		if size == 0 {
-			fmt.Fprint(out, ws(depth)+"[]")
+			fmt.Fprintf(out, ws(depth)+"[]")
 		} else {
 			fmt.Fprintln(out, ws(depth)+"[")
 			for i := 0; ; i++ {

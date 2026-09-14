@@ -23,15 +23,15 @@ import (
 
 	"github.com/electroneum/electroneum-sc/accounts/keystore"
 	"github.com/electroneum/electroneum-sc/cmd/utils"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/urfave/cli/v2"
 )
 
-var newPassphraseFlag = cli.StringFlag{
+var newPassphraseFlag = &cli.StringFlag{
 	Name:  "newpasswordfile",
 	Usage: "the file that contains the new password for the keyfile",
 }
 
-var commandChangePassphrase = cli.Command{
+var commandChangePassphrase = &cli.Command{
 	Name:      "changepassword",
 	Usage:     "change the password on a keyfile",
 	ArgsUsage: "<keyfile>",

@@ -20,6 +20,7 @@
 package keystore
 
 import (
+	"os"
 	"time"
 
 	"github.com/electroneum/electroneum-sc/log"
@@ -28,8 +29,9 @@ import (
 
 type watcher struct {
 	ac       *accountCache
-	starting bool
-	running  bool
+	running  bool // set to true when runloop begins
+	runEnded bool // set to true when runloop ends
+	starting bool // set to true prior to runloop starting
 	quit     chan struct{}
 }
 
@@ -39,6 +41,9 @@ func newWatcher(ac *accountCache) *watcher {
 		quit: make(chan struct{}),
 	}
 }
+
+// enabled returns false on systems not supported.
+func (*watcher) enabled() bool { return true }
 
 // starts the watcher loop in the background.
 // Start a watcher in the background if that's not already in progress.
@@ -60,6 +65,7 @@ func (w *watcher) loop() {
 		w.ac.mu.Lock()
 		w.running = false
 		w.starting = false
+		w.runEnded = true
 		w.ac.mu.Unlock()
 	}()
 	logger := log.New("path", w.ac.keydir)
@@ -72,7 +78,9 @@ func (w *watcher) loop() {
 	}
 	defer watcher.Close()
 	if err := watcher.Add(w.ac.keydir); err != nil {
-		logger.Warn("Failed to watch keystore folder", "err", err)
+		if !os.IsNotExist(err) {
+			logger.Warn("Failed to watch keystore folder", "err", err)
+		}
 		return
 	}
 

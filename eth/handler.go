@@ -18,7 +18,6 @@ package eth
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"sync"
@@ -28,13 +27,11 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/beacon"
-	"github.com/electroneum/electroneum-sc/consensus/clique"
-	"github.com/electroneum/electroneum-sc/consensus/ethash"
-	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/forkid"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/txpool"
 	"github.com/electroneum/electroneum-sc/core/types"
-	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/eth/downloader"
 	"github.com/electroneum/electroneum-sc/eth/fetcher"
 	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
@@ -42,21 +39,24 @@ import (
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/event"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/metrics"
 	"github.com/electroneum/electroneum-sc/p2p"
-	"github.com/electroneum/electroneum-sc/p2p/enode"
-	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/trie/triedb/pathdb"
 )
 
 const (
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of tx pool.
-	txChanSize         = 4096
-	protocolMaxMsgSize = 10 * 1024 * 1024 // Maximum cap on the size of a protocol message
+	txChanSize = 4096
+
+	// txMaxBroadcastSize is the max size of a transaction that will be broadcasted.
+	// All transactions with a higher size will be announced and need to be fetched
+	// by the peer.
+	txMaxBroadcastSize = 4096
 )
 
 var (
 	syncChallengeTimeout = 15 * time.Second // Time allowance for a node to reply to the sync progress challenge
-	errMsgTooLarge       = errors.New("message too long")
 )
 
 // txPool defines the methods needed from a transaction pool implementation to
@@ -70,16 +70,12 @@ type txPool interface {
 	// tx hash.
 	Get(hash common.Hash) *types.Transaction
 
-	// AddRemotes should add the given transactions to the pool.
-	AddRemotes([]*types.Transaction) []error
+	// Add should add the given transactions to the pool.
+	Add(txs []*types.Transaction, local bool, sync bool) []error
 
-	// Pending should return pending non-priority transactions.
+	// Pending should return pending transactions.
 	// The slice should be modifiable by the caller.
-	Pending(enforceTips bool) map[common.Address]types.Transactions
-
-	// PendingPriority should return pending priority transactions.
-	// The slice should be modifiable by the caller.
-	PendingPriority(enforceTips bool) map[common.Address]types.Transactions
+	Pending(enforceTips bool) map[common.Address][]*txpool.LazyTransaction
 
 	// SubscribeNewTxsEvent should return an event subscription of
 	// NewTxsEvent and send events to the given channel.
@@ -89,34 +85,28 @@ type txPool interface {
 // handlerConfig is the collection of initialization parameters to create a full
 // node network handler.
 type handlerConfig struct {
-	Database   ethdb.Database            // Database for direct sync insertions
-	Chain      *core.BlockChain          // Blockchain to serve data from
-	TxPool     txPool                    // Transaction pool to propagate from
-	Merger     *consensus.Merger         // The manager for eth1/2 transition
-	Network    uint64                    // Network identifier to adfvertise
-	Sync       downloader.SyncMode       // Whether to snap or full sync
-	BloomCache uint64                    // Megabytes to alloc for snap sync bloom
-	EventMux   *event.TypeMux            // Legacy event mux, deprecate for `feed`
-	Checkpoint *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
-
+	Database       ethdb.Database         // Database for direct sync insertions
+	Chain          *core.BlockChain       // Blockchain to serve data from
+	TxPool         txPool                 // Transaction pool to propagate from
+	Merger         *consensus.Merger      // The manager for eth1/2 transition
+	Network        uint64                 // Network identifier to adfvertise
+	Sync           downloader.SyncMode    // Whether to snap or full sync
+	BloomCache     uint64                 // Megabytes to alloc for snap sync bloom
+	EventMux       *event.TypeMux         // Legacy event mux, deprecate for `feed`
 	RequiredBlocks map[uint64]common.Hash // Hard coded map of required block hashes for sync challenges
-
-	Engine consensus.Engine
 }
 
 type handler struct {
 	networkID  uint64
 	forkFilter forkid.Filter // Fork ID filter, constant across the lifetime of the node
 
-	snapSync  uint32 // Flag whether snap sync is enabled (gets disabled if we already have blocks)
-	acceptTxs uint32 // Flag whether we're considered synchronised (enables transaction processing)
-
-	checkpointNumber uint64      // Block number for the sync progress validator to cross reference
-	checkpointHash   common.Hash // Block hash for the sync progress validator to cross reference
+	snapSync atomic.Bool // Flag whether snap sync is enabled (gets disabled if we already have blocks)
+	synced   atomic.Bool // Flag whether we're considered synchronised (enables transaction processing)
 
 	database ethdb.Database
 	txpool   txPool
 	chain    *core.BlockChain
+	engine   consensus.Engine // Electroneum: the IBFT subprotocol needs to reach the engine
 	maxPeers int
 
 	downloader   *downloader.Downloader
@@ -137,9 +127,9 @@ type handler struct {
 
 	chainSync *chainSyncer
 	wg        sync.WaitGroup
-	peerWG    sync.WaitGroup
 
-	engine consensus.Engine
+	handlerStartCh chan struct{}
+	handlerDoneCh  chan struct{}
 }
 
 // newHandler returns a handler for all Ethereum chain management protocol.
@@ -159,13 +149,9 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		merger:         config.Merger,
 		requiredBlocks: config.RequiredBlocks,
 		quitSync:       make(chan struct{}),
-		engine:         config.Engine,
+		handlerDoneCh:  make(chan struct{}),
+		handlerStartCh: make(chan struct{}),
 	}
-
-	if handler, ok := h.engine.(consensus.Handler); ok {
-		handler.SetBroadcaster(h)
-	}
-
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap
 		// block is ahead, so snap sync was enabled for this node at a certain point.
@@ -175,50 +161,41 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		// * the last snap sync is not finished while user specifies a full sync this
 		//   time. But we don't have any recent state for full sync.
 		// In these cases however it's safe to reenable snap sync.
-		fullBlock, fastBlock := h.chain.CurrentBlock(), h.chain.CurrentFastBlock()
-		if fullBlock.NumberU64() == 0 && fastBlock.NumberU64() > 0 {
-			h.snapSync = uint32(1)
-			log.Warn("Switch sync mode from full sync to snap sync")
+		fullBlock, snapBlock := h.chain.CurrentBlock(), h.chain.CurrentSnapBlock()
+		if fullBlock.Number.Uint64() == 0 && snapBlock.Number.Uint64() > 0 {
+			h.snapSync.Store(true)
+			log.Warn("Switch sync mode from full sync to snap sync", "reason", "snap sync incomplete")
+		} else if !h.chain.HasState(fullBlock.Root) {
+			h.snapSync.Store(true)
+			log.Warn("Switch sync mode from full sync to snap sync", "reason", "head state missing")
 		}
 	} else {
-		if h.chain.CurrentBlock().NumberU64() > 0 {
+		head := h.chain.CurrentBlock()
+		if head.Number.Uint64() > 0 && h.chain.HasState(head.Root) {
 			// Print warning log if database is not empty to run snap sync.
-			log.Warn("Switch sync mode from snap sync to full sync")
+			log.Warn("Switch sync mode from snap sync to full sync", "reason", "snap sync complete")
 		} else {
 			// If snap sync was requested and our database is empty, grant it
-			h.snapSync = uint32(1)
+			h.snapSync.Store(true)
+			log.Info("Enabled snap sync", "head", head.Number, "hash", head.Hash())
 		}
 	}
-	// If we have trusted checkpoints, enforce them on the chain
-	if config.Checkpoint != nil {
-		h.checkpointNumber = (config.Checkpoint.SectionIndex+1)*params.CHTFrequency - 1
-		h.checkpointHash = config.Checkpoint.SectionHead
-	}
-	// If sync succeeds, pass a callback to potentially disable snap sync mode
-	// and enable transaction propagation.
-	success := func() {
-		// If we were running snap sync and it finished, disable doing another
-		// round on next sync cycle
-		if atomic.LoadUint32(&h.snapSync) == 1 {
-			log.Info("Snap sync complete, auto disabling")
-			atomic.StoreUint32(&h.snapSync, 0)
-		}
-		// If we've successfully finished a sync cycle and passed any required
-		// checkpoint, enable accepting transactions from the network
-		head := h.chain.CurrentBlock()
-		if head.NumberU64() >= h.checkpointNumber {
-			// Checkpoint passed, sanity check the timestamp to have a fallback mechanism
-			// for non-checkpointed (number = 0) private networks.
-			if head.Time() >= uint64(time.Now().AddDate(0, -1, 0).Unix()) {
-				atomic.StoreUint32(&h.acceptTxs, 1)
+	// Construct the downloader (long sync)
+	h.downloader = downloader.New(config.Database, h.eventMux, h.chain, nil, h.removePeer, h.enableSyncedFeatures)
+	if ttd := h.chain.Config().TerminalTotalDifficulty; ttd != nil {
+		if h.chain.Config().TerminalTotalDifficultyPassed {
+			log.Info("Chain post-merge, sync via beacon client")
+		} else {
+			head := h.chain.CurrentBlock()
+			if td := h.chain.GetTd(head.Hash(), head.Number.Uint64()); td.Cmp(ttd) >= 0 {
+				log.Info("Chain post-TTD, sync via beacon client")
+			} else {
+				log.Warn("Chain pre-merge, sync via PoW (ensure beacon client is ready)")
 			}
 		}
+	} else if h.chain.Config().TerminalTotalDifficultyPassed {
+		log.Error("Chain configured post-merge, but without TTD. Are you debugging sync?")
 	}
-	// Construct the downloader (long sync) and its backing state bloom if snap
-	// sync is requested. The downloader is responsible for deallocating the state
-	// bloom when it's done.
-	h.downloader = downloader.New(h.checkpointNumber, config.Database, h.eventMux, h.chain, nil, h.removePeer, success)
-
 	// Construct the fetcher (short sync)
 	validator := func(header *types.Header) error {
 		// All the block fetcher activities should be disabled
@@ -236,10 +213,10 @@ func newHandler(config *handlerConfig) (*handler, error) {
 				return errors.New("unexpected post-merge header")
 			}
 		}
-		return h.chain.Engine().VerifyHeader(h.chain, header, true)
+		return h.chain.Engine().VerifyHeader(h.chain, header)
 	}
 	heighter := func() uint64 {
-		return h.chain.CurrentBlock().NumberU64()
+		return h.chain.CurrentBlock().Number.Uint64()
 	}
 	inserter := func(blocks types.Blocks) (int, error) {
 		// All the block fetcher activities should be disabled
@@ -256,23 +233,13 @@ func newHandler(config *handlerConfig) (*handler, error) {
 			log.Warn("Unexpected insertion activity", ctx...)
 			return 0, errors.New("unexpected behavior after transition")
 		}
-		// If sync hasn't reached the checkpoint yet, deny importing weird blocks.
-		//
-		// Ideally we would also compare the head block's timestamp and similarly reject
-		// the propagated block if the head is too old. Unfortunately there is a corner
-		// case when starting new networks, where the genesis might be ancient (0 unix)
-		// which would prevent full nodes from accepting it.
-		if h.chain.CurrentBlock().NumberU64() < h.checkpointNumber {
-			log.Warn("Unsynced yet, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
-			return 0, nil
-		}
 		// If snap sync is running, deny importing weird blocks. This is a problematic
 		// clause when starting up a new network, because snap-syncing miners might not
 		// accept each others' blocks until a restart. Unfortunately we haven't figured
 		// out a way yet where nodes can decide unilaterally whether the network is new
 		// or not. This should be fixed if we figure out a solution.
-		if atomic.LoadUint32(&h.snapSync) == 1 {
-			log.Warn("Fast syncing, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
+		if !h.synced.Load() {
+			log.Warn("Syncing, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
 		}
 		if h.merger.TDDReached() {
@@ -298,11 +265,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 			}
 			return 0, nil
 		}
-		n, err := h.chain.InsertChain(blocks)
-		if err == nil {
-			atomic.StoreUint32(&h.acceptTxs, 1) // Mark initial sync done on any fetcher import
-		}
-		return n, err
+		return h.chain.InsertChain(blocks)
 	}
 	h.blockFetcher = fetcher.NewBlockFetcher(false, nil, h.chain.GetBlockByHash, validator, h.BroadcastBlock, heighter, nil, inserter, h.removePeer)
 
@@ -313,14 +276,58 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		}
 		return p.RequestTxs(hashes)
 	}
-	h.txFetcher = fetcher.NewTxFetcher(h.txpool.Has, h.txpool.AddRemotes, fetchTx)
+	addTxs := func(txs []*types.Transaction) []error {
+		return h.txpool.Add(txs, false, false)
+	}
+	h.txFetcher = fetcher.NewTxFetcher(h.txpool.Has, addTxs, fetchTx)
 	h.chainSync = newChainSyncer(h)
 	return h, nil
 }
 
+// protoTracker tracks the number of active protocol handlers.
+func (h *handler) protoTracker() {
+	defer h.wg.Done()
+	var active int
+	for {
+		select {
+		case <-h.handlerStartCh:
+			active++
+		case <-h.handlerDoneCh:
+			active--
+		case <-h.quitSync:
+			// Wait for all active handlers to finish.
+			for ; active > 0; active-- {
+				<-h.handlerDoneCh
+			}
+			return
+		}
+	}
+}
+
+// incHandlers signals to increment the number of active handlers if not
+// quitting.
+func (h *handler) incHandlers() bool {
+	select {
+	case h.handlerStartCh <- struct{}{}:
+		return true
+	case <-h.quitSync:
+		return false
+	}
+}
+
+// decHandlers signals to decrement the number of active handlers.
+func (h *handler) decHandlers() {
+	h.handlerDoneCh <- struct{}{}
+}
+
 // runEthPeer registers an eth peer into the joint eth/snap peerset, adds it to
-// various subsistems and starts handling messages.
+// various subsystems and starts handling messages.
 func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
+	if !h.incHandlers() {
+		return p2p.DiscQuitting
+	}
+	defer h.decHandlers()
+
 	// If the peer has a `snap` extension, wait for it to connect so we can have
 	// a uniform initialization/teardown mechanism
 	snap, err := h.peers.waitSnapExtension(peer)
@@ -328,12 +335,6 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		peer.Log().Error("Snapshot extension barrier failed", "err", err)
 		return err
 	}
-	// TODO(karalabe): Not sure why this is needed
-	if !h.chainSync.handlePeerEvent(peer) {
-		return p2p.DiscQuitting
-	}
-	h.peerWG.Add(1)
-	defer h.peerWG.Done()
 
 	// Execute the Ethereum handshake
 	var (
@@ -343,16 +344,13 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		number  = head.Number.Uint64()
 		td      = h.chain.GetTd(hash, number)
 	)
-	forkID := forkid.NewID(h.chain.Config(), h.chain.Genesis().Hash(), h.chain.CurrentHeader().Number.Uint64())
+	forkID := forkid.NewID(h.chain.Config(), genesis, number, head.Time)
 	if err := peer.Handshake(h.networkID, td, hash, genesis.Hash(), forkID, h.forkFilter); err != nil {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
-
-		// When the Handshake() returns an error, the Run method corresponding to `eth` protocol returns with the error, causing the peer to drop, signal subprotocol as well to exit the `Run` method
-		peer.EthPeerDisconnected <- struct{}{}
 		return err
 	}
 	reject := false // reserved peer slots
-	if atomic.LoadUint32(&h.snapSync) == 1 {
+	if h.snapSync.Load() {
 		if snap == nil {
 			// If we are running snap-sync, we want to reserve roughly half the peer
 			// slots for peers supporting the snap protocol.
@@ -373,9 +371,6 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	// Register the peer locally
 	if err := h.peers.registerPeer(peer, snap); err != nil {
 		peer.Log().Error("Ethereum peer registration failed", "err", err)
-
-		// When the Register() returns an error, the Run method corresponding to `eth` protocol returns with the error, causing the peer to drop, signal subprotocol as well to exit the `Run` method
-		peer.EthPeerDisconnected <- struct{}{}
 		return err
 	}
 	defer h.unregisterPeer(peer.ID())
@@ -395,7 +390,7 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 			return err
 		}
 	}
-	h.chainSync.handlePeerEvent(peer)
+	h.chainSync.handlePeerEvent()
 
 	// Propagate existing transactions. new transactions appearing
 	// after this will be sent via broadcasts.
@@ -405,60 +400,18 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	dead := make(chan struct{})
 	defer close(dead)
 
-	// If we have a trusted CHT, reject all peers below that (avoid fast sync eclipse)
-	if h.checkpointHash != (common.Hash{}) {
-		// Request the peer's checkpoint header for chain height/weight validation
-		resCh := make(chan *eth.Response)
-		if _, err := peer.RequestHeadersByNumber(h.checkpointNumber, 1, 0, false, resCh); err != nil {
-			return err
-		}
-		// Start a timer to disconnect if the peer doesn't reply in time
-		go func() {
-			timeout := time.NewTimer(syncChallengeTimeout)
-			defer timeout.Stop()
-
-			select {
-			case res := <-resCh:
-				headers := ([]*types.Header)(*res.Res.(*eth.BlockHeadersPacket))
-				if len(headers) == 0 {
-					// If we're doing a snap sync, we must enforce the checkpoint
-					// block to avoid eclipse attacks. Unsynced nodes are welcome
-					// to connect after we're done joining the network.
-					if atomic.LoadUint32(&h.snapSync) == 1 {
-						peer.Log().Warn("Dropping unsynced node during sync", "addr", peer.RemoteAddr(), "type", peer.Name())
-						res.Done <- errors.New("unsynced node cannot serve sync")
-						return
-					}
-					res.Done <- nil
-					return
-				}
-				// Validate the header and either drop the peer or continue
-				if len(headers) > 1 {
-					res.Done <- errors.New("too many headers in checkpoint response")
-					return
-				}
-				if headers[0].Hash() != h.checkpointHash {
-					res.Done <- errors.New("checkpoint hash mismatch")
-					return
-				}
-				res.Done <- nil
-
-			case <-timeout.C:
-				peer.Log().Warn("Checkpoint challenge timed out, dropping", "addr", peer.RemoteAddr(), "type", peer.Name())
-				h.removePeer(peer.ID())
-
-			case <-dead:
-				// Peer handler terminated, abort all goroutines
-			}
-		}()
-	}
 	// If we have any explicit peer required block hashes, request them
 	for number, hash := range h.requiredBlocks {
 		resCh := make(chan *eth.Response)
-		if _, err := peer.RequestHeadersByNumber(number, 1, 0, false, resCh); err != nil {
+
+		req, err := peer.RequestHeadersByNumber(number, 1, 0, false, resCh)
+		if err != nil {
 			return err
 		}
-		go func(number uint64, hash common.Hash) {
+		go func(number uint64, hash common.Hash, req *eth.Request) {
+			// Ensure the request gets cancelled in case of error/drop
+			defer req.Close()
+
 			timeout := time.NewTimer(syncChallengeTimeout)
 			defer timeout.Stop()
 
@@ -487,11 +440,8 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 				peer.Log().Warn("Required block challenge timed out, dropping", "addr", peer.RemoteAddr(), "type", peer.Name())
 				h.removePeer(peer.ID())
 			}
-		}(number, hash)
+		}(number, hash, req)
 	}
-
-	p.EthPeerRegistered <- struct{}{}
-
 	// Handle incoming messages until the connection is torn down
 	return handler(peer)
 }
@@ -501,10 +451,19 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 // `eth`, all subsystem registrations and lifecycle management will be done by
 // the main `eth` handler to prevent strange races.
 func (h *handler) runSnapExtension(peer *snap.Peer, handler snap.Handler) error {
-	h.peerWG.Add(1)
-	defer h.peerWG.Done()
+	if !h.incHandlers() {
+		return p2p.DiscQuitting
+	}
+	defer h.decHandlers()
 
 	if err := h.peers.registerSnapExtension(peer); err != nil {
+		if metrics.Enabled {
+			if peer.Inbound() {
+				snap.IngressRegistrationErrorMeter.Mark(1)
+			} else {
+				snap.EgressRegistrationErrorMeter.Mark(1)
+			}
+		}
 		peer.Log().Warn("Snapshot extension registration failed", "err", err)
 		return err
 	}
@@ -567,6 +526,10 @@ func (h *handler) Start(maxPeers int) {
 	// start sync handlers
 	h.wg.Add(1)
 	go h.chainSync.loop()
+
+	// start peer handler tracker
+	h.wg.Add(1)
+	go h.protoTracker()
 }
 
 func (h *handler) Stop() {
@@ -576,20 +539,15 @@ func (h *handler) Stop() {
 	// Quit chainSync and txsync64.
 	// After this is done, no new peers will be accepted.
 	close(h.quitSync)
-	h.wg.Wait()
 
 	// Disconnect existing sessions.
 	// This also closes the gate for any new registrations on the peer set.
 	// sessions which are already established but not added to h.peers yet
 	// will exit when they try to register.
 	h.peers.close()
-	h.peerWG.Wait()
+	h.wg.Wait()
 
-	log.Info("Electroneum protocol stopped")
-}
-
-func (h *handler) Enqueue(id string, block *types.Block) {
-	h.blockFetcher.Enqueue(id, block)
+	log.Info("Ethereum protocol stopped")
 }
 
 // BroadcastBlock will either propagate a block to a subset of its peers, or
@@ -654,17 +612,19 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 	// Broadcast transactions to a batch of peers not knowing about it
 	for _, tx := range txs {
 		peers := h.peers.peersWithoutTransaction(tx.Hash())
+
+		var numDirect int
+		if tx.Size() <= txMaxBroadcastSize {
+			numDirect = int(math.Sqrt(float64(len(peers))))
+		}
 		// Send the tx unconditionally to a subset of our peers
-		// Ibft protocol changes for broadcasting to all peers not only Sqrt
-		// numDirect := int(math.Sqrt(float64(len(peers))))
-		for _, peer := range peers {
+		for _, peer := range peers[:numDirect] {
 			txset[peer] = append(txset[peer], tx.Hash())
 		}
 		// For the remaining peers, send announcement only
-		//for _, peer := range peers[numDirect:] {
-		//	annos[peer] = append(annos[peer], tx.Hash())
-		//}
-		log.Trace("Broadcast transaction", "hash", tx.Hash(), "recipients", len(peers))
+		for _, peer := range peers[numDirect:] {
+			annos[peer] = append(annos[peer], tx.Hash())
+		}
 	}
 	for peer, hashes := range txset {
 		directPeers++
@@ -706,165 +666,19 @@ func (h *handler) txBroadcastLoop() {
 	}
 }
 
-// NodeInfo represents a short summary of the Ethereum sub-protocol metadata
-// known about the host peer.
-type NodeInfo struct {
-	Network    uint64              `json:"network"`    // Ethereum network ID (1=Frontier, 2=Morden, Ropsten=3, Rinkeby=4)
-	Difficulty *big.Int            `json:"difficulty"` // Total difficulty of the host's blockchain
-	Genesis    common.Hash         `json:"genesis"`    // SHA3 hash of the host's genesis block
-	Config     *params.ChainConfig `json:"config"`     // Chain configuration for the fork rules
-	Head       common.Hash         `json:"head"`       // SHA3 hash of the host's best owned block
-	Consensus  string              `json:"consensus"`  // Consensus mechanism in use
-}
+// enableSyncedFeatures enables the post-sync functionalities when the initial
+// sync is finished.
+func (h *handler) enableSyncedFeatures() {
+	// Mark the local node as synced.
+	h.synced.Store(true)
 
-// NodeInfo retrieves some protocol metadata about the running host node.
-func (h *handler) NodeInfo() *NodeInfo {
-	currentBlock := h.chain.CurrentBlock()
-	chainConfig := h.chain.Config()
-
-	return &NodeInfo{
-		Network:    h.networkID,
-		Difficulty: h.chain.GetTd(currentBlock.Hash(), currentBlock.NumberU64()),
-		Genesis:    h.chain.Genesis().Hash(),
-		Config:     chainConfig,
-		Head:       currentBlock.Hash(),
-		Consensus:  h.getConsensusAlgorithm(),
+	// If we were running snap sync and it finished, disable doing another
+	// round on next sync cycle
+	if h.snapSync.Load() {
+		log.Info("Snap sync complete, auto disabling")
+		h.snapSync.Store(false)
 	}
-}
-
-func (h *handler) getConsensusAlgorithm() string {
-	var consensusAlgo string
-	switch h.engine.(type) {
-	case consensus.Istanbul:
-		consensusAlgo = "IBFT"
-	case *clique.Clique:
-		consensusAlgo = "clique"
-	case *ethash.Ethash:
-		consensusAlgo = "ethash"
-	default:
-		consensusAlgo = "unknown"
+	if h.chain.TrieDB().Scheme() == rawdb.PathScheme {
+		h.chain.TrieDB().SetBufferSize(pathdb.DefaultBufferSize)
 	}
-	return consensusAlgo
-}
-
-func (h *handler) FindPeers(targets map[common.Address]bool) map[common.Address]consensus.Peer {
-	m := make(map[common.Address]consensus.Peer)
-	h.peers.lock.RLock()
-	defer h.peers.lock.RUnlock()
-	for _, p := range h.peers.peers {
-		pubKey := p.Node().Pubkey()
-		addr := crypto.PubkeyToAddress(*pubKey)
-		if targets[addr] {
-			m[addr] = p
-		}
-	}
-	return m
-}
-
-// makeIbftConsensusProtocol is similar to eth/handler.go -> makeProtocol. Called from eth/handler.go -> Protocols.
-// returns the supported subprotocol to the p2p server.
-// The Run method starts the protocol and is called by the p2p server. The ibft consensus subprotocol,
-// leverages the peer created and managed by the "eth" subprotocol.
-// The ibft consensus protocol requires that the "eth" protocol is running as well.
-func (h *handler) makeIbftConsensusProtocol(ProtoName string, version uint, length uint64) p2p.Protocol {
-	return p2p.Protocol{
-		Name:    ProtoName,
-		Version: version,
-		Length:  length,
-		// no new peer created, uses the "eth" peer, so no peer management needed.
-		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
-			/*
-			* 1. wait for the eth protocol to create and register an eth peer.
-			* 2. get the associate eth peer that was registered by he "eth" protocol.
-			* 3. add the rw protocol for the ibft subprotocol to the eth peer.
-			* 4. start listening for incoming messages.
-			* 5. the incoming message will be sent on the ibft specific subprotocol, e.g. "istanbul/100".
-			* 6. send messages to the consensus engine handler.
-			* 7. messages to other to other peers listening to the subprotocol can be sent using the
-			*    (eth)peer.ConsensusSend() which will write to the protoRW.
-			 */
-			// wait for the "eth" protocol to create and register the peer (added to peerset)
-			select {
-			case <-p.EthPeerRegistered:
-				// the ethpeer should be registered, try to retrieve it and start the consensus handler.
-				p2pPeerId := fmt.Sprintf("%x", p.ID().Bytes()[:8])
-				ethPeer := h.peers.peer(p2pPeerId)
-				if ethPeer == nil {
-					p2pPeerId = fmt.Sprintf("%x", p.ID().Bytes()) // TODO:BBO
-					ethPeer = h.peers.peer(p2pPeerId)
-					log.Warn("full p2p peer", "id", p2pPeerId, "etnPeer", ethPeer)
-				}
-				if ethPeer != nil {
-					p.Log().Debug("consensus subprotocol retrieved eth peer from peerset", "etnPeer.id", p2pPeerId, "ProtoName", ProtoName)
-					// add the rw protocol for the ibft subprotocol to the eth peer.
-					ethPeer.AddConsensusProtoRW(rw)
-					return h.handleConsensusLoop(p, rw)
-				}
-				p.Log().Error("consensus subprotocol retrieved nil eth peer from peerset", "etnPeer.id", p2pPeerId)
-				return errEthPeerNil
-			case <-p.EthPeerDisconnected:
-				return errEthPeerNotRegistered
-			}
-		},
-		NodeInfo: func() interface{} {
-			return h.NodeInfo()
-		},
-		PeerInfo: func(id enode.ID) interface{} {
-			if p := h.peers.peer(fmt.Sprintf("%x", id[:8])); p != nil {
-				return p.Info()
-			}
-			if p := h.peers.peer(fmt.Sprintf("%x", id)); p != nil { // TODO:BBO
-				return p.Info()
-			}
-			return nil
-		},
-	}
-}
-
-func (h *handler) handleConsensusLoop(p *p2p.Peer, protoRW p2p.MsgReadWriter) error {
-	// Handle incoming messages until the connection is torn down
-	for {
-		if err := h.handleConsensus(p, protoRW); err != nil {
-			if errors.Is(err, istanbul.ErrStoppedEngine) && h.downloader.Synchronising() {
-				p.Log().Debug("Ignoring `stopped engine` consensus error due to active sync.")
-				continue
-			}
-			p.Log().Debug("Ethereum ibft message handling failed", "err", err)
-			return err
-		}
-	}
-}
-
-// This is a no-op because the eth handleMsg main loop handle ibf message as well.
-func (h *handler) handleConsensus(p *p2p.Peer, protoRW p2p.MsgReadWriter) error {
-	// Read the next message from the remote peer (in protoRW), and ensure it's fully consumed
-	msg, err := protoRW.ReadMsg()
-	if err != nil {
-		return err
-	}
-	if msg.Size > protocolMaxMsgSize {
-		return fmt.Errorf("%w: %v > %v", errMsgTooLarge, msg.Size, protocolMaxMsgSize)
-	}
-	defer msg.Discard()
-
-	// See if the consensus engine protocol can handle this message, e.g. istanbul will check for message is
-	// istanbulMsg = 0x11, and NewBlockMsg = 0x07.
-	handled, err := h.handleConsensusMsg(p, msg)
-	if handled {
-		p.Log().Debug("consensus message was handled by consensus engine", "handled", handled,
-			"ibftConsensusProtocolName", ibftConsensusProtocolName, "err", err)
-		return err
-	}
-
-	return nil
-}
-
-func (h *handler) handleConsensusMsg(p *p2p.Peer, msg p2p.Msg) (bool, error) {
-	if handler, ok := h.engine.(consensus.Handler); ok {
-		pubKey := p.Node().Pubkey()
-		addr := crypto.PubkeyToAddress(*pubKey)
-		handled, err := handler.HandleMsg(addr, msg)
-		return handled, err
-	}
-	return false, nil
 }

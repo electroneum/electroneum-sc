@@ -17,6 +17,7 @@
 package core
 
 import (
+	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
@@ -28,6 +29,8 @@ import (
 	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/trie"
+	"github.com/electroneum/electroneum-sc/trie/triedb/pathdb"
 )
 
 func TestInvalidCliqueConfig(t *testing.T) {
@@ -38,12 +41,18 @@ func TestInvalidCliqueConfig(t *testing.T) {
 		Epoch:  30000,
 	}
 	block.ExtraData = []byte{}
-	if _, err := block.Commit(nil); err == nil {
+	db := rawdb.NewMemoryDatabase()
+	if _, err := block.Commit(db, trie.NewDatabase(db, nil)); err == nil {
 		t.Fatal("Expected error on invalid clique config")
 	}
 }
 
 func TestSetupGenesis(t *testing.T) {
+	testSetupGenesis(t, rawdb.HashScheme)
+	testSetupGenesis(t, rawdb.PathScheme)
+}
+
+func testSetupGenesis(t *testing.T, scheme string) {
 	var (
 		customghash = common.HexToHash("0x89c99d90b79719238d2645c7642f2c9295246e80775b38cfd162b696817fbd50")
 		customg     = Genesis{
@@ -55,6 +64,7 @@ func TestSetupGenesis(t *testing.T) {
 		oldcustomg = customg
 	)
 	oldcustomg.Config = &params.ChainConfig{HomesteadBlock: big.NewInt(2)}
+
 	tests := []struct {
 		name       string
 		fn         func(ethdb.Database) (*params.ChainConfig, common.Hash, error)
@@ -65,7 +75,7 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "genesis without ChainConfig",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				return SetupGenesisBlock(db, new(Genesis))
+				return SetupGenesisBlock(db, trie.NewDatabase(db, newDbConfig(scheme)), new(Genesis))
 			},
 			wantErr:    errGenesisNoConfig,
 			wantConfig: params.AllEthashProtocolChanges,
@@ -73,7 +83,7 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "no block in DB, genesis == nil",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				return SetupGenesisBlock(db, nil)
+				return SetupGenesisBlock(db, trie.NewDatabase(db, newDbConfig(scheme)), nil)
 			},
 			wantHash:   params.MainnetGenesisHash,
 			wantConfig: params.MainnetChainConfig,
@@ -81,8 +91,8 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "mainnet block in DB, genesis == nil",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				DefaultGenesisBlock().MustCommit(db)
-				return SetupGenesisBlock(db, nil)
+				DefaultGenesisBlock().MustCommit(db, trie.NewDatabase(db, newDbConfig(scheme)))
+				return SetupGenesisBlock(db, trie.NewDatabase(db, newDbConfig(scheme)), nil)
 			},
 			wantHash:   params.MainnetGenesisHash,
 			wantConfig: params.MainnetChainConfig,
@@ -90,8 +100,9 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "custom block in DB, genesis == nil",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				customg.MustCommit(db)
-				return SetupGenesisBlock(db, nil)
+				tdb := trie.NewDatabase(db, newDbConfig(scheme))
+				customg.Commit(db, tdb)
+				return SetupGenesisBlock(db, tdb, nil)
 			},
 			wantHash:   customghash,
 			wantConfig: customg.Config,
@@ -99,8 +110,9 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "custom block in DB, genesis == testnet",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				customg.MustCommit(db)
-				return SetupGenesisBlock(db, DefaultTestnetGenesisBlock())
+				tdb := trie.NewDatabase(db, newDbConfig(scheme))
+				customg.Commit(db, tdb)
+				return SetupGenesisBlock(db, tdb, DefaultTestnetGenesisBlock())
 			},
 			wantErr:    &GenesisMismatchError{Stored: customghash, New: params.TestnetGenesisHash},
 			wantHash:   params.TestnetGenesisHash,
@@ -109,8 +121,9 @@ func TestSetupGenesis(t *testing.T) {
 		{
 			name: "compatible config in DB",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
-				oldcustomg.MustCommit(db)
-				return SetupGenesisBlock(db, &customg)
+				tdb := trie.NewDatabase(db, newDbConfig(scheme))
+				oldcustomg.Commit(db, tdb)
+				return SetupGenesisBlock(db, tdb, &customg)
 			},
 			wantHash:   customghash,
 			wantConfig: customg.Config,
@@ -120,24 +133,25 @@ func TestSetupGenesis(t *testing.T) {
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
 				// Commit the 'old' genesis block with Homestead transition at #2.
 				// Advance to block #4, past the homestead transition block of customg.
-				genesis := oldcustomg.MustCommit(db)
+				tdb := trie.NewDatabase(db, newDbConfig(scheme))
+				oldcustomg.Commit(db, tdb)
 
-				bc, _ := NewBlockChain(db, nil, oldcustomg.Config, ethash.NewFullFaker(), vm.Config{}, nil, nil)
+				bc, _ := NewBlockChain(db, DefaultCacheConfigWithScheme(scheme), &oldcustomg, nil, ethash.NewFullFaker(), vm.Config{}, nil, nil)
 				defer bc.Stop()
 
-				blocks, _ := GenerateChain(oldcustomg.Config, genesis, ethash.NewFaker(), db, 4, nil)
+				_, blocks, _ := GenerateChainWithGenesis(&oldcustomg, ethash.NewFaker(), 4, nil)
 				bc.InsertChain(blocks)
-				bc.CurrentBlock()
+
 				// This should return a compatibility error.
-				return SetupGenesisBlock(db, &customg)
+				return SetupGenesisBlock(db, tdb, &customg)
 			},
 			wantHash:   customghash,
 			wantConfig: customg.Config,
 			wantErr: &params.ConfigCompatError{
-				What:         "Homestead fork block",
-				StoredConfig: big.NewInt(2),
-				NewConfig:    big.NewInt(3),
-				RewindTo:     1,
+				What:          "Homestead fork block",
+				StoredBlock:   big.NewInt(2),
+				NewBlock:      big.NewInt(3),
+				RewindToBlock: 1,
 			},
 		},
 	}
@@ -165,6 +179,39 @@ func TestSetupGenesis(t *testing.T) {
 	}
 }
 
+// TestStagenetGenesisHashIsUpstreamInconsistent pins a discrepancy inherited
+// from Electroneum, deliberately kept out of TestGenesisHashes above.
+//
+// params.StagenetGenesisHash does not match the block that
+// DefaultStagenetGenesisBlock() actually produces. Both the genesis definition
+// and params.StagenetChainConfig in this tree are byte-identical to upstream
+// electroneum-sc, and mainnet and testnet hash correctly through the same code,
+// so the mismatch is upstream's -- their own TestGenesisHashes covers only
+// mainnet and testnet, so it was never caught.
+//
+// We do not "fix" it: changing the genesis or the constant is a guess about
+// which side stagenet was really launched with, and guessing wrong breaks
+// stagenet interop for no gain on a network we do not run. Instead this records
+// the values so that a future upstream merge which corrects either side fails
+// here and asks us to look, rather than passing silently.
+func TestStagenetGenesisHashIsUpstreamInconsistent(t *testing.T) {
+	const observed = "0x34aa30eea5261577cf5abddd6c7e14791847c980092c93419ce35e1637043fb9"
+
+	db := rawdb.NewMemoryDatabase()
+	have := DefaultStagenetGenesisBlock().MustCommit(db, trie.NewDatabase(db, trie.HashDefaults)).Hash()
+
+	if have != common.HexToHash(observed) {
+		t.Fatalf("stagenet genesis hash changed: have %s, previously %s.\n"+
+			"If this came from an upstream merge, check whether Electroneum corrected the\n"+
+			"genesis definition, and if so compare it against params.StagenetGenesisHash.", have.Hex(), observed)
+	}
+	if have == params.StagenetGenesisHash {
+		t.Fatalf("params.StagenetGenesisHash now agrees with DefaultStagenetGenesisBlock() (%s);\n"+
+			"the upstream inconsistency is resolved -- add stagenet back to TestGenesisHashes\n"+
+			"and delete this test.", have.Hex())
+	}
+}
+
 // TestGenesisHashes checks the congruity of default genesis data to
 // corresponding hardcoded genesis hash values.
 func TestGenesisHashes(t *testing.T) {
@@ -176,11 +223,12 @@ func TestGenesisHashes(t *testing.T) {
 		{DefaultTestnetGenesisBlock(), params.TestnetGenesisHash},
 	} {
 		// Test via MustCommit
-		if have := c.genesis.MustCommit(rawdb.NewMemoryDatabase()).Hash(); have != c.want {
+		db := rawdb.NewMemoryDatabase()
+		if have := c.genesis.MustCommit(db, trie.NewDatabase(db, trie.HashDefaults)).Hash(); have != c.want {
 			t.Errorf("case: %d a), want: %s, got: %s", i, c.want.Hex(), have.Hex())
 		}
 		// Test via ToBlock
-		if have := c.genesis.ToBlock(nil).Hash(); have != c.want {
+		if have := c.genesis.ToBlock().Hash(); have != c.want {
 			t.Errorf("case: %d a), want: %s, got: %s", i, c.want.Hex(), have.Hex())
 		}
 	}
@@ -194,10 +242,7 @@ func TestGenesis_Commit(t *testing.T) {
 	}
 
 	db := rawdb.NewMemoryDatabase()
-	genesisBlock, err := genesis.Commit(db)
-	if err != nil {
-		t.Fatal(err)
-	}
+	genesisBlock := genesis.MustCommit(db, trie.NewDatabase(db, trie.HashDefaults))
 
 	if genesis.Difficulty != nil {
 		t.Fatalf("assumption wrong")
@@ -223,12 +268,13 @@ func TestReadWriteGenesisAlloc(t *testing.T) {
 			{1}: {Balance: big.NewInt(1), Storage: map[common.Hash]common.Hash{{1}: {1}}},
 			{2}: {Balance: big.NewInt(2), Storage: map[common.Hash]common.Hash{{2}: {2}}},
 		}
-		hash = common.HexToHash("0xdeadbeef")
+		hash, _ = alloc.deriveHash()
 	)
-	alloc.write(db, hash)
+	blob, _ := json.Marshal(alloc)
+	rawdb.WriteGenesisStateSpec(db, hash, blob)
 
 	var reload GenesisAlloc
-	err := reload.UnmarshalJSON(rawdb.ReadGenesisState(db, hash))
+	err := reload.UnmarshalJSON(rawdb.ReadGenesisStateSpec(db, hash))
 	if err != nil {
 		t.Fatalf("Failed to load genesis state %v", err)
 	}
@@ -244,4 +290,11 @@ func TestReadWriteGenesisAlloc(t *testing.T) {
 			t.Fatal("Unexpected account")
 		}
 	}
+}
+
+func newDbConfig(scheme string) *trie.Config {
+	if scheme == rawdb.HashScheme {
+		return trie.HashDefaults
+	}
+	return &trie.Config{PathDB: pathdb.Defaults}
 }

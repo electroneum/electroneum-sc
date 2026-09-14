@@ -51,19 +51,24 @@ func (s *senderFromServer) Sender(tx *types.Transaction) (common.Address, error)
 	return s.addr, nil
 }
 
-func (s *senderFromServer) PrioritySender(tx *types.Transaction) (common.PublicKey, error) { // implement this later
-	return common.PublicKey{}, nil
-}
-
 func (s *senderFromServer) ChainID() *big.Int {
 	panic("can't sign with senderFromServer")
 }
 func (s *senderFromServer) Hash(tx *types.Transaction) common.Hash {
 	panic("can't sign with senderFromServer")
 }
-func (s *senderFromServer) PriorityHash(tx *types.Transaction) common.Hash {
+func (s *senderFromServer) SignatureValues(tx *types.Transaction, sig []byte) (R, S, V *big.Int, err error) {
 	panic("can't sign with senderFromServer")
 }
-func (s *senderFromServer) SignatureValues(tx *types.Transaction, sig []byte) (R, S, V *big.Int, err error) {
+
+// PrioritySender and PriorityHash exist so senderFromServer satisfies
+// types.Signer, which carries Electroneum's priority methods. This signer never
+// verifies anything -- it just reports the sender the server already gave us --
+// so both refuse rather than invent an answer.
+func (s *senderFromServer) PrioritySender(tx *types.Transaction) (common.PublicKey, error) {
+	return common.PublicKey{}, types.ErrTxTypeNotSupported
+}
+
+func (s *senderFromServer) PriorityHash(tx *types.Transaction) common.Hash {
 	panic("can't sign with senderFromServer")
 }

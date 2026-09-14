@@ -49,6 +49,7 @@ import (
 	"github.com/electroneum/electroneum-sc/eth/ethconfig"
 	"github.com/electroneum/electroneum-sc/ethclient"
 	"github.com/electroneum/electroneum-sc/ethstats"
+	"github.com/electroneum/electroneum-sc/internal/version"
 	"github.com/electroneum/electroneum-sc/les"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/node"
@@ -64,7 +65,7 @@ var (
 	apiPortFlag = flag.Int("apiport", 8080, "Listener port for the HTTP API connection")
 	ethPortFlag = flag.Int("ethport", 30303, "Listener port for the devp2p connection")
 	bootFlag    = flag.String("bootnodes", "", "Comma separated bootnode enode URLs to seed with")
-	netFlag     = flag.Uint64("network", 0, "Network ID to use for the Electroneum protocol")
+	netFlag     = flag.Uint64("network", 0, "Network ID to use for the Ethereum protocol")
 	statsFlag   = flag.String("ethstats", "", "Ethstats network monitoring auth string")
 
 	netnameFlag = flag.String("faucet.name", "", "Network name to assign to the faucet")
@@ -79,23 +80,17 @@ var (
 	captchaSecret = flag.String("captcha.secret", "", "Recaptcha secret key to authenticate server side")
 
 	noauthFlag = flag.Bool("noauth", false, "Enables funding requests without authentication")
-	logFlag    = flag.Int("loglevel", 3, "Log level to use for Electroneum and the faucet")
+	logFlag    = flag.Int("loglevel", 3, "Log level to use for Ethereum and the faucet")
 
 	twitterTokenFlag   = flag.String("twitter.token", "", "Bearer token to authenticate with the v2 Twitter API")
 	twitterTokenV1Flag = flag.String("twitter.token.v1", "", "Bearer token to authenticate with the v1.1 Twitter API")
 
-	stagenetFlag = flag.Bool("stagenet", false, "Initializes the faucet with Electroneum test network config")
-
-	testnetFlag = flag.Bool("testnet", false, "Initializes the faucet with Electroneum test network config")
+	goerliFlag  = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
+	sepoliaFlag = flag.Bool("sepolia", false, "Initializes the faucet with Sepolia network config")
 )
 
 var (
 	ether = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-)
-
-var (
-	gitCommit = "" // Git SHA1 commit hash of the release (set via linker flags)
-	gitDate   = "" // Git commit date YYYYMMDD of the release (set via linker flags)
 )
 
 //go:embed faucet.html
@@ -144,7 +139,7 @@ func main() {
 		log.Crit("Failed to render the faucet template", "err", err)
 	}
 	// Load and parse the genesis block requested by the user
-	genesis, err := getGenesis(*genesisFlag, *testnetFlag, *stagenetFlag)
+	genesis, err := getGenesis(*genesisFlag, *goerliFlag, *sepoliaFlag)
 	if err != nil {
 		log.Crit("Failed to parse genesis config", "err", err)
 	}
@@ -226,9 +221,10 @@ type wsConn struct {
 
 func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network uint64, stats string, ks *keystore.KeyStore, index []byte) (*faucet, error) {
 	// Assemble the raw devp2p protocol stack
+	git, _ := version.VCS()
 	stack, err := node.New(&node.Config{
-		Name:    "etn-sc",
-		Version: params.VersionWithCommit(gitCommit, gitDate),
+		Name:    "geth",
+		Version: params.VersionWithCommit(git.Commit, git.Date),
 		DataDir: filepath.Join(os.Getenv("HOME"), ".faucet"),
 		P2P: p2p.Config{
 			NAT:              nat.Any(),
@@ -248,7 +244,7 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 	cfg.SyncMode = downloader.LightSync
 	cfg.NetworkId = network
 	cfg.Genesis = genesis
-	utils.SetDNSDiscoveryDefaults(&cfg, genesis.ToBlock(nil).Hash())
+	utils.SetDNSDiscoveryDefaults(&cfg, genesis.ToBlock().Hash())
 
 	lesBackend, err := les.New(stack, &cfg)
 	if err != nil {
@@ -272,11 +268,7 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 		}
 	}
 	// Attach to the client and retrieve and interesting metadatas
-	api, err := stack.Attach()
-	if err != nil {
-		stack.Close()
-		return nil, err
-	}
+	api := stack.Attach()
 	client := ethclient.NewClient(api)
 
 	return &faucet{
@@ -709,7 +701,7 @@ func authTwitter(url string, tokenV1, tokenV2 string) (string, string, string, c
 	case tokenV2 != "":
 		return authTwitterWithTokenV2(tweetID, tokenV2)
 	}
-	// Twiter API token isn't provided so we just load the public posts
+	// Twitter API token isn't provided so we just load the public posts
 	// and scrape it for the Ethereum address and profile URL. We need to load
 	// the mobile page though since the main page loads tweet contents via JS.
 	url = strings.Replace(url, "https://twitter.com/", "https://mobile.twitter.com/", 1)
@@ -750,7 +742,7 @@ func authTwitter(url string, tokenV1, tokenV2 string) (string, string, string, c
 func authTwitterWithTokenV1(tweetID string, token string) (string, string, string, common.Address, error) {
 	// Query the tweet details from Twitter
 	url := fmt.Sprintf("https://api.twitter.com/1.1/statuses/show.json?id=%s", tweetID)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", "", common.Address{}, err
 	}
@@ -787,7 +779,7 @@ func authTwitterWithTokenV1(tweetID string, token string) (string, string, strin
 func authTwitterWithTokenV2(tweetID string, token string) (string, string, string, common.Address, error) {
 	// Query the tweet details from Twitter
 	url := fmt.Sprintf("https://api.twitter.com/2/tweets/%s?expansions=author_id&user.fields=profile_image_url", tweetID)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", "", common.Address{}, err
 	}
@@ -861,7 +853,7 @@ func authFacebook(url string) (string, string, common.Address, error) {
 	address := common.HexToAddress(string(regexp.MustCompile("0x[0-9a-fA-F]{40}").Find(body)))
 	if address == (common.Address{}) {
 		//lint:ignore ST1005 This error is to be displayed in the browser
-		return "", "", common.Address{}, errors.New("No Ethereum address found to fund")
+		return "", "", common.Address{}, errors.New("No Ethereum address found to fund. Please check the post URL and verify that it can be viewed publicly.")
 	}
 	var avatar string
 	if parts = regexp.MustCompile(`src="([^"]+fbcdn\.net[^"]+)"`).FindStringSubmatch(string(body)); len(parts) == 2 {
@@ -883,17 +875,17 @@ func authNoAuth(url string) (string, string, common.Address, error) {
 }
 
 // getGenesis returns a genesis based on input args
-func getGenesis(genesisFlag string, TestnetFlag bool, StagenetFlag bool) (*core.Genesis, error) {
+func getGenesis(genesisFlag string, goerliFlag bool, sepoliaFlag bool) (*core.Genesis, error) {
 	switch {
 	case genesisFlag != "":
 		var genesis core.Genesis
 		err := common.LoadJSON(genesisFlag, &genesis)
 		return &genesis, err
-	case StagenetFlag:
+	case goerliFlag:
 		return core.DefaultStagenetGenesisBlock(), nil
-	case TestnetFlag:
+	case sepoliaFlag:
 		return core.DefaultTestnetGenesisBlock(), nil
 	default:
-		return nil, fmt.Errorf("no genesis flag provided")
+		return nil, errors.New("no genesis flag provided")
 	}
 }

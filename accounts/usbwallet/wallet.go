@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/accounts"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -85,11 +85,11 @@ type wallet struct {
 	accounts []accounts.Account                         // List of derive accounts pinned on the hardware wallet
 	paths    map[common.Address]accounts.DerivationPath // Known derivation paths for signing operations
 
-	deriveNextPaths []accounts.DerivationPath    // Next derivation paths for account auto-discovery (multiple bases supported)
-	deriveNextAddrs []common.Address             // Next derived account addresses for auto-discovery (multiple bases supported)
-	deriveChain     electroneum.ChainStateReader // Blockchain state reader to discover used account with
-	deriveReq       chan chan struct{}           // Channel to request a self-derivation on
-	deriveQuit      chan chan error              // Channel to terminate the self-deriver with
+	deriveNextPaths []accounts.DerivationPath // Next derivation paths for account auto-discovery (multiple bases supported)
+	deriveNextAddrs []common.Address          // Next derived account addresses for auto-discovery (multiple bases supported)
+	deriveChain     ethereum.ChainStateReader // Blockchain state reader to discover used account with
+	deriveReq       chan chan struct{}        // Channel to request a self-derivation on
+	deriveQuit      chan chan error           // Channel to terminate the self-deriver with
 
 	healthQuit chan chan error
 
@@ -380,7 +380,7 @@ func (w *wallet) selfDerive() {
 					// of legacy-ledger, the first account on the legacy-path will
 					// be shown to the user, even if we don't actively track it
 					if i < len(nextAddrs)-1 {
-						w.log.Info("Skipping trakcking first account on legacy path, use personal.deriveAccount(<url>,<path>, false) to track",
+						w.log.Info("Skipping tracking first account on legacy path, use personal.deriveAccount(<url>,<path>, false) to track",
 							"path", path, "address", nextAddrs[i])
 						break
 					}
@@ -505,7 +505,7 @@ func (w *wallet) Derive(path accounts.DerivationPath, pin bool) (accounts.Accoun
 //
 // You can disable automatic account discovery by calling SelfDerive with a nil
 // chain state reader.
-func (w *wallet) SelfDerive(bases []accounts.DerivationPath, chain electroneum.ChainStateReader) {
+func (w *wallet) SelfDerive(bases []accounts.DerivationPath, chain ethereum.ChainStateReader) {
 	w.stateLock.Lock()
 	defer w.stateLock.Unlock()
 
@@ -624,7 +624,7 @@ func (w *wallet) SignTx(account accounts.Account, tx *types.Transaction, chainID
 	return signed, nil
 }
 
-// SignHashWithPassphrase implements accounts.Wallet, however signing arbitrary
+// SignTextWithPassphrase implements accounts.Wallet, however signing arbitrary
 // data is not supported for Ledger wallets, so this method will always return
 // an error.
 func (w *wallet) SignTextWithPassphrase(account accounts.Account, passphrase string, text []byte) ([]byte, error) {

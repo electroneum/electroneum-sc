@@ -19,6 +19,8 @@ package backend
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"github.com/electroneum/electroneum-sc/ethdb"
+	"github.com/electroneum/electroneum-sc/trie"
 	"math/big"
 	"reflect"
 	"testing"
@@ -29,7 +31,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/testutils"
-	"github.com/electroneum/electroneum-sc/consensus/misc"
+	"github.com/electroneum/electroneum-sc/consensus/misc/eip1559"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
@@ -43,14 +45,23 @@ func newBlockchainFromConfig(genesis *core.Genesis, nodeKeys []*ecdsa.PrivateKey
 	// Use the first key as private key
 	backend := New(cfg, nodeKeys[0], memDB)
 
-	genesis.MustCommit(memDB)
+	genesis.MustCommit(memDB, trie.NewDatabase(memDB, nil))
 
-	blockchain, err := core.NewBlockChain(memDB, nil, genesis.Config, backend, vm.Config{}, nil, nil)
+	blockchain, err := core.NewBlockChain(memDB, nil, genesis, nil, backend, vm.Config{}, nil, nil)
 	if err != nil {
 		panic(err)
 	}
 
-	backend.Start(blockchain, blockchain.CurrentBlock, rawdb.HasBadBlock)
+	// BlockChain.CurrentBlock returns a *types.Header upstream now, while the
+	// IBFT engine wants a block; and rawdb.HasBadBlock is gone. Same adaptation
+	// eth/backend.go needs.
+	currentBlock := func() *types.Block {
+		h := blockchain.CurrentBlock()
+		return blockchain.GetBlock(h.Hash(), h.Number.Uint64())
+	}
+	hasBadBlock := func(db ethdb.Reader, hash common.Hash) bool { return false }
+
+	backend.Start(blockchain, currentBlock, hasBadBlock)
 
 	snap, err := backend.snapshot(blockchain, 0, common.Hash{}, nil)
 	if err != nil {
@@ -122,12 +133,12 @@ func makeBlockWithoutSeal(chain *core.BlockChain, engine *Backend, parent *types
 	// Mirror miner/worker.go: set BaseFee on London chains so headers pass
 	// the EIP-1559 validation in verifyCascadingFields.
 	if chain.Config().IsLondon(header.Number) {
-		header.BaseFee = misc.CalcBaseFee(chain.Config(), parent.Header())
+		header.BaseFee = eip1559.CalcBaseFee(chain.Config(), parent.Header())
 	}
 
 	engine.Prepare(chain, header)
 	state, _ := chain.StateAt(parent.Root())
-	block, _ := engine.FinalizeAndAssemble(chain, header, state, nil, nil, nil)
+	block, _ := engine.FinalizeAndAssemble(chain, header, state, nil, nil, nil, nil)
 	return block
 }
 
@@ -268,7 +279,7 @@ func TestVerifyHeader(t *testing.T) {
 	// istanbulcommon.ErrEmptyCommittedSeals case
 	block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	block = updateQBFTBlock(block, engine.Address())
-	err := engine.VerifyHeader(chain, block.Header(), false)
+	err := engine.VerifyHeader(chain, block.Header())
 	if err != istanbulcommon.ErrEmptyCommittedSeals {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrEmptyCommittedSeals)
 	}
@@ -276,13 +287,13 @@ func TestVerifyHeader(t *testing.T) {
 	// short extra data
 	header := block.Header()
 	header.Extra = []byte{}
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidExtraDataFormat {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidExtraDataFormat)
 	}
 	// incorrect extra format
 	header.Extra = []byte("0000000000000000000000000000000012300000000000000000000000000000000000000000000000000000000000000000")
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidExtraDataFormat {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidExtraDataFormat)
 	}
@@ -291,7 +302,7 @@ func TestVerifyHeader(t *testing.T) {
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.MixDigest = common.StringToHash("123456789")
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidMixDigest {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidMixDigest)
 	}
@@ -300,7 +311,7 @@ func TestVerifyHeader(t *testing.T) {
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.UncleHash = common.StringToHash("123456789")
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidUncleHash {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidUncleHash)
 	}
@@ -309,7 +320,7 @@ func TestVerifyHeader(t *testing.T) {
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Difficulty = big.NewInt(2)
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidDifficulty {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidDifficulty)
 	}
@@ -318,7 +329,7 @@ func TestVerifyHeader(t *testing.T) {
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Time = chain.Genesis().Time() + (engine.config.GetConfig(block.Number()).BlockPeriod - 1)
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != istanbulcommon.ErrInvalidTimestamp {
 		t.Errorf("error mismatch: have %v, want %v", err, istanbulcommon.ErrInvalidTimestamp)
 	}
@@ -327,7 +338,7 @@ func TestVerifyHeader(t *testing.T) {
 	block = makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
 	header = block.Header()
 	header.Time = uint64(time.Now().Unix() + 10)
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != consensus.ErrFutureBlock {
 		t.Errorf("error mismatch: have %v, want %v", err, consensus.ErrFutureBlock)
 	}
@@ -338,7 +349,7 @@ func TestVerifyHeader(t *testing.T) {
 	header.Time = new(big.Int).Add(big.NewInt(time.Now().Unix()), new(big.Int).SetUint64(5)).Uint64()
 	priorValue := engine.config.AllowedFutureBlockTime
 	engine.config.AllowedFutureBlockTime = 5
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	engine.config.AllowedFutureBlockTime = priorValue //restore changed value
 	if err == consensus.ErrFutureBlock {
 		t.Errorf("error mismatch: have %v, want nil", err)
@@ -350,7 +361,7 @@ func TestVerifyHeader(t *testing.T) {
 	header = block.Header()
 	copy(header.Nonce[:], hexutil.MustDecode("0x111111111111"))
 	header.Number = big.NewInt(int64(engine.config.Epoch))
-	err = engine.VerifyHeader(chain, header, false)
+	err = engine.VerifyHeader(chain, header)
 	if err != errInvalidNonce {
 		t.Errorf("error mismatch: have %v, want %v", err, errInvalidNonce)
 	}*/
@@ -381,7 +392,7 @@ func TestVerifyHeaders(t *testing.T) {
 	// now = func() time.Time {
 	// 	return time.Unix(int64(headers[size-1].Time), 0)
 	// }
-	_, results := engine.VerifyHeaders(chain, headers, nil)
+	_, results := engine.VerifyHeaders(chain, headers)
 	const timeoutDura = 2 * time.Second
 	timeout := time.NewTimer(timeoutDura)
 	index := 0
@@ -403,7 +414,7 @@ OUT1:
 			break OUT1
 		}
 	}
-	_, results = engine.VerifyHeaders(chain, headers, nil)
+	_, results = engine.VerifyHeaders(chain, headers)
 	timeout = time.NewTimer(timeoutDura)
 OUT2:
 	for {
@@ -421,7 +432,7 @@ OUT2:
 	}
 	// error header cases
 	headers[2].Number = big.NewInt(100)
-	_, results = engine.VerifyHeaders(chain, headers, nil)
+	_, results = engine.VerifyHeaders(chain, headers)
 	timeout = time.NewTimer(timeoutDura)
 	index = 0
 	errors := 0

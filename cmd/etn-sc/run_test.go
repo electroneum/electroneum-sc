@@ -78,7 +78,7 @@ func runGeth(t *testing.T, args ...string) *testgeth {
 		args = append([]string{"--datadir", tt.Datadir}, args...)
 	}
 
-	// Boot "etn-sc". This actually runs the test binary but the TestMain
+	// Boot "geth". This actually runs the test binary but the TestMain
 	// function will prevent any tests from running.
 	tt.Run("etn-test", args...)
 

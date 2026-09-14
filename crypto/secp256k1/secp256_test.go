@@ -7,6 +7,7 @@ package secp256k1
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
 	"io"
@@ -20,7 +21,7 @@ func generateKeyPair() (pubkey, privkey []byte) {
 	if err != nil {
 		panic(err)
 	}
-	pubkey = S256().Marshal(key.X, key.Y)
+	pubkey = elliptic.Marshal(S256(), key.X, key.Y)
 
 	privkey = make([]byte, 32)
 	blob := key.D.Bytes()
@@ -47,7 +48,7 @@ func randSig() []byte {
 // tests for malleability
 // highest bit of signature ECDSA s value must be 0, in the 33th byte
 func compactSigCheck(t *testing.T, sig []byte) {
-	b := int(sig[32])
+	var b = int(sig[32])
 	if b < 0 {
 		t.Errorf("highest bit is negative: %d", b)
 	}

@@ -19,7 +19,7 @@ package keystore
 import (
 	"math/big"
 
-	electroneum "github.com/electroneum/electroneum-sc"
+	"github.com/electroneum/electroneum-sc"
 	"github.com/electroneum/electroneum-sc/accounts"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
@@ -77,7 +77,7 @@ func (w *keystoreWallet) Derive(path accounts.DerivationPath, pin bool) (account
 
 // SelfDerive implements accounts.Wallet, but is a noop for plain wallets since
 // there is no notion of hierarchical account derivation for plain keystore accounts.
-func (w *keystoreWallet) SelfDerive(bases []accounts.DerivationPath, chain electroneum.ChainStateReader) {
+func (w *keystoreWallet) SelfDerive(bases []accounts.DerivationPath, chain ethereum.ChainStateReader) {
 }
 
 // signHash attempts to sign the given hash with

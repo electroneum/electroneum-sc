@@ -301,7 +301,7 @@ func (c *core) addToBacklog(msg qbfttypes.QBFTMessage, encodedSize int) {
 
 	backlog := c.backlogs[src]
 	if backlog == nil {
-		backlog = prque.New(nil)
+		backlog = prque.New[int64, interface{}](nil)
 		c.backlogs[src] = backlog
 	}
 

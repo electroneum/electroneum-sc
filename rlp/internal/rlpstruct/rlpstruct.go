@@ -44,7 +44,7 @@ type Type struct {
 	Elem      *Type // non-nil for Kind values of Ptr, Slice, Array
 }
 
-// defaultNilValue determines whether a nil pointer to t encodes/decodes
+// DefaultNilValue determines whether a nil pointer to t encodes/decodes
 // as an empty string or empty list.
 func (t Type) DefaultNilValue() NilKind {
 	k := t.Kind
@@ -156,7 +156,7 @@ func parseTag(field Field, lastPublic int) (Tags, error) {
 			ts.Ignored = true
 		case "nil", "nilString", "nilList":
 			ts.NilOK = true
-			if field.Type.Kind != reflect.Pointer {
+			if field.Type.Kind != reflect.Ptr {
 				return ts, TagError{Field: name, Tag: t, Err: "field is not a pointer"}
 			}
 			switch t {

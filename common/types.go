@@ -26,11 +26,10 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/electroneum/electroneum-sc/common/hexutil"
-	"github.com/electroneum/electroneum-sc/crypto/secp256k1"
-
 	"golang.org/x/crypto/sha3"
 )
 
@@ -39,14 +38,12 @@ const (
 	// HashLength is the expected length of the hash
 	HashLength = 32
 	// AddressLength is the expected length of the address
-	AddressLength   = 20
-	PublicKeyLength = 65
+	AddressLength = 20
 )
 
 var (
-	hashT      = reflect.TypeOf(Hash{})
-	addressT   = reflect.TypeOf(Address{})
-	PublicKeyT = reflect.TypeOf(PublicKey{})
+	hashT    = reflect.TypeOf(Hash{})
+	addressT = reflect.TypeOf(Address{})
 )
 
 // Hash represents the 32 byte Keccak256 hash of arbitrary data.
@@ -67,6 +64,11 @@ func BigToHash(b *big.Int) Hash { return BytesToHash(b.Bytes()) }
 // HexToHash sets byte representation of s to hash.
 // If b is larger than len(h), b will be cropped from the left.
 func HexToHash(s string) Hash { return BytesToHash(FromHex(s)) }
+
+// Cmp compares two hashes.
+func (h Hash) Cmp(other Hash) int {
+	return bytes.Compare(h[:], other[:])
+}
 
 // Bytes gets the byte representation of the underlying hash.
 func (h Hash) Bytes() []byte { return h[:] }
@@ -144,10 +146,6 @@ func (h *Hash) SetBytes(b []byte) {
 	copy(h[HashLength-len(b):], b)
 }
 
-func EmptyHash(h Hash) bool {
-	return h == Hash{}
-}
-
 // Generate implements testing/quick.Generator.
 func (h Hash) Generate(rand *rand.Rand, size int) reflect.Value {
 	m := rand.Intn(len(h))
@@ -216,10 +214,6 @@ func BytesToAddress(b []byte) Address {
 	return a
 }
 
-func StringToAddress(s string) Address { return BytesToAddress([]byte(s)) } // dep: Istanbul
-
-func StringToHash(s string) Hash { return BytesToHash([]byte(s)) } // dep: Istanbul
-
 // BigToAddress returns Address with byte values of b.
 // If b is larger than len(h), b will be cropped from the left.
 func BigToAddress(b *big.Int) Address { return BytesToAddress(b.Bytes()) }
@@ -237,11 +231,19 @@ func IsHexAddress(s string) bool {
 	return len(s) == 2*AddressLength && isHex(s)
 }
 
+// Cmp compares two addresses.
+func (a Address) Cmp(other Address) int {
+	return bytes.Compare(a[:], other[:])
+}
+
 // Bytes gets the string representation of the underlying address.
 func (a Address) Bytes() []byte { return a[:] }
 
 // Hash converts an address to a hash by left-padding it with zeros.
 func (a Address) Hash() Hash { return BytesToHash(a[:]) }
+
+// Big converts an address to a big integer.
+func (a Address) Big() *big.Int { return new(big.Int).SetBytes(a[:]) }
 
 // Hex returns an EIP55-compliant hex string representation of the address.
 func (a Address) Hex() string {
@@ -409,7 +411,7 @@ func (ma *MixedcaseAddress) UnmarshalJSON(input []byte) error {
 }
 
 // MarshalJSON marshals the original value
-func (ma *MixedcaseAddress) MarshalJSON() ([]byte, error) {
+func (ma MixedcaseAddress) MarshalJSON() ([]byte, error) {
 	if strings.HasPrefix(ma.original, "0x") || strings.HasPrefix(ma.original, "0X") {
 		return json.Marshal(fmt.Sprintf("0x%s", ma.original[2:]))
 	}
@@ -439,173 +441,34 @@ func (ma *MixedcaseAddress) Original() string {
 	return ma.original
 }
 
-// Priority Transactor info
-type PriorityTransactor struct {
-	IsGasPriceWaiver bool
-	EntityName       string
+// AddressEIP55 is an alias of Address with a customized json marshaller
+type AddressEIP55 Address
+
+// String returns the hex representation of the address in the manner of EIP55.
+func (addr AddressEIP55) String() string {
+	return Address(addr).Hex()
 }
 
-// PublicKey represents the 65 byte *uncompressed* secp256k1 pubkey used for priority signatures within txes of PriorityTx type
-type PublicKey [PublicKeyLength]byte
-
-type PriorityTransactorMap map[PublicKey]PriorityTransactor
-
-// IsValid checks if the public key is a valid uncompressed secp256k1 public key and if it lies on the secp256k1 curve
-func (p PublicKey) IsValid() bool {
-	if p[0] != 4 {
-		// uncompressed public keys should start with 0x04
-		return false
-	}
-	// checks if the points lie on the secp256k1 curve
-	x := new(big.Int).SetBytes(p[1:33])
-	y := new(big.Int).SetBytes(p[33:65])
-	return secp256k1.S256().IsOnCurve(x, y)
+// MarshalJSON marshals the address in the manner of EIP55.
+func (addr AddressEIP55) MarshalJSON() ([]byte, error) {
+	return json.Marshal(addr.String())
 }
 
-// BytesToPublicKey returns PublicKey with value b.
-// If b is larger than len(h), b will be cropped from the left.
-func BytesToPublicKey(b []byte) PublicKey {
-	var p PublicKey
-	p.SetBytes(b)
-	return p
-}
+type Decimal uint64
 
-func StringToPublicKey(s string) PublicKey { return BytesToPublicKey([]byte(s)) }
-
-// BigToPublicKey returns PublicKey with byte values of b.
-// If b is larger than len(h), b will be cropped from the left.
-func BigToPublicKey(b *big.Int) PublicKey { return BytesToPublicKey(b.Bytes()) }
-
-// HexToPublicKey returns PublicKey with byte values of s.
-// If s is larger than len(h), s will be cropped from the left.
-func HexToPublicKey(s string) PublicKey { return BytesToPublicKey(FromHex(s)) }
-
-// IsHexPublicKey verifies whether a string can represent a valid hex-encoded
-// secp256k1 PublicKey or not.
-func IsHexPublicKey(s string) bool {
-	if has0xPrefix(s) {
-		s = s[2:]
-	}
-	return len(s) == 2*PublicKeyLength && isHex(s)
-}
-
-// Bytes gets the string representation of the underlying PublicKey.
-func (p PublicKey) Bytes() []byte { return p[:] }
-
-// Hash converts an PublicKey to a hash by left-padding it with zeros.
-func (p PublicKey) Hash() Hash { return BytesToHash(p[:]) }
-
-// String implements fmt.Stringer.
-func (p PublicKey) String() string {
-	return string(p.hex())
-}
-
-func (p PublicKey) ToHexString() string {
-	return string(p.hex())
-}
-
-func (p PublicKey) ToUnprefixedHexString() string {
-	return string(p.hex()[2:])
-}
-
-func (p PublicKey) hex() []byte {
-	var buf [len(p)*2 + 2]byte
-	copy(buf[:2], "0x")
-	hex.Encode(buf[2:], p[:])
-	return buf[:]
-}
-
-// Format implements fmt.Formatter.
-// PublicKey supports the %v, %s, %q, %x, %X and %d format verbs.
-func (p PublicKey) Format(s fmt.State, c rune) {
-	switch c {
-	case 'v', 's', 'x', 'X':
-		hex := p.hex()
-		if !s.Flag('#') {
-			hex = hex[2:]
-		}
-		if c == 'X' {
-			hex = bytes.ToUpper(hex)
-		}
-		s.Write(hex)
-	case 'q':
-		q := []byte{'"'}
-		s.Write(q)
-		s.Write(p.hex())
-		s.Write(q)
-	case 'd':
-		fmt.Fprint(s, ([len(p)]byte)(p))
-	default:
-		fmt.Fprintf(s, "%%!%c(PublicKey=%x)", c, p)
-	}
-}
-
-// SetBytes sets the PublicKey to the value of b.
-// If b is larger than len(a), b will be cropped from the left.
-func (p *PublicKey) SetBytes(b []byte) {
-	if len(b) > len(p) {
-		b = b[len(b)-PublicKeyLength:]
-	}
-	copy(p[PublicKeyLength-len(b):], b)
-}
-
-// MarshalText returns the hex representation of a.
-func (p PublicKey) MarshalText() ([]byte, error) {
-	return hexutil.Bytes(p[:]).MarshalText()
-}
-
-// UnmarshalText parses a hash in hex syntax.
-func (p *PublicKey) UnmarshalText(input []byte) error {
-	return hexutil.UnmarshalFixedText("PublicKey", input, p[:])
+func isString(input []byte) bool {
+	return len(input) >= 2 && input[0] == '"' && input[len(input)-1] == '"'
 }
 
 // UnmarshalJSON parses a hash in hex syntax.
-func (p *PublicKey) UnmarshalJSON(input []byte) error {
-	return hexutil.UnmarshalFixedJSON(PublicKeyT, input, p[:])
-}
-
-// Scan implements Scanner for database/sql.
-func (p *PublicKey) Scan(src interface{}) error {
-	srcB, ok := src.([]byte)
-	if !ok {
-		return fmt.Errorf("can't scan %T into PublicKey", src)
+func (d *Decimal) UnmarshalJSON(input []byte) error {
+	if !isString(input) {
+		return &json.UnmarshalTypeError{Value: "non-string", Type: reflect.TypeOf(uint64(0))}
 	}
-	if len(srcB) != PublicKeyLength {
-		return fmt.Errorf("can't scan []byte of len %d into PublicKey, want %d", len(srcB), PublicKeyLength)
+	if i, err := strconv.ParseInt(string(input[1:len(input)-1]), 10, 64); err == nil {
+		*d = Decimal(i)
+		return nil
+	} else {
+		return err
 	}
-	copy(p[:], srcB)
-	return nil
-}
-
-// Value implements valuer for database/sql.
-func (p PublicKey) Value() (driver.Value, error) {
-	return p[:], nil
-}
-
-// ImplementsGraphQLType returns true if Hash implements the specified GraphQL type.
-func (p PublicKey) ImplementsGraphQLType(name string) bool { return name == "PublicKey" }
-
-// UnmarshalGraphQL unmarshals the provided GraphQL query data.
-func (p *PublicKey) UnmarshalGraphQL(input interface{}) error {
-	var err error
-	switch input := input.(type) {
-	case string:
-		err = p.UnmarshalText([]byte(input))
-	default:
-		err = fmt.Errorf("unexpected type %T for PublicKey", input)
-	}
-	return err
-}
-
-// UnprefixedPublicKey allows marshaling an PublicKey without 0x prefix.
-type UnprefixedPublicKey PublicKey
-
-// UnmarshalText decodes the address from hex. The 0x prefix is optional.
-func (p *UnprefixedPublicKey) UnmarshalText(input []byte) error {
-	return hexutil.UnmarshalFixedUnprefixedText("UnprefixedPublicKey", input, p[:])
-}
-
-// MarshalText encodes the address as hex.
-func (p UnprefixedPublicKey) MarshalText() ([]byte, error) {
-	return []byte(hex.EncodeToString(p[:])), nil
 }

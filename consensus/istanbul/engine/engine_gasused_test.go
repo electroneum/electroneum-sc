@@ -19,7 +19,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
-	"github.com/electroneum/electroneum-sc/consensus/misc"
+	"github.com/electroneum/electroneum-sc/consensus/misc/eip1559"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/trie"
 )
@@ -28,7 +28,7 @@ import (
 // PoC: GasUsed = GasLimit + 1 must now be rejected during header verification.
 func TestVerifyCascadingFields_GasUsedExceedsGasLimit_Rejected(t *testing.T) {
 	f := newEIP1559Fixture(t)
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	h := f.childHeader(t, expected, f.parent.GasLimit)
 	h.GasUsed = h.GasLimit + 1
 
@@ -50,7 +50,7 @@ func TestVerifyCascadingFields_GasUsedEqualsGasLimit_Accepted(t *testing.T) {
 	h.GasUsed = h.GasLimit
 	// A saturated parent shifts the expected child BaseFee, so derive it after
 	// setting GasUsed rather than reusing the empty-block value.
-	h.BaseFee = misc.CalcBaseFee(f.chain.Config(), f.parent)
+	h.BaseFee = eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 
 	err := f.verify(h)
 	if err != nil && err != istanbulcommon.ErrEmptyCommittedSeals {
@@ -63,7 +63,7 @@ func TestVerifyCascadingFields_GasUsedEqualsGasLimit_Accepted(t *testing.T) {
 // and not merely the internal helper.
 func TestVerifyBlockProposal_GasUsedExceedsGasLimit_Rejected(t *testing.T) {
 	f := newEIP1559Fixture(t)
-	expected := misc.CalcBaseFee(f.chain.Config(), f.parent)
+	expected := eip1559.CalcBaseFee(f.chain.Config(), f.parent)
 	h := f.childHeader(t, expected, f.parent.GasLimit)
 	h.GasUsed = h.GasLimit + 1
 
@@ -71,7 +71,7 @@ func TestVerifyBlockProposal_GasUsedExceedsGasLimit_Rejected(t *testing.T) {
 	// than an explicit parents slice, so the reader must serve the fixture's
 	// parent header.
 	chain := &gasUsedChainReader{mockChainHeaderReader: *f.chain, parent: f.parent}
-	block := types.NewBlock(h, nil, nil, nil, new(trie.Trie))
+	block := types.NewBlock(h, nil, nil, nil, trie.NewStackTrie(nil))
 
 	if _, err := f.engine.VerifyBlockProposal(chain, block, f.valSet); err == nil {
 		t.Fatal("VerifyBlockProposal accepted a header with GasUsed > GasLimit")

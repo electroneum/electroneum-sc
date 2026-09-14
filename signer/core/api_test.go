@@ -61,7 +61,7 @@ func (ui *headlessUi) ApproveTx(request *core.SignTxRequest) (core.SignTxRespons
 	case "M": // modify
 		// The headless UI always modifies the transaction
 		old := big.Int(request.Transaction.Value)
-		newVal := big.NewInt(0).Add(&old, big.NewInt(1))
+		newVal := new(big.Int).Add(&old, big.NewInt(1))
 		request.Transaction.Value = hexutil.Big(*newVal)
 		return core.SignTxResponse{request.Transaction, true}, nil
 	default:
@@ -230,8 +230,7 @@ func mkTestTx(from common.MixedcaseAddress) apitypes.SendTxArgs {
 		GasPrice: &gasPrice,
 		Value:    value,
 		Data:     &data,
-		Nonce:    nonce,
-	}
+		Nonce:    nonce}
 	return tx
 }
 
@@ -283,7 +282,7 @@ func TestSignTx(t *testing.T) {
 		t.Fatal(err)
 	}
 	parsedTx := &types.Transaction{}
-	rlp.Decode(bytes.NewReader(res.Raw), parsedTx)
+	rlp.DecodeBytes(res.Raw, parsedTx)
 
 	//The tx should NOT be modified by the UI
 	if parsedTx.Value().Cmp(tx.Value.ToInt()) != 0 {
@@ -309,7 +308,7 @@ func TestSignTx(t *testing.T) {
 		t.Fatal(err)
 	}
 	parsedTx2 := &types.Transaction{}
-	rlp.Decode(bytes.NewReader(res.Raw), parsedTx2)
+	rlp.DecodeBytes(res.Raw, parsedTx2)
 
 	//The tx should be modified by the UI
 	if parsedTx2.Value().Cmp(tx.Value.ToInt()) != 0 {

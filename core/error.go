@@ -33,12 +33,6 @@ var (
 	ErrNoGenesis = errors.New("genesis not found in chain")
 
 	errSideChainReceipts = errors.New("side blocks can't be accepted as ancient chain data")
-
-	errBadPrioritySignature = errors.New("priority transaction has an invalid signature")
-
-	errBadPriorityKey = errors.New("priority transaction uses a pubkey that is not permitted for priority sending")
-
-	errNoGasPriceWaiver = errors.New("priority sender does not have a gas price waiver but sent a tx with zero gas fee and tip")
 )
 
 // List of evm-call-message pre-checking errors. All state transition messages will
@@ -69,6 +63,10 @@ var (
 	// have enough funds for transfer(topmost call only).
 	ErrInsufficientFundsForTransfer = errors.New("insufficient funds for transfer")
 
+	// ErrMaxInitCodeSizeExceeded is returned if creation transaction provides the init code bigger
+	// than init code size limit.
+	ErrMaxInitCodeSizeExceeded = errors.New("max initcode size exceeded")
+
 	// ErrInsufficientFunds is returned if the total cost of executing a transaction
 	// is higher than the balance of the user's account.
 	ErrInsufficientFunds = errors.New("insufficient funds for gas * price + value")
@@ -97,9 +95,13 @@ var (
 	ErrFeeCapVeryHigh = errors.New("max fee per gas higher than 2^256-1")
 
 	// ErrFeeCapTooLow is returned if the transaction fee cap is less than the
-	// the base fee of the block.
+	// base fee of the block.
 	ErrFeeCapTooLow = errors.New("max fee per gas less than block base fee")
 
 	// ErrSenderNoEOA is returned if the sender of a transaction is a contract.
 	ErrSenderNoEOA = errors.New("sender not an eoa")
+
+	// ErrBlobFeeCapTooLow is returned if the transaction fee cap is less than the
+	// blob gas fee of the block.
+	ErrBlobFeeCapTooLow = errors.New("max fee per blob gas less than block blob gas fee")
 )

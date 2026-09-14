@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"github.com/electroneum/electroneum-sc/common"
-	"github.com/electroneum/electroneum-sc/core/state/snapshot"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -32,7 +32,7 @@ const (
 
 // ProtocolName is the official short name of the `snap` protocol used during
 // devp2p capability negotiation.
-const ProtocolName = "etn-snap"
+const ProtocolName = "etn-snap" // Electroneum renames the snap subprotocol too
 
 // ProtocolVersions are the supported versions of the `snap` protocol (first
 // is primary).
@@ -104,7 +104,7 @@ func (p *AccountRangePacket) Unpack() ([]common.Hash, [][]byte, error) {
 		accounts = make([][]byte, len(p.Accounts))
 	)
 	for i, acc := range p.Accounts {
-		val, err := snapshot.FullAccountRLP(acc.Body)
+		val, err := types.FullAccountRLP(acc.Body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid account %x: %v", acc.Body, err)
 		}

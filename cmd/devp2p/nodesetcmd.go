@@ -25,29 +25,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/forkid"
 	"github.com/electroneum/electroneum-sc/p2p/enr"
 	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/urfave/cli/v2"
 )
 
 var (
-	nodesetCommand = cli.Command{
+	nodesetCommand = &cli.Command{
 		Name:  "nodeset",
 		Usage: "Node set tools",
-		Subcommands: []cli.Command{
+		Subcommands: []*cli.Command{
 			nodesetInfoCommand,
 			nodesetFilterCommand,
 		},
 	}
-	nodesetInfoCommand = cli.Command{
+	nodesetInfoCommand = &cli.Command{
 		Name:      "info",
 		Usage:     "Shows statistics about a node set",
 		Action:    nodesetInfo,
 		ArgsUsage: "<nodes.json>",
 	}
-	nodesetFilterCommand = cli.Command{
+	nodesetFilterCommand = &cli.Command{
 		Name:      "filter",
 		Usage:     "Filters a node set",
 		Action:    nodesetFilter,
@@ -59,7 +60,7 @@ var (
 
 func nodesetInfo(ctx *cli.Context) error {
 	if ctx.NArg() < 1 {
-		return fmt.Errorf("need nodes file as argument")
+		return errors.New("need nodes file as argument")
 	}
 
 	ns := loadNodesJSON(ctx.Args().First())
@@ -98,7 +99,7 @@ func showAttributeCounts(ns nodeSet) {
 
 func nodesetFilter(ctx *cli.Context) error {
 	if ctx.NArg() < 1 {
-		return fmt.Errorf("need nodes file as argument")
+		return errors.New("need nodes file as argument")
 	}
 	// Parse -limit.
 	limit, err := parseFilterLimit(ctx.Args().Tail())
@@ -137,7 +138,7 @@ var filterFlags = map[string]nodeFilterC{
 	"-limit":       {1, trueFilter}, // needed to skip over -limit
 	"-ip":          {1, ipFilter},
 	"-min-age":     {1, minAgeFilter},
-	"-eth-network": {1, etnFilter},
+	"-eth-network": {1, ethFilter},
 	"-les-server":  {0, lesFilter},
 	"-snap":        {0, snapFilter},
 }
@@ -224,15 +225,17 @@ func minAgeFilter(args []string) (nodeFilter, error) {
 	return f, nil
 }
 
-func etnFilter(args []string) (nodeFilter, error) {
+func ethFilter(args []string) (nodeFilter, error) {
 	var filter forkid.Filter
 	switch args[0] {
 	case "mainnet":
-		filter = forkid.NewStaticFilter(params.MainnetChainConfig, params.MainnetGenesisHash)
-	case "stagenet":
-		filter = forkid.NewStaticFilter(params.StagenetChainConfig, params.StagenetGenesisHash)
-	case "testnet":
-		filter = forkid.NewStaticFilter(params.TestnetChainConfig, params.TestnetGenesisHash)
+		filter = forkid.NewStaticFilter(params.MainnetChainConfig, core.DefaultGenesisBlock().ToBlock())
+	case "goerli":
+		filter = forkid.NewStaticFilter(params.GoerliChainConfig, core.DefaultStagenetGenesisBlock().ToBlock())
+	case "sepolia":
+		filter = forkid.NewStaticFilter(params.SepoliaChainConfig, core.DefaultTestnetGenesisBlock().ToBlock())
+	case "holesky":
+		filter = forkid.NewStaticFilter(params.HoleskyChainConfig, core.DefaultTestnetGenesisBlock().ToBlock())
 	default:
 		return nil, fmt.Errorf("unknown network %q", args[0])
 	}
@@ -242,7 +245,7 @@ func etnFilter(args []string) (nodeFilter, error) {
 			ForkID forkid.ID
 			Tail   []rlp.RawValue `rlp:"tail"`
 		}
-		if n.N.Load(enr.WithEntry("etn", &eth)) != nil {
+		if n.N.Load(enr.WithEntry("eth", &eth)) != nil {
 			return false
 		}
 		return filter(eth.ForkID) == nil
@@ -255,7 +258,7 @@ func lesFilter(args []string) (nodeFilter, error) {
 		var les struct {
 			Tail []rlp.RawValue `rlp:"tail"`
 		}
-		return n.N.Load(enr.WithEntry("etn-les", &les)) == nil
+		return n.N.Load(enr.WithEntry("les", &les)) == nil
 	}
 	return f, nil
 }
@@ -265,7 +268,7 @@ func snapFilter(args []string) (nodeFilter, error) {
 		var snap struct {
 			Tail []rlp.RawValue `rlp:"tail"`
 		}
-		return n.N.Load(enr.WithEntry("etn-snap", &snap)) == nil
+		return n.N.Load(enr.WithEntry("snap", &snap)) == nil
 	}
 	return f, nil
 }

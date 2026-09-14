@@ -62,7 +62,10 @@ func (sb *Backend) Signers(header *types.Header) ([]common.Address, error) {
 // VerifyHeader checks whether a header conforms to the consensus rules of a
 // given engine. Verifying the seal may be done optionally here, or explicitly
 // via the VerifySeal method.
-func (sb *Backend) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
+// The seal/seals parameters upstream used to pass here were dropped in geth
+// v1.13. No behaviour changes: IBFT always verifies committed seals, so both
+// implementations ignored them already.
+func (sb *Backend) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header) error {
 	return sb.verifyHeader(chain, header, nil)
 }
 
@@ -86,7 +89,7 @@ func (sb *Backend) verifyHeader(chain consensus.ChainHeaderReader, header *types
 // concurrently. The method returns a quit channel to abort the operations and
 // a results channel to retrieve the async verifications (the order is that of
 // the input slice).
-func (sb *Backend) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
+func (sb *Backend) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header) (chan<- struct{}, <-chan error) {
 	abort := make(chan struct{})
 	results := make(chan error, len(headers))
 	go func() {
@@ -181,19 +184,25 @@ func (sb *Backend) Prepare(chain consensus.ChainHeaderReader, header *types.Head
 //
 // Note, the block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
-func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
+// Withdrawals are an EIP-4895 (Shanghai) concept. Electroneum does not
+// activate Shanghai, so the list is always empty here; it is accepted only to
+// satisfy the upstream consensus.Engine signature.
+func (sb *Backend) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+	if len(withdrawals) > 0 {
+		panic("istanbul: withdrawals are not supported on Electroneum")
+	}
 	if header.Coinbase != (common.Address{}) {
 		blockReward := sb.GetBaseBlockReward(chain, header, nil)
 		state.AddBalance(header.Coinbase, blockReward)
 	}
-	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles)
+	sb.EngineForBlockNumber(header.Number).Finalize(chain, header, state, txs, uncles, withdrawals)
 }
 
 // FinalizeAndAssemble implements consensus.Engine, ensuring no uncles are set,
 // nor block rewards given, and returns the final block.
-func (sb *Backend) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
-	sb.Finalize(chain, header, state, txs, uncles)
-	return sb.EngineForBlockNumber(header.Number).FinalizeAndAssemble(chain, header, state, txs, uncles, receipts)
+func (sb *Backend) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+	sb.Finalize(chain, header, state, txs, uncles, withdrawals)
+	return sb.EngineForBlockNumber(header.Number).FinalizeAndAssemble(chain, header, state, txs, uncles, receipts, withdrawals)
 }
 
 // Seal generates a new block for the given input block with the local miner's

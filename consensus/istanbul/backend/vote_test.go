@@ -143,8 +143,8 @@ func TestQBFTInsertChainRejectsInvalidVoteType(t *testing.T) {
 	if head := chain.CurrentBlock(); head.Hash() == committed.Hash() {
 		t.Fatal("block with invalid vote type became the canonical head")
 	}
-	if head := chain.CurrentBlock(); head.NumberU64() != 0 {
-		t.Fatalf("canonical head advanced past genesis: got %d", head.NumberU64())
+	if head := chain.CurrentBlock(); head.Number.Uint64() != 0 {
+		t.Fatalf("canonical head advanced past genesis: got %d", head.Number.Uint64())
 	}
 }
 

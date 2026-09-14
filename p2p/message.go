@@ -104,8 +104,9 @@ func Send(w MsgWriter, msgcode uint64, data interface{}) error {
 	return w.WriteMsg(Msg{Code: msgcode, Size: uint32(size), Payload: r})
 }
 
-// SendWithNoEncoding writes an RLP-encoded message with the given code.
-// It does not re-encode the message
+// SendWithNoEncoding writes an already RLP-encoded message with the given code.
+// QBFT signs over the encoded payload, so re-encoding it here would change the
+// bytes the signature covers.
 func SendWithNoEncoding(w MsgWriter, msgcode uint64, payload []byte) error {
 	return w.WriteMsg(Msg{Code: msgcode, Size: uint32(len(payload)), Payload: bytes.NewReader(payload)})
 }
@@ -113,11 +114,11 @@ func SendWithNoEncoding(w MsgWriter, msgcode uint64, payload []byte) error {
 // SendItems writes an RLP with the given code and data elements.
 // For a call such as:
 //
-// SendItems(w, code, e1, e2, e3)
+//	SendItems(w, code, e1, e2, e3)
 //
 // the message payload will be an RLP list containing the items:
 //
-// [e1, e2, e3]
+//	[e1, e2, e3]
 func SendItems(w MsgWriter, msgcode uint64, elems ...interface{}) error {
 	return Send(w, msgcode, elems)
 }
@@ -162,7 +163,7 @@ func MsgPipe() (*MsgPipeRW, *MsgPipeRW) {
 	var (
 		c1, c2  = make(chan Msg), make(chan Msg)
 		closing = make(chan struct{})
-		closed  = new(int32)
+		closed  = new(atomic.Bool)
 		rw1     = &MsgPipeRW{c1, c2, closing, closed}
 		rw2     = &MsgPipeRW{c2, c1, closing, closed}
 	)
@@ -178,13 +179,13 @@ type MsgPipeRW struct {
 	w       chan<- Msg
 	r       <-chan Msg
 	closing chan struct{}
-	closed  *int32
+	closed  *atomic.Bool
 }
 
 // WriteMsg sends a message on the pipe.
 // It blocks until the receiver has consumed the message payload.
 func (p *MsgPipeRW) WriteMsg(msg Msg) error {
-	if atomic.LoadInt32(p.closed) == 0 {
+	if !p.closed.Load() {
 		consumed := make(chan struct{}, 1)
 		msg.Payload = &eofSignal{msg.Payload, msg.Size, consumed}
 		select {
@@ -205,7 +206,7 @@ func (p *MsgPipeRW) WriteMsg(msg Msg) error {
 
 // ReadMsg returns a message sent on the other end of the pipe.
 func (p *MsgPipeRW) ReadMsg() (Msg, error) {
-	if atomic.LoadInt32(p.closed) == 0 {
+	if !p.closed.Load() {
 		select {
 		case msg := <-p.r:
 			return msg, nil
@@ -219,9 +220,8 @@ func (p *MsgPipeRW) ReadMsg() (Msg, error) {
 // of the pipe. They will return ErrPipeClosed. Close also
 // interrupts any reads from a message payload.
 func (p *MsgPipeRW) Close() error {
-	if atomic.AddInt32(p.closed, 1) != 1 {
+	if p.closed.Swap(true) {
 		// someone else is already closing
-		atomic.StoreInt32(p.closed, 1) // avoid overflow
 		return nil
 	}
 	close(p.closing)

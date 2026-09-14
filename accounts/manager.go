@@ -109,7 +109,7 @@ func (am *Manager) Config() *Config {
 }
 
 // AddBackend starts the tracking of an additional backend for wallet updates.
-// cmd/geth assumes once this func returns the backends have been already integrated.
+// cmd/etn-sc assumes once this func returns the backends have been already integrated.
 func (am *Manager) AddBackend(backend Backend) {
 	done := make(chan struct{})
 	am.newBackends <- newBackendEvent{backend, done}
@@ -257,7 +257,7 @@ func merge(slice []Wallet, wallets ...Wallet) []Wallet {
 	return slice
 }
 
-// drop is the couterpart of merge, which looks up wallets from within the sorted
+// drop is the counterpart of merge, which looks up wallets from within the sorted
 // cache and removes the ones specified.
 func drop(slice []Wallet, wallets ...Wallet) []Wallet {
 	for _, wallet := range wallets {
