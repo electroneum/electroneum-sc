@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/electroneum/electroneum-sc/common"
@@ -101,6 +102,10 @@ type core struct {
 	pendingRequestsMu *sync.Mutex
 
 	consensusTimestamp time.Time
+
+	// roundStateInfo holds the latest *istanbul.RoundStateInfo published by
+	// publishRoundState, for lock-free reads from outside the event loop.
+	roundStateInfo atomic.Pointer[istanbul.RoundStateInfo]
 }
 
 func (c *core) currentView() *istanbul.View {
@@ -218,6 +223,7 @@ func (c *core) startNewRound(round *big.Int) {
 		c.roundChangeSet.ClearLowerThan(round)
 	}
 	c.roundChangeSet.NewRound(round)
+	c.publishRoundStateLocked()
 
 	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
 }
@@ -316,4 +322,67 @@ func (c *core) QuorumSize() int {
 func PrepareCommittedSeal(header *types.Header, round uint32) []byte {
 	h := types.CopyHeader(header)
 	return h.QBFTHashWithRoundNumber(round).Bytes()
+}
+
+// RoundState implements istanbul.Core.RoundState.
+func (c *core) RoundState() *istanbul.RoundStateInfo {
+	return c.roundStateInfo.Load()
+}
+
+// publishRoundState takes a snapshot of the consensus state for RoundState.
+// It is called by the event loop after every event it handles.
+func (c *core) publishRoundState() {
+	c.currentMutex.Lock()
+	defer c.currentMutex.Unlock()
+	c.publishRoundStateLocked()
+}
+
+// publishRoundStateLocked is publishRoundState for callers that already hold
+// currentMutex.
+func (c *core) publishRoundStateLocked() {
+	if c.current == nil || c.valSet == nil {
+		return
+	}
+	now := uint64(time.Now().Unix())
+	info := &istanbul.RoundStateInfo{
+		Sequence:     c.current.Sequence().Uint64(),
+		Round:        c.current.Round().Uint64(),
+		State:        c.state.String(),
+		HasProposal:  c.current.Proposal() != nil,
+		Validators:   c.valSet.Size(),
+		QuorumSize:   c.QuorumSize(),
+		RoundChanges: map[uint64]int{},
+		UpdatedAt:    now,
+	}
+	if proposer := c.valSet.GetProposer(); proposer != nil {
+		info.Proposer = proposer.Address()
+		info.IsProposer = info.Proposer == c.address
+	}
+	if c.current.QBFTPrepares != nil {
+		info.Prepares = c.current.QBFTPrepares.Size()
+	}
+	if c.current.QBFTCommits != nil {
+		info.Commits = c.current.QBFTCommits.Size()
+	}
+	if c.current.preparedRound != nil {
+		pr := c.current.preparedRound.Uint64()
+		info.PreparedRound = &pr
+	}
+	if rcs := c.roundChangeSet; rcs != nil {
+		rcs.mu.Lock()
+		for round, msgs := range rcs.roundChanges {
+			if round < info.Round || msgs == nil {
+				continue
+			}
+			if n := msgs.Size(); n > 0 {
+				info.RoundChanges[round] = n
+			}
+		}
+		rcs.mu.Unlock()
+	}
+	info.RoundStartedAt = now
+	if prev := c.roundStateInfo.Load(); prev != nil && prev.Sequence == info.Sequence && prev.Round == info.Round {
+		info.RoundStartedAt = prev.RoundStartedAt
+	}
+	c.roundStateInfo.Store(info)
 }

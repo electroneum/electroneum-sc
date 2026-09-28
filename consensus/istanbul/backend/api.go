@@ -22,6 +22,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/rpc"
@@ -44,6 +45,24 @@ type BlockSigners struct {
 type Status struct {
 	SigningStatus map[common.Address]int `json:"sealerActivity"`
 	NumBlocks     uint64                 `json:"numBlocks"`
+}
+
+// GetRoundState returns a snapshot of this node's QBFT consensus state: the
+// block and round it is working on, how far it has got in that round, and the
+// ROUND-CHANGE messages it holds. Read-only; intended for diagnosing a
+// stalled chain by comparing the snapshots of all validators.
+func (api *API) GetRoundState() (*istanbul.RoundStateInfo, error) {
+	api.backend.coreMu.RLock()
+	core, started := api.backend.core, api.backend.coreStarted
+	api.backend.coreMu.RUnlock()
+	if !started || core == nil {
+		return nil, istanbul.ErrStoppedEngine
+	}
+	info := core.RoundState()
+	if info == nil {
+		return nil, errors.New("consensus state not available yet")
+	}
+	return info, nil
 }
 
 // NodeAddress returns the public address that is used to sign block headers in IBFT

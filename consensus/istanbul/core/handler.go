@@ -120,30 +120,24 @@ func (c *core) handleEvents() {
 				}
 			case istanbul.MessageEvent:
 				// we received a message from another validator
-				if err := c.handleEncodedMsg(ev.Code, ev.Payload); err != nil {
-					continue
+				if err := c.handleEncodedMsg(ev.Code, ev.Payload); err == nil {
+					// if successfully processed, we gossip message to other validators
+					c.backend.Gossip(c.valSet, ev.Code, ev.Payload)
 				}
-
-				// if successfully processed, we gossip message to other validators
-				c.backend.Gossip(c.valSet, ev.Code, ev.Payload)
 			case backlogEvent:
 				// we process again a future message that was backlogged
 				// no need to check signature as it was already node when we first received message
 				// This message was already charged against the backlog byte budget when
 				// first admitted and has since been popped, so if it re-backlogs it is
 				// re-charged from its own encoded size; pass ev.size as its charge.
-				if err := c.handleDecodedMessage(ev.msg, ev.size); err != nil {
-					continue
+				if err := c.handleDecodedMessage(ev.msg, ev.size); err == nil {
+					if data, err := rlp.EncodeToBytes(ev.msg); err != nil {
+						c.logger.Error("IBFT: can not encode backlog message", "err", err)
+					} else {
+						// if successfully processed, we gossip message to other validators
+						c.backend.Gossip(c.valSet, ev.msg.Code(), data)
+					}
 				}
-
-				data, err := rlp.EncodeToBytes(ev.msg)
-				if err != nil {
-					c.logger.Error("IBFT: can not encode backlog message", "err", err)
-					continue
-				}
-
-				// if successfully processed, we gossip message to other validators
-				c.backend.Gossip(c.valSet, ev.msg.Code(), data)
 			}
 		case event, ok := <-c.timeoutSub.Chan():
 			// we received a round change timeout
@@ -166,6 +160,9 @@ func (c *core) handleEvents() {
 				c.handleFinalCommitted()
 			}
 		}
+		// Every consensus state change happens in this loop, so a snapshot
+		// taken after each event is always current.
+		c.publishRoundState()
 	}
 }
 
