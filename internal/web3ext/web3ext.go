@@ -941,6 +941,11 @@ web3._extend({
 			params: 1,
 			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
 		}),
+		new web3._extend.Method({
+			name: 'getRoundState',
+			call: 'istanbul_getRoundState',
+			params: 0
+		}),
 
 	],
 	properties:
