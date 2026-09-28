@@ -5,6 +5,10 @@ import "github.com/electroneum/electroneum-sc/common"
 type Core interface {
 	Start() error
 	Stop() error
+
+	// IsProposer reports whether this node is the proposer for the current
+	// round. Safe to call from any goroutine: it reads the latest published
+	// RoundState rather than the live consensus state.
 	IsProposer() bool
 
 	// RoundState returns the latest snapshot of this node's consensus state,
@@ -17,6 +21,9 @@ type Core interface {
 	//
 	// pending request is populated right at the preprepare stage so this would give us the earliest verification
 	// to avoid any race condition of coming propagated blocks
+	//
+	// Safe to call from any goroutine: it reads the latest published
+	// RoundState rather than the live consensus state.
 	IsCurrentProposal(blockHash common.Hash) bool
 }
 
@@ -41,6 +48,9 @@ type RoundStateInfo struct {
 	IsProposer bool           `json:"isProposer"`
 	// HasProposal is true once this round's PRE-PREPARE has been accepted.
 	HasProposal bool `json:"hasProposal"`
+	// PendingProposal is the hash of the block this node has been asked to
+	// propose for the current sequence, or nil if it has none.
+	PendingProposal *common.Hash `json:"pendingProposal"`
 	// Validators is the size of the current validator set; QuorumSize is how
 	// many matching messages a step needs.
 	Validators int `json:"validators"`

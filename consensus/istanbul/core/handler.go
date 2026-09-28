@@ -51,6 +51,10 @@ func (c *core) Stop() error {
 
 	// Make sure the handler goroutine exits
 	c.handlerWg.Wait()
+
+	// The event loop has stopped; do not keep serving its last snapshot to
+	// IsProposer, IsCurrentProposal or RoundState.
+	c.roundStateInfo.Store(nil)
 	c.logger.Info("IBFT: stopped")
 	return nil
 }

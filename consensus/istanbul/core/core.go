@@ -115,7 +115,10 @@ func (c *core) currentView() *istanbul.View {
 	}
 }
 
-func (c *core) IsProposer() bool {
+// isProposer reports from the live validator set whether this node is the
+// proposer for the current round. Only for use on the consensus event loop,
+// which owns that state; other goroutines use IsProposer.
+func (c *core) isProposer() bool {
 	v := c.valSet
 	if v == nil {
 		return false
@@ -123,8 +126,21 @@ func (c *core) IsProposer() bool {
 	return v.IsProposer(c.backend.Address())
 }
 
+// IsProposer implements istanbul.Core.IsProposer. It is called from the p2p
+// handler, outside the event loop that replaces the validator set and
+// recalculates the proposer on every round, so it reads the published
+// snapshot instead of that live state.
+func (c *core) IsProposer() bool {
+	info := c.roundStateInfo.Load()
+	return info != nil && info.IsProposer
+}
+
+// IsCurrentProposal implements istanbul.Core.IsCurrentProposal. Like
+// IsProposer it is called from the p2p handler and reads the published
+// snapshot rather than the round state the event loop is mutating.
 func (c *core) IsCurrentProposal(blockHash common.Hash) bool {
-	return c.current != nil && c.current.pendingRequest != nil && c.current.pendingRequest.Proposal.Hash() == blockHash
+	info := c.roundStateInfo.Load()
+	return info != nil && info.PendingProposal != nil && *info.PendingProposal == blockHash
 }
 
 // startNewRound starts a new round. if round equals to 0, it means to starts a new sequence
@@ -225,7 +241,7 @@ func (c *core) startNewRound(round *big.Int) {
 	c.roundChangeSet.NewRound(round)
 	c.publishRoundStateLocked()
 
-	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.IsProposer())
+	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.isProposer())
 }
 
 // updateRoundState updates round state by checking if locking block is necessary
@@ -357,6 +373,10 @@ func (c *core) publishRoundStateLocked() {
 	if proposer := c.valSet.GetProposer(); proposer != nil {
 		info.Proposer = proposer.Address()
 		info.IsProposer = info.Proposer == c.address
+	}
+	if req := c.current.pendingRequest; req != nil && req.Proposal != nil {
+		hash := req.Proposal.Hash()
+		info.PendingProposal = &hash
 	}
 	if c.current.QBFTPrepares != nil {
 		info.Prepares = c.current.QBFTPrepares.Size()
