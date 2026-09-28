@@ -51,7 +51,9 @@ func TestGetConfig(t *testing.T) {
 		t.Errorf("error default config:\nexpected: %v\n", DefaultConfig)
 	}
 
-	config := DefaultConfig
+	// Work on a copy: DefaultConfig is a package-level pointer, and setting
+	// Transitions on it would leak into every later test in the package.
+	config := *DefaultConfig
 	config.Transitions = []params.Transition{{
 		Block:       big.NewInt(1),
 		EpochLength: 40000,
@@ -62,7 +64,7 @@ func TestGetConfig(t *testing.T) {
 		Block:                 big.NewInt(5),
 		RequestTimeoutSeconds: 15,
 	}}
-	config1 := *DefaultConfig
+	config1 := config
 	config1.Epoch = 40000
 	config3 := config1
 	config3.BlockPeriod = 5
