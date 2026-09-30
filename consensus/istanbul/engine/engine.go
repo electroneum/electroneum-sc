@@ -144,7 +144,7 @@ func (e *Engine) verifyHeader(chain consensus.ChainHeaderReader, header *types.H
 	}
 
 	// Don't waste time checking blocks from the future (adjusting for allowed threshold)
-	adjustedTimeNow := time.Now().Add(time.Duration(e.cfg.AllowedFutureBlockTime) * time.Second).Unix()
+	adjustedTimeNow := time.Now().Add(time.Duration(e.cfg.GetConfig(header.Number).AllowedFutureBlockTime) * time.Second).Unix()
 	if header.Time > uint64(adjustedTimeNow) {
 		return consensus.ErrFutureBlock
 	}
@@ -234,8 +234,11 @@ func (e *Engine) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 		return consensus.ErrUnknownAncestor
 	}
 
-	// Ensure that the block's timestamp isn't too close to it's parent
-	if parent.Time+e.cfg.GetConfig(parent.Number).BlockPeriod > header.Time {
+	// Ensure that the block's timestamp isn't too close to it's parent. The
+	// period is looked up at the child's height, the same basis Prepare uses to
+	// stamp it, so a BlockPeriodSeconds transition takes effect on its own block
+	// for proposers and verifiers alike.
+	if parent.Time+e.cfg.GetConfig(header.Number).BlockPeriod > header.Time {
 		return istanbulcommon.ErrInvalidTimestamp
 	}
 
