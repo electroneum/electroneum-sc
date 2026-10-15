@@ -46,10 +46,13 @@ var protocolLengths = map[uint]uint64{SNAP1: 8}
 const maxMessageSize = 10 * 1024 * 1024
 
 // maxPacketItems is the maximum number of items accepted in a single list of
-// proof nodes, storage sets, bytecodes, trie nodes or trie node paths. Serving
-// is capped at 1024 bytecodes or trie nodes and proofs are bounded by the trie
-// depth, so honest peers stay well below this.
+// storage sets, bytecodes, trie nodes or trie node paths. Serving is capped at
+// 1024 bytecodes or trie nodes, so honest peers stay well below this.
 const maxPacketItems = 4096
+
+// maxProofNodes is the maximum number of nodes accepted in a range proof. A
+// proof is two trie paths, each bounded by the trie depth.
+const maxProofNodes = 128
 
 const (
 	GetAccountRangeMsg  = 0x00

@@ -46,22 +46,28 @@ func oneByteItems(n int) [][]byte {
 
 func TestByteCodesItemLimit(t *testing.T) {
 	ok := &ByteCodesPacket{ID: 1, Codes: oneByteItems(maxPacketItems)}
-	if err := decodeLimited(encodeMsg(t, ok), new(ByteCodesPacket), 1); err != nil {
+	if err := decodeLimited(encodeMsg(t, ok), new(ByteCodesPacket), fieldLimit{1, maxPacketItems}); err != nil {
 		t.Fatalf("packet at the limit rejected: %v", err)
 	}
 	over := &ByteCodesPacket{ID: 1, Codes: oneByteItems(maxPacketItems + 1)}
-	if err := decodeLimited(encodeMsg(t, over), new(ByteCodesPacket), 1); !errors.Is(err, errTooManyItems) {
+	if err := decodeLimited(encodeMsg(t, over), new(ByteCodesPacket), fieldLimit{1, maxPacketItems}); !errors.Is(err, errTooManyItems) {
 		t.Fatalf("oversized packet: have %v, want %v", err, errTooManyItems)
 	}
 }
 
 func TestStorageRangesItemLimit(t *testing.T) {
+	limits := []fieldLimit{{1, maxPacketItems}, {2, maxProofNodes}}
+
+	ok := &StorageRangesPacket{ID: 1, Slots: make([][]*StorageData, maxPacketItems), Proof: oneByteItems(maxProofNodes)}
+	if err := decodeLimited(encodeMsg(t, ok), new(StorageRangesPacket), limits...); err != nil {
+		t.Fatalf("packet at the limits rejected: %v", err)
+	}
 	over := &StorageRangesPacket{ID: 1, Slots: make([][]*StorageData, maxPacketItems+1)}
-	if err := decodeLimited(encodeMsg(t, over), new(StorageRangesPacket), 1, 2); !errors.Is(err, errTooManyItems) {
+	if err := decodeLimited(encodeMsg(t, over), new(StorageRangesPacket), limits...); !errors.Is(err, errTooManyItems) {
 		t.Fatalf("oversized slots: have %v, want %v", err, errTooManyItems)
 	}
-	over = &StorageRangesPacket{ID: 1, Proof: oneByteItems(maxPacketItems + 1)}
-	if err := decodeLimited(encodeMsg(t, over), new(StorageRangesPacket), 1, 2); !errors.Is(err, errTooManyItems) {
+	over = &StorageRangesPacket{ID: 1, Proof: oneByteItems(maxProofNodes + 1)}
+	if err := decodeLimited(encodeMsg(t, over), new(StorageRangesPacket), limits...); !errors.Is(err, errTooManyItems) {
 		t.Fatalf("oversized proof: have %v, want %v", err, errTooManyItems)
 	}
 }
