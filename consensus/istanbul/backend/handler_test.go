@@ -108,6 +108,37 @@ func TestHandleNewBlockMessage_whenFailToDecode(t *testing.T) {
 	}
 }
 
+// The proposer only needs the header to recognise its own block, so the body
+// must not be decoded: a peer could otherwise stuff it with millions of tiny
+// transactions that decode to many times their size.
+func TestHandleNewBlockMessage_bodyNotDecoded(t *testing.T) {
+	_, backend := newBlockChain(1)
+	defer backend.Stop()
+	arbitraryAddress := common.StringToAddress("arbitrary")
+	arbitraryBlock, _ := buildArbitraryP2PNewBlockMessage(t, false)
+	postAndWait(backend, arbitraryBlock, t)
+
+	// Transactions that fail to decode, so decoding the body would fail too
+	junkTxs := append([]rlp.RawValue{}, []byte{0x01}, []byte{0x02})
+	request := []interface{}{
+		[]interface{}{arbitraryBlock.Header(), junkTxs, []*types.Header{}},
+		big.NewInt(1),
+	}
+	payload, err := rlp.EncodeToBytes(request)
+	if err != nil {
+		t.Fatalf("can't encode due to %s", err)
+	}
+	msg := p2p.Msg{Code: 0x07, Size: uint32(len(payload)), Payload: bytes.NewReader(payload)}
+
+	handled, err := tryUntilMessageIsHandled(backend, arbitraryAddress, msg)
+	if err != nil {
+		t.Errorf("expected message being handled successfully but got %s", err)
+	}
+	if !handled {
+		t.Errorf("expected proposed block to be recognised from its header")
+	}
+}
+
 func postAndWait(backend *Backend, block *types.Block, t *testing.T) {
 	eventSub := backend.EventMux().Subscribe(istanbul.RequestEvent{})
 	defer eventSub.Unsubscribe()

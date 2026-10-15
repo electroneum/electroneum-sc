@@ -29,6 +29,7 @@ import (
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/p2p"
+	"github.com/electroneum/electroneum-sc/rlp"
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -117,17 +118,23 @@ func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 			}
 			reader.Reset(payload)       // ready to be decoded
 			defer reader.Reset(payload) // restore so main eth/handler can decode
-			var request struct {        // this has to be same as eth/protocol.go#newBlockData as we are reading NewBlockMsg
-				Block *types.Block
-				TD    *big.Int
+			// This has to match eth/protocol.go#NewBlockPacket as we are reading
+			// NewBlockMsg. Only the header is needed for the hash, so leave the
+			// body encoded: the eth handler checks it before decoding.
+			var request struct {
+				Block struct {
+					Header *types.Header
+					Body   []rlp.RawValue `rlp:"tail"`
+				}
+				TD *big.Int
 			}
-			if err := msg.Decode(&request); err != nil {
+			if err := msg.Decode(&request); err != nil || request.Block.Header == nil {
 				sb.logger.Error("IBFT: unable to decode the NewBlockMsg", "error", err)
 				return false, nil
 			}
-			newRequestedBlock := request.Block
-			if newRequestedBlock.Header().MixDigest == types.IstanbulDigest && sb.core.IsCurrentProposal(newRequestedBlock.Hash()) {
-				sb.logger.Debug("IBFT: block already proposed", "hash", newRequestedBlock.Hash(), "sender", addr)
+			header := request.Block.Header
+			if header.MixDigest == types.IstanbulDigest && sb.core.IsCurrentProposal(header.Hash()) {
+				sb.logger.Debug("IBFT: block already proposed", "hash", header.Hash(), "sender", addr)
 				return true, nil
 			}
 		}
