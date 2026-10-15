@@ -44,12 +44,18 @@ import (
 // testEthHandler is a mock event handler to listen for inbound network requests
 // on the `eth` protocol and convert them into a more easily testable form.
 type testEthHandler struct {
+	chain           *core.BlockChain // Optional chain for handlers that need the local head
 	blockBroadcasts event.Feed
 	txAnnounces     event.Feed
 	txBroadcasts    event.Feed
 }
 
-func (h *testEthHandler) Chain() *core.BlockChain              { panic("no backing chain") }
+func (h *testEthHandler) Chain() *core.BlockChain {
+	if h.chain == nil {
+		panic("no backing chain")
+	}
+	return h.chain
+}
 func (h *testEthHandler) TxPool() eth.TxPool                   { panic("no backing tx pool") }
 func (h *testEthHandler) AcceptTxs() bool                      { return true }
 func (h *testEthHandler) RunPeer(*eth.Peer, eth.Handler) error { panic("not used in tests") }
@@ -612,7 +618,7 @@ func testBroadcastBlock(t *testing.T, peers, bcasts int) {
 
 	sinks := make([]*testEthHandler, peers)
 	for i := 0; i < len(sinks); i++ {
-		sinks[i] = new(testEthHandler)
+		sinks[i] = &testEthHandler{chain: source.chain}
 	}
 	// Interconnect all the sink handlers with the source handler
 	var (
@@ -708,7 +714,7 @@ func testBroadcastMalformedBlock(t *testing.T, protocol uint) {
 	}
 	// After the handshake completes, the source handler should stream the sink
 	// the blocks, subscribe to inbound network events
-	backend := new(testEthHandler)
+	backend := &testEthHandler{chain: source.chain}
 
 	blocks := make(chan *types.Block, 1)
 	sub := backend.blockBroadcasts.Subscribe(blocks)

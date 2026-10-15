@@ -31,6 +31,7 @@ import (
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/p2p"
 	"github.com/electroneum/electroneum-sc/p2p/enode"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 )
@@ -347,3 +348,72 @@ func TestRawBlockBodyNotDecoded(t *testing.T) {
 		t.Fatalf("junk body hashed to %x, want empty hash", root)
 	}
 }
+
+// newBlockMsg builds a NewBlock message around a header and an encoded
+// transaction list.
+func newBlockMsg(t *testing.T, header *types.Header, txs []byte) p2p.Msg {
+	enc, err := rlp.EncodeToBytes(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := rlpList(append(append(enc, txs...), 0xc0))
+	td, _ := rlp.EncodeToBytes(big.NewInt(1))
+	body := rlpList(append(block, td...))
+	return p2p.Msg{Code: NewBlockMsg, Size: uint32(len(body)), Payload: bytes.NewReader(body)}
+}
+
+// Propagated blocks are checked against their gas before their transactions
+// get decoded, since nobody asked for them.
+func TestNewBlockTransactionLimit(t *testing.T) {
+	peer, _ := newDispatchTestPeer(t)
+	backend := &txAcceptingBackend{testBackend: newTestBackend(1)}
+	defer backend.close()
+
+	tx := []byte{0xc9, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}
+	limit := backend.chain.CurrentBlock().GasLimit()
+
+	// More transactions than the gas used can pay for is never valid.
+	header := backend.chain.CurrentBlock().Header()
+	header.GasUsed = 10 * params.TxGas
+	if err := handleNewBlock(backend, newBlockMsg(t, header, rlpList(bytes.Repeat(tx, 11))), peer); !errors.Is(err, errDecode) {
+		t.Fatalf("overfull block: have %v, want %v", err, errDecode)
+	}
+	// Gas used beyond the gas limit is never valid either.
+	header = backend.chain.CurrentBlock().Header()
+	header.GasUsed = header.GasLimit + 1
+	if err := handleNewBlock(backend, newBlockMsg(t, header, rlpList(nil)), peer); !errors.Is(err, errDecode) {
+		t.Fatalf("block over gas limit: have %v, want %v", err, errDecode)
+	}
+	// A block claiming a huge gas limit to fit ~1M transactions is skipped
+	// without decoding them.
+	txs := rlpList(bytes.Repeat(tx, (maxMessageSize-1024)/len(tx)))
+	header = backend.chain.CurrentBlock().Header()
+	header.GasLimit = 1 << 40
+	header.GasUsed = header.GasLimit
+	msg := newBlockMsg(t, header, txs)
+
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if err := handleNewBlock(backend, msg, peer); err != nil {
+		t.Fatalf("block with oversized gas limit: have %v, want nil", err)
+	}
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 3*maxMessageSize {
+		t.Fatalf("block with oversized gas limit allocated %d bytes, want <= %d", alloc, 3*maxMessageSize)
+	}
+	if backend.handled {
+		t.Fatal("rejected block reached the backend")
+	}
+	// Twice our own gas limit is still fine though, we might just be behind.
+	header = backend.chain.CurrentBlock().Header()
+	header.GasLimit = 2 * limit
+	header.TxHash = types.EmptyRootHash
+	if err := handleNewBlock(backend, newBlockMsg(t, header, rlpList(nil)), peer); err != nil {
+		t.Fatalf("block within gas limit slack: %v", err)
+	}
+	if !backend.handled {
+		t.Fatal("valid block didn't reach the backend")
+	}
+}
+

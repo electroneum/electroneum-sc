@@ -20,12 +20,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 )
@@ -335,10 +337,46 @@ func handleNewBlockhashes(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func handleNewBlock(backend Backend, msg Decoder, peer *Peer) error {
-	// Retrieve and decode the propagated block
-	ann := new(NewBlockPacket)
-	if err := msg.Decode(ann); err != nil {
+	// Retrieve the propagated block, leaving its body encoded until we know
+	// it's not stuffed with more transactions than its gas allows
+	raw := new(rawNewBlockPacket)
+	if err := msg.Decode(raw); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	header := raw.Block.Header
+	content, _, err := rlp.SplitList(raw.Block.Txs)
+	if err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	txs, err := rlp.CountValues(content)
+	if err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	// Every transaction burns at least TxGas, so no valid block can hold more
+	// than its gas used allows
+	if header.GasUsed > header.GasLimit || uint64(txs) > header.GasUsed/params.TxGas {
+		return fmt.Errorf("%w: block with %d transactions, gas used %d, gas limit %d", errDecode, txs, header.GasUsed, header.GasLimit)
+	}
+	// The gas limit only drifts slowly, so a block claiming far more room than
+	// our chain has is either bogus or too far ahead to import. Skip it without
+	// decoding the body, but don't punish the peer in case we're just behind.
+	if limit := backend.Chain().CurrentBlock().GasLimit(); header.GasLimit > 2*limit {
+		peer.Log().Debug("Ignoring propagated block with oversized gas limit", "number", header.Number, "hash", header.Hash(), "gaslimit", header.GasLimit, "local", limit)
+		return nil
+	}
+	var body struct {
+		Txs    []*types.Transaction
+		Uncles []*types.Header
+	}
+	if err := rlp.DecodeBytes(raw.Block.Txs, &body.Txs); err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	if err := rlp.DecodeBytes(raw.Block.Uncles, &body.Uncles); err != nil {
+		return fmt.Errorf("%w: message %v: uncles: %v", errDecode, msg, err)
+	}
+	ann := &NewBlockPacket{
+		Block: types.NewBlockWithHeader(header).WithBody(body.Txs, body.Uncles),
+		TD:    raw.TD,
 	}
 	if err := ann.sanityCheck(); err != nil {
 		return err
@@ -549,6 +587,16 @@ func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 		id:   res.RequestId,
 		code: ReceiptsMsg,
 	}, decode, metadata)
+}
+
+// rawNewBlockPacket is a NewBlockPacket with the block body left encoded.
+type rawNewBlockPacket struct {
+	Block struct {
+		Header *types.Header
+		Txs    rlp.RawValue
+		Uncles rlp.RawValue
+	}
+	TD *big.Int
 }
 
 // rawResponsePacket66 is the eth/66 envelope of a response packet with the
