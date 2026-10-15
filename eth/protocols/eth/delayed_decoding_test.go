@@ -20,14 +20,19 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"math/big"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/p2p"
 	"github.com/electroneum/electroneum-sc/p2p/enode"
 	"github.com/electroneum/electroneum-sc/rlp"
+	"github.com/electroneum/electroneum-sc/trie"
 )
 
 // Reported via Bugcrowd: response packets were fully decoded before checking
@@ -227,5 +232,118 @@ func TestTransactionsItemLimit(t *testing.T) {
 	}
 	if backend.handled {
 		t.Fatal("oversized broadcast reached the backend")
+	}
+}
+
+// Block bodies are hashed straight from their encoding, which must agree with
+// hashing the decoded transactions and uncles exactly.
+func TestRawBlockBodyHashes(t *testing.T) {
+	key, _ := crypto.GenerateKey()
+	signer := types.LatestSignerForChainID(big.NewInt(1))
+
+	// Enough of a mix of transaction types to cross the 0x80 index boundary
+	// where DeriveSha changes insertion order.
+	var txs []*types.Transaction
+	for i := 0; i < 300; i++ {
+		var inner types.TxData
+		switch i % 3 {
+		case 0:
+			inner = &types.LegacyTx{Nonce: uint64(i), GasPrice: big.NewInt(1), Gas: 21000, To: &common.Address{1}, Value: big.NewInt(int64(i))}
+		case 1:
+			inner = &types.AccessListTx{ChainID: big.NewInt(1), Nonce: uint64(i), GasPrice: big.NewInt(1), Gas: 21000, To: &common.Address{2}}
+		case 2:
+			inner = &types.DynamicFeeTx{ChainID: big.NewInt(1), Nonce: uint64(i), GasTipCap: big.NewInt(1), GasFeeCap: big.NewInt(2), Gas: 21000, Data: []byte{byte(i)}}
+		}
+		tx, err := types.SignNewTx(key, signer, inner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		txs = append(txs, tx)
+	}
+	uncles := []*types.Header{{Number: big.NewInt(1), Difficulty: big.NewInt(1)}, {Number: big.NewInt(2), Difficulty: big.NewInt(2)}}
+
+	for _, n := range []int{0, 1, 127, 128, 129, len(txs)} {
+		for _, u := range [][]*types.Header{nil, uncles} {
+			enc, err := rlp.EncodeToBytes([]*BlockBody{{Transactions: txs[:n], Uncles: u}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			peer, app := newDispatchTestPeer(t)
+			sink := make(chan *Response, 1)
+			go func() {
+				peer.RequestBodies([]common.Hash{{1}}, sink)
+			}()
+			msg, err := app.ReadMsg()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var req GetBlockBodiesPacket66
+			msg.Decode(&req)
+
+			done := make(chan error, 1)
+			go func() {
+				res := <-sink
+				hashes := res.Meta.([][]common.Hash)
+				if want := types.DeriveSha(types.Transactions(txs[:n]), trie.NewStackTrie(nil)); hashes[0][0] != want {
+					done <- fmt.Errorf("%d txs, %d uncles: tx root %x, want %x", n, len(u), hashes[0][0], want)
+				} else if want := types.CalcUncleHash(u); hashes[1][0] != want {
+					done <- fmt.Errorf("%d txs, %d uncles: uncle hash %x, want %x", n, len(u), hashes[1][0], want)
+				} else if dtxs, duncles, err := (*res.Res.(*RawBlockBodiesPacket))[0].Decode(); err != nil || len(dtxs) != n || len(duncles) != len(u) {
+					done <- fmt.Errorf("%d txs, %d uncles: decoded %d txs, %d uncles, err %v", n, len(u), len(dtxs), len(duncles), err)
+				} else {
+					done <- nil
+				}
+				res.Done <- nil
+			}()
+			if err := handleBlockBodies66(nil, responseMsg(BlockBodiesMsg, req.RequestId, enc), peer); err != nil {
+				t.Fatalf("%d txs, %d uncles: response failed: %v", n, len(u), err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// A requested body stuffed with tiny junk transactions is delivered still
+// encoded and isn't even hashed, so it only costs about its own size.
+func TestRawBlockBodyNotDecoded(t *testing.T) {
+	peer, app := newDispatchTestPeer(t)
+	sink := make(chan *Response, 1)
+	go func() {
+		peer.RequestBodies([]common.Hash{{1}}, sink)
+	}()
+	msg, err := app.ReadMsg()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req GetBlockBodiesPacket66
+	msg.Decode(&req)
+
+	// One body of ~10M one-byte "transactions" and no uncles.
+	txs := rlpList(bytes.Repeat([]byte{0x01}, maxMessageSize-64))
+	body := rlpList(append(txs, 0xc0))
+
+	hashes := make(chan [][]common.Hash, 1)
+	go func() {
+		res := <-sink
+		hashes <- res.Meta.([][]common.Hash)
+		res.Done <- nil
+	}()
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if err := handleBlockBodies66(nil, responseMsg(BlockBodiesMsg, req.RequestId, rlpList(body)), peer); err != nil {
+		t.Fatalf("response failed: %v", err)
+	}
+	runtime.ReadMemStats(&after)
+
+	// The envelope and body split each copy the payload, but nothing scales
+	// with the number of items. Decoding these would take ~800MB.
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 6*maxMessageSize {
+		t.Fatalf("junk body allocated %d bytes, want <= %d", alloc, 6*maxMessageSize)
+	}
+	if root := (<-hashes)[0][0]; root != (common.Hash{}) {
+		t.Fatalf("junk body hashed to %x, want empty hash", root)
 	}
 }

@@ -29,8 +29,10 @@ import (
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 )
 
@@ -345,7 +347,12 @@ func XTestDelivery(t *testing.T) {
 					uncleHashes[i] = types.CalcUncleHash(uncles)
 				}
 				time.Sleep(100 * time.Millisecond)
-				_, err := q.DeliverBodies(peer.id, txset, txsHashes, uncleset, uncleHashes)
+				bodies := make([]eth.RawBlockBody, len(txset))
+				for i := range txset {
+					bodies[i].Transactions, _ = rlp.EncodeToBytes(txset[i])
+					bodies[i].Uncles, _ = rlp.EncodeToBytes(uncleset[i])
+				}
+				_, err := q.DeliverBodies(peer.id, bodies, txsHashes, uncleHashes)
 				if err != nil {
 					fmt.Printf("delivered %d bodies %v\n", len(txset), err)
 				}

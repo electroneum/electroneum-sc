@@ -259,6 +259,32 @@ func (p *BlockBodiesPacket) Unpack() ([][]*types.Transaction, [][]*types.Header)
 	return txset, uncleset
 }
 
+// RawBlockBody is a block body with its transactions and uncles left encoded,
+// so it can be checked against its header before paying for decoding it.
+type RawBlockBody struct {
+	Transactions rlp.RawValue // RLP list of transactions contained within a block
+	Uncles       rlp.RawValue // RLP list of uncles contained within a block
+}
+
+// Decode decodes the transactions and uncles of the body.
+func (b *RawBlockBody) Decode() ([]*types.Transaction, []*types.Header, error) {
+	var (
+		txs    []*types.Transaction
+		uncles []*types.Header
+	)
+	if err := rlp.DecodeBytes(b.Transactions, &txs); err != nil {
+		return nil, nil, fmt.Errorf("invalid transactions: %v", err)
+	}
+	if err := rlp.DecodeBytes(b.Uncles, &uncles); err != nil {
+		return nil, nil, fmt.Errorf("invalid uncles: %v", err)
+	}
+	return txs, uncles, nil
+}
+
+// RawBlockBodiesPacket is the response to a block bodies request, with the
+// bodies left encoded until they are matched against their headers.
+type RawBlockBodiesPacket []RawBlockBody
+
 // GetNodeDataPacket represents a trie node data query.
 type GetNodeDataPacket []common.Hash
 

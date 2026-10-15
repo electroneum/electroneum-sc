@@ -32,6 +32,7 @@ import (
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/params"
+	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 )
 
@@ -238,19 +239,24 @@ func (f *fetcherTester) makeBodyFetcher(peer string, blocks map[common.Hash]*typ
 			}
 		}
 		// Return on a new thread
-		bodies := make([]*eth.BlockBody, len(transactions))
+		var (
+			bodies      = make(eth.RawBlockBodiesPacket, len(transactions))
+			txsHashes   = make([]common.Hash, len(transactions))
+			uncleHashes = make([]common.Hash, len(transactions))
+		)
 		for i, txs := range transactions {
-			bodies[i] = &eth.BlockBody{
-				Transactions: txs,
-				Uncles:       uncles[i],
-			}
+			bodies[i].Transactions, _ = rlp.EncodeToBytes(txs)
+			bodies[i].Uncles, _ = rlp.EncodeToBytes(uncles[i])
+			txsHashes[i] = types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil))
+			uncleHashes[i] = types.CalcUncleHash(uncles[i])
 		}
 		req := &eth.Request{
 			Peer: peer,
 		}
 		res := &eth.Response{
 			Req:  req,
-			Res:  (*eth.BlockBodiesPacket)(&bodies),
+			Res:  &bodies,
+			Meta: [][]common.Hash{txsHashes, uncleHashes},
 			Time: drift,
 			Done: make(chan error, 1), // Ignore the returned status
 		}

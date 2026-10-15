@@ -29,6 +29,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/prque"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
 )
@@ -764,10 +765,14 @@ func (q *queue) DeliverHeaders(id string, headers []*types.Header, hashes []comm
 // DeliverBodies injects a block body retrieval response into the results queue.
 // The method returns the number of blocks bodies accepted from the delivery and
 // also wakes any threads waiting for data delivery.
-func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListHashes []common.Hash, uncleLists [][]*types.Header, uncleListHashes []common.Hash) (int, error) {
+func (q *queue) DeliverBodies(id string, bodies []eth.RawBlockBody, txListHashes []common.Hash, uncleListHashes []common.Hash) (int, error) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	var (
+		txLists    = make([][]*types.Transaction, len(bodies))
+		uncleLists = make([][]*types.Header, len(bodies))
+	)
 	validate := func(index int, header *types.Header) error {
 		if txListHashes[index] != header.TxHash {
 			return errInvalidBody
@@ -775,6 +780,12 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListH
 		if uncleListHashes[index] != header.UncleHash {
 			return errInvalidBody
 		}
+		// Only decode the body once it's known to belong to the header
+		txs, uncles, err := bodies[index].Decode()
+		if err != nil {
+			return errInvalidBody
+		}
+		txLists[index], uncleLists[index] = txs, uncles
 		return nil
 	}
 
@@ -784,7 +795,7 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListH
 		result.SetBodyDone()
 	}
 	return q.deliver(id, q.blockTaskPool, q.blockTaskQueue, q.blockPendPool,
-		bodyReqTimer, bodyInMeter, bodyDropMeter, len(txLists), validate, reconstruct)
+		bodyReqTimer, bodyInMeter, bodyDropMeter, len(bodies), validate, reconstruct)
 }
 
 // DeliverReceipts injects a receipt retrieval response into the results queue.

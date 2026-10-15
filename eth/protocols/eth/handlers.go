@@ -17,12 +17,14 @@
 package eth
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
@@ -390,10 +392,20 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
-	var bodies BlockBodiesPacket
+	// Bodies are only split into their transaction and uncle lists here, and
+	// get decoded by the requester once their hashes match the headers.
+	var bodies RawBlockBodiesPacket
 	decode := func(req *Request) (interface{}, error) {
 		if err := decodeLimitedList(res.Payload, requestedItems(req), &bodies); err != nil {
 			return nil, err
+		}
+		for i := range bodies {
+			if _, _, err := rlp.SplitList(bodies[i].Transactions); err != nil {
+				return nil, fmt.Errorf("body %d transactions: %v", i, err)
+			}
+			if _, _, err := rlp.SplitList(bodies[i].Uncles); err != nil {
+				return nil, fmt.Errorf("body %d uncles: %v", i, err)
+			}
 		}
 		return &bodies, nil
 	}
@@ -404,8 +416,16 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 		)
 		hasher := trie.NewStackTrie(nil)
 		for i, body := range bodies {
-			txsHashes[i] = types.DeriveSha(types.Transactions(body.Transactions), hasher)
-			uncleHashes[i] = types.CalcUncleHash(body.Uncles)
+			// A list holding things that can't be transactions matches no
+			// header, so leave its hash empty rather than hashing the junk.
+			if txs, ok := newRawTxList(body.Transactions); ok {
+				txsHashes[i] = types.DeriveSha(txs, hasher)
+			}
+			if bytes.Equal(body.Uncles, emptyListRLP) {
+				uncleHashes[i] = types.EmptyUncleHash
+			} else {
+				uncleHashes[i] = crypto.Keccak256Hash(body.Uncles)
+			}
 		}
 		return [][]common.Hash{txsHashes, uncleHashes}
 	}
@@ -413,6 +433,76 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 		id:   res.RequestId,
 		code: BlockBodiesMsg,
 	}, decode, metadata)
+}
+
+// emptyListRLP is the encoding of an empty list.
+var emptyListRLP = []byte{0xc0}
+
+// rawTxList implements types.DerivableList over an encoded transaction list,
+// so its root can be computed without decoding the transactions. Only a 4 byte
+// offset is kept per transaction.
+type rawTxList struct {
+	data    []byte
+	offsets []uint32
+}
+
+// newRawTxList indexes an encoded transaction list. It fails if any item can't
+// be a transaction: legacy ones are lists of nine fields, typed ones a string
+// holding a type byte and a list.
+func newRawTxList(list rlp.RawValue) (*rawTxList, bool) {
+	content, _, err := rlp.SplitList(list)
+	if err != nil {
+		return nil, false
+	}
+	// Check every item before allocating anything for them
+	var count int
+	for rest := content; len(rest) > 0; count++ {
+		kind, payload, next, err := rlp.Split(rest)
+		if err != nil {
+			return nil, false
+		}
+		switch kind {
+		case rlp.List:
+			if len(payload) < 9 {
+				return nil, false
+			}
+		case rlp.String:
+			if len(payload) < 2 || payload[0] >= 0x80 || payload[1] < 0xc0 {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+		rest = next
+	}
+	txs := &rawTxList{data: content, offsets: make([]uint32, 0, count)}
+	for rest := content; len(rest) > 0; {
+		_, _, next, _ := rlp.Split(rest)
+		txs.offsets = append(txs.offsets, uint32(len(content)-len(rest)))
+		rest = next
+	}
+	return txs, true
+}
+
+// Len returns the number of transactions in the list.
+func (l *rawTxList) Len() int {
+	return len(l.offsets)
+}
+
+// EncodeIndex writes the i'th transaction the way it is hashed into the
+// transaction trie: legacy transactions as is, typed ones without the string
+// wrapper.
+func (l *rawTxList) EncodeIndex(i int, buf *bytes.Buffer) {
+	end := uint32(len(l.data))
+	if i != len(l.offsets)-1 {
+		end = l.offsets[i+1]
+	}
+	tx := l.data[l.offsets[i]:end]
+	if kind, content, _, _ := rlp.Split(tx); kind == rlp.String {
+		buf.Write(content)
+	} else {
+		buf.Write(tx)
+	}
 }
 
 func handleNodeData66(backend Backend, msg Decoder, peer *Peer) error {
