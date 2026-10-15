@@ -45,6 +45,12 @@ var protocolLengths = map[uint]uint64{SNAP1: 8}
 // maxMessageSize is the maximum cap on the size of a protocol message.
 const maxMessageSize = 10 * 1024 * 1024
 
+// maxPacketItems is the maximum number of items accepted in a single list of
+// proof nodes, storage sets, bytecodes, trie nodes or trie node paths. Serving
+// is capped at 1024 bytecodes or trie nodes and proofs are bounded by the trie
+// depth, so honest peers stay well below this.
+const maxPacketItems = 4096
+
 const (
 	GetAccountRangeMsg  = 0x00
 	AccountRangeMsg     = 0x01
@@ -61,6 +67,7 @@ var (
 	errDecode         = errors.New("invalid message")
 	errInvalidMsgCode = errors.New("invalid message code")
 	errBadRequest     = errors.New("bad request")
+	errTooManyItems   = errors.New("too many items")
 )
 
 // Packet represents a p2p message in the `snap` protocol.
