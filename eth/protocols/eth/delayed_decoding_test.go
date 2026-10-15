@@ -33,7 +33,7 @@ import (
 // Reported via Bugcrowd: response packets were fully decoded before checking
 // they answered one of our requests, and nothing capped their item count. A
 // 10MB NodeData packet of one-byte items decoded into ~800MB of allocations,
-// and since dangling responses are dropped silently the peer could repeat it.
+// and since dangling responses were dropped silently the peer could repeat it.
 
 // rlpList wraps already encoded items into an RLP list.
 func rlpList(items []byte) []byte {
@@ -71,12 +71,12 @@ func newDispatchTestPeer(t *testing.T) (*Peer, *p2p.MsgPipeRW) {
 	return peer, app
 }
 
-// A response nobody asked for must be dropped without decoding its payload.
-func TestDanglingResponseNotDecoded(t *testing.T) {
-	// A one-byte string in long form is non-canonical, so any attempt to
-	// decode the payload fails and drops the peer.
-	junk := rlpList([]byte{0xb8, 0x01, 0x05})
+// A one-byte string in long form is non-canonical, so any attempt to decode
+// this payload fails with errDecode.
+var junkPayload = rlpList([]byte{0xb8, 0x01, 0x05})
 
+// A response nobody asked for must drop the peer without decoding its payload.
+func TestDanglingResponseNotDecoded(t *testing.T) {
 	handlers := map[string]struct {
 		code    uint64
 		handler msgHandler
@@ -89,8 +89,9 @@ func TestDanglingResponseNotDecoded(t *testing.T) {
 	for name, h := range handlers {
 		t.Run(name, func(t *testing.T) {
 			peer, _ := newDispatchTestPeer(t)
-			if err := h.handler(nil, responseMsg(h.code, 0xdeadbeef, junk), peer); err != nil {
-				t.Fatalf("dangling response was decoded: %v", err)
+			err := h.handler(nil, responseMsg(h.code, 0xdeadbeef, junkPayload), peer)
+			if !errors.Is(err, errDanglingResponse) {
+				t.Fatalf("dangling response: have %v, want %v", err, errDanglingResponse)
 			}
 		})
 	}
@@ -106,8 +107,8 @@ func TestDanglingResponseAllocation(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	if err := handleNodeData66(nil, msg, peer); err != nil {
-		t.Fatalf("dangling response failed: %v", err)
+	if err := handleNodeData66(nil, msg, peer); !errors.Is(err, errDanglingResponse) {
+		t.Fatalf("dangling response: have %v, want %v", err, errDanglingResponse)
 	}
 	runtime.ReadMemStats(&after)
 
@@ -117,28 +118,65 @@ func TestDanglingResponseAllocation(t *testing.T) {
 	}
 }
 
+// requestNodeData sends a NodeData request for two hashes from peer and returns
+// it along with its request id as seen on the wire.
+func requestNodeData(t *testing.T, peer *Peer, app *p2p.MsgPipeRW, sink chan *Response) (*Request, uint64) {
+	type result struct {
+		req *Request
+		err error
+	}
+	resc := make(chan result, 1)
+	go func() {
+		req, err := peer.RequestNodeData([]common.Hash{{1}, {2}}, sink)
+		resc <- result{req, err}
+	}()
+	msg, err := app.ReadMsg()
+	if err != nil {
+		t.Fatalf("failed to read request: %v", err)
+	}
+	var packet GetNodeDataPacket66
+	if err := msg.Decode(&packet); err != nil {
+		t.Fatalf("failed to decode request: %v", err)
+	}
+	res := <-resc
+	if res.err != nil {
+		t.Fatalf("failed to send request: %v", res.err)
+	}
+	return res.req, packet.RequestId
+}
+
+// A late reply to a request we cancelled is not the peer's fault, so it is
+// discarded without decoding it or dropping the peer. Only once though.
+func TestStaleResponseDiscarded(t *testing.T) {
+	peer, app := newDispatchTestPeer(t)
+	req, id := requestNodeData(t, peer, app, make(chan *Response))
+	if err := req.Close(); err != nil {
+		t.Fatalf("failed to cancel request: %v", err)
+	}
+	if err := handleNodeData66(nil, responseMsg(NodeDataMsg, id, junkPayload), peer); err != nil {
+		t.Fatalf("stale response: have %v, want nil", err)
+	}
+	if err := handleNodeData66(nil, responseMsg(NodeDataMsg, id, junkPayload), peer); !errors.Is(err, errDanglingResponse) {
+		t.Fatalf("repeated stale response: have %v, want %v", err, errDanglingResponse)
+	}
+}
+
+// A response of the wrong type to a pending request drops the peer.
+func TestMismatchedResponseType(t *testing.T) {
+	peer, app := newDispatchTestPeer(t)
+	_, id := requestNodeData(t, peer, app, make(chan *Response))
+	if err := handleReceipts66(nil, responseMsg(ReceiptsMsg, id, junkPayload), peer); !errors.Is(err, errMismatchingResponseType) {
+		t.Fatalf("mismatched response: have %v, want %v", err, errMismatchingResponseType)
+	}
+}
+
 // Responses are checked against the size of the request they answer.
 func TestResponseItemLimit(t *testing.T) {
 	request := func(t *testing.T) (*Peer, chan *Response, uint64) {
 		peer, app := newDispatchTestPeer(t)
 		sink := make(chan *Response, 1)
-		errc := make(chan error, 1)
-		go func() {
-			_, err := peer.RequestNodeData([]common.Hash{{1}, {2}}, sink)
-			errc <- err
-		}()
-		msg, err := app.ReadMsg()
-		if err != nil {
-			t.Fatalf("failed to read request: %v", err)
-		}
-		var req GetNodeDataPacket66
-		if err := msg.Decode(&req); err != nil {
-			t.Fatalf("failed to decode request: %v", err)
-		}
-		if err := <-errc; err != nil {
-			t.Fatalf("failed to send request: %v", err)
-		}
-		return peer, sink, req.RequestId
+		_, id := requestNodeData(t, peer, app, sink)
+		return peer, sink, id
 	}
 
 	t.Run("over", func(t *testing.T) {

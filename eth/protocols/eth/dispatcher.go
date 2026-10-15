@@ -33,10 +33,18 @@ var (
 	// which does not match to any existing pending requests.
 	errDanglingResponse = errors.New("response to non-existent request")
 
+	// errStaleResponse is returned if a response arrives to a request that was
+	// already cancelled locally. It is not the remote peer's fault.
+	errStaleResponse = errors.New("response to cancelled request")
+
 	// errMismatchingResponseType is returned if the remote peer sent a different
 	// packet type as a response to a request than what the local node expected.
 	errMismatchingResponseType = errors.New("mismatching response type")
 )
+
+// staleResponseTimeout is how long the ids of cancelled requests are remembered,
+// so late replies to them can be told apart from replies to nothing at all.
+const staleResponseTimeout = 5 * time.Minute
 
 // Request is a pending request to allow tracking it and delivering a response
 // back to the requester on their chosen channel.
@@ -154,7 +162,10 @@ func (p *Peer) dispatchResponse(res *Response, decode func(req *Request) (interf
 	case p.resDispatch <- resOp:
 		// Ensure the response is accepted by the dispatcher
 		if err := <-resOp.fail; err != nil {
-			return nil
+			if errors.Is(err, errStaleResponse) {
+				return nil // Late reply to a cancelled request, discard it
+			}
+			return err
 		}
 		// Request was accepted, decode the payload now that we know what was
 		// asked for. A failure here drops the peer.
@@ -200,6 +211,23 @@ func (p *Peer) dispatchResponse(res *Response, decode func(req *Request) (interf
 func (p *Peer) dispatcher() {
 	pending := make(map[uint64]*Request)
 
+	// Cancelled requests are remembered for a while in cancellation order, so
+	// expired ones can be dropped from the front.
+	type cancelled struct {
+		id   uint64
+		time time.Time
+	}
+	var (
+		stale      = make(map[uint64]struct{})
+		staleOrder []cancelled
+	)
+	expireStale := func(now time.Time) {
+		for len(staleOrder) > 0 && now.Sub(staleOrder[0].time) > staleResponseTimeout {
+			delete(stale, staleOrder[0].id)
+			staleOrder = staleOrder[1:]
+		}
+	}
+
 	for {
 		select {
 		case reqOp := <-p.reqDispatch:
@@ -222,9 +250,14 @@ func (p *Peer) dispatcher() {
 				cancelOp.fail <- nil
 				continue
 			}
-			// Stop tracking the request
+			// Stop tracking the request, but remember it for a late reply
 			delete(pending, cancelOp.id)
 			cancelOp.fail <- nil
+
+			now := time.Now()
+			expireStale(now)
+			stale[cancelOp.id] = struct{}{}
+			staleOrder = append(staleOrder, cancelled{id: cancelOp.id, time: now})
 
 		case resOp := <-p.resDispatch:
 			res := resOp.res
@@ -233,11 +266,19 @@ func (p *Peer) dispatcher() {
 			// Independent if the request exists or not, track this packet
 			requestTracker.Fulfil(p.id, p.version, res.code, res.id)
 
+			expireStale(res.recv)
+			if _, ok := stale[res.id]; ok && res.Req == nil {
+				// Response arrived to a request we cancelled meanwhile, the
+				// remote peer was just slow.
+				delete(stale, res.id)
+				resOp.fail <- errStaleResponse
+				continue
+			}
 			switch {
 			case res.Req == nil:
-				// Response arrived with an untracked ID. Since even cancelled
-				// requests are tracked until fulfilment, a dangling repsponse
-				// means the remote peer implements the protocol badly.
+				// Response arrived with an ID we never asked for (or forgot
+				// about long ago), the remote peer implements the protocol
+				// badly or is sending junk on purpose.
 				resOp.fail <- errDanglingResponse
 
 			case res.Req.want != res.code:
