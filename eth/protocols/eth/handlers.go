@@ -456,7 +456,7 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 		for i, body := range bodies {
 			// A list holding things that can't be transactions matches no
 			// header, so leave its hash empty rather than hashing the junk.
-			if txs, ok := newRawTxList(body.Transactions); ok {
+			if txs, ok := newRawTypedList(body.Transactions, minTxContent); ok {
 				txsHashes[i] = types.DeriveSha(txs, hasher)
 			}
 			if bytes.Equal(body.Uncles, emptyListRLP) {
@@ -476,18 +476,26 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 // emptyListRLP is the encoding of an empty list.
 var emptyListRLP = []byte{0xc0}
 
-// rawTxList implements types.DerivableList over an encoded transaction list,
-// so its root can be computed without decoding the transactions. Only a 4 byte
-// offset is kept per transaction.
-type rawTxList struct {
+// Legacy items in a transaction or receipt list are RLP lists of at least nine
+// and four fields respectively, the latter including a 256 byte bloom. Anything
+// shorter can't be one, which saves hashing junk.
+const (
+	minTxContent      = 9
+	minReceiptContent = 1 + 1 + 3 + 256 + 1
+)
+
+// rawTypedList implements types.DerivableList over an encoded list of
+// transactions or receipts, so its root can be computed without decoding the
+// items. Only a 4 byte offset is kept per item.
+type rawTypedList struct {
 	data    []byte
 	offsets []uint32
 }
 
-// newRawTxList indexes an encoded transaction list. It fails if any item can't
-// be a transaction: legacy ones are lists of nine fields, typed ones a string
-// holding a type byte and a list.
-func newRawTxList(list rlp.RawValue) (*rawTxList, bool) {
+// newRawTypedList indexes an encoded transaction or receipt list. It fails if
+// any item can't be one: legacy items are lists of at least minContent bytes,
+// typed ones a string holding a type byte and a list.
+func newRawTypedList(list rlp.RawValue, minContent int) (*rawTypedList, bool) {
 	content, _, err := rlp.SplitList(list)
 	if err != nil {
 		return nil, false
@@ -501,7 +509,7 @@ func newRawTxList(list rlp.RawValue) (*rawTxList, bool) {
 		}
 		switch kind {
 		case rlp.List:
-			if len(payload) < 9 {
+			if len(payload) < minContent {
 				return nil, false
 			}
 		case rlp.String:
@@ -513,33 +521,32 @@ func newRawTxList(list rlp.RawValue) (*rawTxList, bool) {
 		}
 		rest = next
 	}
-	txs := &rawTxList{data: content, offsets: make([]uint32, 0, count)}
+	l := &rawTypedList{data: content, offsets: make([]uint32, 0, count)}
 	for rest := content; len(rest) > 0; {
 		_, _, next, _ := rlp.Split(rest)
-		txs.offsets = append(txs.offsets, uint32(len(content)-len(rest)))
+		l.offsets = append(l.offsets, uint32(len(content)-len(rest)))
 		rest = next
 	}
-	return txs, true
+	return l, true
 }
 
-// Len returns the number of transactions in the list.
-func (l *rawTxList) Len() int {
+// Len returns the number of items in the list.
+func (l *rawTypedList) Len() int {
 	return len(l.offsets)
 }
 
-// EncodeIndex writes the i'th transaction the way it is hashed into the
-// transaction trie: legacy transactions as is, typed ones without the string
-// wrapper.
-func (l *rawTxList) EncodeIndex(i int, buf *bytes.Buffer) {
+// EncodeIndex writes the i'th item the way it is hashed into a trie: legacy
+// items as is, typed ones without the string wrapper.
+func (l *rawTypedList) EncodeIndex(i int, buf *bytes.Buffer) {
 	end := uint32(len(l.data))
 	if i != len(l.offsets)-1 {
 		end = l.offsets[i+1]
 	}
-	tx := l.data[l.offsets[i]:end]
-	if kind, content, _, _ := rlp.Split(tx); kind == rlp.String {
+	item := l.data[l.offsets[i]:end]
+	if kind, content, _, _ := rlp.Split(item); kind == rlp.String {
 		buf.Write(content)
 	} else {
-		buf.Write(tx)
+		buf.Write(item)
 	}
 }
 
@@ -568,10 +575,17 @@ func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
-	var receipts ReceiptsPacket
+	// Receipts stay encoded too, and get decoded by the requester once their
+	// hashes match the headers.
+	var receipts RawReceiptsPacket
 	decode := func(req *Request) (interface{}, error) {
 		if err := decodeLimitedList(res.Payload, requestedItems(req), &receipts); err != nil {
 			return nil, err
+		}
+		for i := range receipts {
+			if _, _, err := rlp.SplitList(receipts[i]); err != nil {
+				return nil, fmt.Errorf("receipts %d: %v", i, err)
+			}
 		}
 		return &receipts, nil
 	}
@@ -579,7 +593,10 @@ func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 		hasher := trie.NewStackTrie(nil)
 		hashes := make([]common.Hash, len(receipts))
 		for i, receipt := range receipts {
-			hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
+			// Junk matches no header, leave its hash empty
+			if list, ok := newRawTypedList(receipt, minReceiptContent); ok {
+				hashes[i] = types.DeriveSha(list, hasher)
+			}
 		}
 		return hashes
 	}

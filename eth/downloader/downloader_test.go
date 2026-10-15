@@ -313,12 +313,13 @@ func (dlp *downloadTesterPeer) RequestReceipts(hashes []common.Hash, sink chan *
 	for i, receipt := range receipts {
 		hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
 	}
+	raw := eth.RawReceiptsPacket(blobs)
 	req := &eth.Request{
 		Peer: dlp.id,
 	}
 	res := &eth.Response{
 		Req:  req,
-		Res:  (*eth.ReceiptsPacket)(&receipts),
+		Res:  &raw,
 		Meta: hashes,
 		Time: 1,
 		Done: make(chan error, 1), // Ignore the returned status

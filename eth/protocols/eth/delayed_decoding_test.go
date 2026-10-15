@@ -417,3 +417,68 @@ func TestNewBlockTransactionLimit(t *testing.T) {
 	}
 }
 
+// Receipts are hashed straight from their encoding too, which must agree with
+// hashing the decoded receipts exactly. Junk isn't hashed at all.
+func TestRawReceiptsHashes(t *testing.T) {
+	var receipts []*types.Receipt
+	for i := 0; i < 300; i++ {
+		r := &types.Receipt{Type: uint8(i % 3), Status: uint64(i % 2), CumulativeGasUsed: uint64(21000 * (i + 1))}
+		if i%5 == 0 {
+			r.Logs = []*types.Log{{Address: common.Address{byte(i)}, Topics: []common.Hash{{byte(i)}}, Data: []byte{byte(i)}}}
+		}
+		r.Bloom = types.CreateBloom(types.Receipts{r})
+		receipts = append(receipts, r)
+	}
+	junk := rlpList(bytes.Repeat([]byte{0xc9, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}, 1000))
+
+	for _, n := range []int{0, 1, 127, 128, 129, len(receipts), -1} {
+		var (
+			enc  []byte
+			want common.Hash
+			err  error
+		)
+		if n < 0 {
+			enc = rlpList(junk)
+		} else {
+			if enc, err = rlp.EncodeToBytes([][]*types.Receipt{receipts[:n]}); err != nil {
+				t.Fatal(err)
+			}
+			want = types.DeriveSha(types.Receipts(receipts[:n]), trie.NewStackTrie(nil))
+		}
+		peer, app := newDispatchTestPeer(t)
+		sink := make(chan *Response, 1)
+		go func() {
+			peer.RequestReceipts([]common.Hash{{1}}, sink)
+		}()
+		msg, err := app.ReadMsg()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var req GetReceiptsPacket66
+		msg.Decode(&req)
+
+		done := make(chan error, 1)
+		go func() {
+			res := <-sink
+			if have := res.Meta.([]common.Hash)[0]; have != want {
+				done <- fmt.Errorf("%d receipts: hash %x, want %x", n, have, want)
+			} else if n >= 0 {
+				decoded, err := DecodeReceipts((*res.Res.(*RawReceiptsPacket))[0])
+				if err != nil || len(decoded) != n {
+					done <- fmt.Errorf("%d receipts: decoded %d, err %v", n, len(decoded), err)
+				} else {
+					done <- nil
+				}
+			} else {
+				done <- nil
+			}
+			res.Done <- nil
+		}()
+		if err := handleReceipts66(nil, responseMsg(ReceiptsMsg, req.RequestId, enc), peer); err != nil {
+			t.Fatalf("%d receipts: response failed: %v", n, err)
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

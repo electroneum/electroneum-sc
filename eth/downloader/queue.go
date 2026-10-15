@@ -32,6 +32,7 @@ import (
 	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
+	"github.com/electroneum/electroneum-sc/rlp"
 )
 
 const (
@@ -801,14 +802,21 @@ func (q *queue) DeliverBodies(id string, bodies []eth.RawBlockBody, txListHashes
 // DeliverReceipts injects a receipt retrieval response into the results queue.
 // The method returns the number of transaction receipts accepted from the delivery
 // and also wakes any threads waiting for data delivery.
-func (q *queue) DeliverReceipts(id string, receiptList [][]*types.Receipt, receiptListHashes []common.Hash) (int, error) {
+func (q *queue) DeliverReceipts(id string, rawReceipts []rlp.RawValue, receiptListHashes []common.Hash) (int, error) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
+	receiptList := make([][]*types.Receipt, len(rawReceipts))
 	validate := func(index int, header *types.Header) error {
 		if receiptListHashes[index] != header.ReceiptHash {
 			return errInvalidReceipt
 		}
+		// Only decode the receipts once they're known to belong to the header
+		receipts, err := eth.DecodeReceipts(rawReceipts[index])
+		if err != nil {
+			return errInvalidReceipt
+		}
+		receiptList[index] = receipts
 		return nil
 	}
 	reconstruct := func(index int, result *fetchResult) {
@@ -816,7 +824,7 @@ func (q *queue) DeliverReceipts(id string, receiptList [][]*types.Receipt, recei
 		result.SetReceiptsDone()
 	}
 	return q.deliver(id, q.receiptTaskPool, q.receiptTaskQueue, q.receiptPendPool,
-		receiptReqTimer, receiptInMeter, receiptDropMeter, len(receiptList), validate, reconstruct)
+		receiptReqTimer, receiptInMeter, receiptDropMeter, len(rawReceipts), validate, reconstruct)
 }
 
 // deliver injects a data retrieval response into the results queue.

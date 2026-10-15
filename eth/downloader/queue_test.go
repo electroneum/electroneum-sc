@@ -378,7 +378,11 @@ func XTestDelivery(t *testing.T) {
 				for i, receipt := range rcs {
 					hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
 				}
-				_, err := q.DeliverReceipts(peer.id, rcs, hashes)
+				raw := make([]rlp.RawValue, len(rcs))
+				for i, receipts := range rcs {
+					raw[i], _ = rlp.EncodeToBytes(receipts)
+				}
+				_, err := q.DeliverReceipts(peer.id, raw, hashes)
 				if err != nil {
 					fmt.Printf("delivered %d receipts %v\n", len(rcs), err)
 				}

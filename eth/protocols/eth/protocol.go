@@ -285,6 +285,19 @@ func (b *RawBlockBody) Decode() ([]*types.Transaction, []*types.Header, error) {
 // bodies left encoded until they are matched against their headers.
 type RawBlockBodiesPacket []RawBlockBody
 
+// RawReceiptsPacket is the response to a receipts request, with the receipts of
+// each block left encoded until they are matched against their headers.
+type RawReceiptsPacket []rlp.RawValue
+
+// DecodeReceipts decodes the encoded receipts of one block.
+func DecodeReceipts(raw rlp.RawValue) ([]*types.Receipt, error) {
+	var receipts []*types.Receipt
+	if err := rlp.DecodeBytes(raw, &receipts); err != nil {
+		return nil, err
+	}
+	return receipts, nil
+}
+
 // GetNodeDataPacket represents a trie node data query.
 type GetNodeDataPacket []common.Hash
 
