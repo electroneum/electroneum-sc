@@ -138,7 +138,11 @@ func (p *Peer) dispatchRequest(req *Request) error {
 
 // dispatchRequest fulfils a pending request and delivers it to the requested
 // sink.
-func (p *Peer) dispatchResponse(res *Response, metadata func() interface{}) error {
+//
+// The response payload is decoded by the decode callback only once the dispatcher
+// has matched it to a pending request, so junk or unsolicited responses are
+// dropped without paying for their decoding.
+func (p *Peer) dispatchResponse(res *Response, decode func(req *Request) (interface{}, error), metadata func() interface{}) error {
 	resOp := &response{
 		res:  res,
 		fail: make(chan error),
@@ -152,8 +156,16 @@ func (p *Peer) dispatchResponse(res *Response, metadata func() interface{}) erro
 		if err := <-resOp.fail; err != nil {
 			return nil
 		}
-		// Request was accepted, run any postprocessing step to generate metadata
-		// on the receiver thread, not the sink thread
+		// Request was accepted, decode the payload now that we know what was
+		// asked for. A failure here drops the peer.
+		data, err := decode(res.Req)
+		if err != nil {
+			return fmt.Errorf("%w: message %v: %v", errDecode, res.code, err)
+		}
+		res.Res = data
+
+		// Run any postprocessing step to generate metadata on the receiver
+		// thread, not the sink thread
 		if metadata != nil {
 			res.Meta = metadata()
 		}

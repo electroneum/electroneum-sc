@@ -48,6 +48,12 @@ var protocolLengths = map[uint]uint64{ETH66: 17}
 // maxMessageSize is the maximum cap on the size of a protocol message.
 const maxMessageSize = 10 * 1024 * 1024
 
+// maxTransactionsPerPacket is the maximum number of transactions accepted in a
+// single transactions broadcast or pooled transactions response. Broadcasts are
+// cut at maxTxPacketSize and pooled transaction requests at 256 hashes, so an
+// honest peer stays far below this.
+const maxTransactionsPerPacket = 4096
+
 const (
 	StatusMsg                     = 0x00
 	NewBlockHashesMsg             = 0x01
@@ -75,6 +81,7 @@ var (
 	errNetworkIDMismatch       = errors.New("network ID mismatch")
 	errGenesisMismatch         = errors.New("genesis mismatch")
 	errForkIDRejected          = errors.New("fork ID rejected")
+	errTooManyItems            = errors.New("too many items")
 )
 
 // Packet represents a p2p message in the `eth` protocol.

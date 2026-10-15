@@ -360,13 +360,20 @@ func handleNewBlock(backend Backend, msg Decoder, peer *Peer) error {
 
 func handleBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of headers arrived to one of our previous requests
-	res := new(BlockHeadersPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	var headers BlockHeadersPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &headers); err != nil {
+			return nil, err
+		}
+		return &headers, nil
+	}
 	metadata := func() interface{} {
-		hashes := make([]common.Hash, len(res.BlockHeadersPacket))
-		for i, header := range res.BlockHeadersPacket {
+		hashes := make([]common.Hash, len(headers))
+		for i, header := range headers {
 			hashes[i] = header.Hash()
 		}
 		return hashes
@@ -374,23 +381,29 @@ func handleBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: BlockHeadersMsg,
-		Res:  &res.BlockHeadersPacket,
-	}, metadata)
+	}, decode, metadata)
 }
 
 func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of block bodies arrived to one of our previous requests
-	res := new(BlockBodiesPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	var bodies BlockBodiesPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &bodies); err != nil {
+			return nil, err
+		}
+		return &bodies, nil
+	}
 	metadata := func() interface{} {
 		var (
-			txsHashes   = make([]common.Hash, len(res.BlockBodiesPacket))
-			uncleHashes = make([]common.Hash, len(res.BlockBodiesPacket))
+			txsHashes   = make([]common.Hash, len(bodies))
+			uncleHashes = make([]common.Hash, len(bodies))
 		)
 		hasher := trie.NewStackTrie(nil)
-		for i, body := range res.BlockBodiesPacket {
+		for i, body := range bodies {
 			txsHashes[i] = types.DeriveSha(types.Transactions(body.Transactions), hasher)
 			uncleHashes[i] = types.CalcUncleHash(body.Uncles)
 		}
@@ -399,33 +412,45 @@ func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: BlockBodiesMsg,
-		Res:  &res.BlockBodiesPacket,
-	}, metadata)
+	}, decode, metadata)
 }
 
 func handleNodeData66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of node state data arrived to one of our previous requests
-	res := new(NodeDataPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	decode := func(req *Request) (interface{}, error) {
+		var data NodeDataPacket
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &data); err != nil {
+			return nil, err
+		}
+		return &data, nil
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: NodeDataMsg,
-		Res:  &res.NodeDataPacket,
-	}, nil) // No post-processing, we're not using this packet anymore
+	}, decode, nil) // No post-processing, we're not using this packet anymore
 }
 
 func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of receipts arrived to one of our previous requests
-	res := new(ReceiptsPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	var receipts ReceiptsPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &receipts); err != nil {
+			return nil, err
+		}
+		return &receipts, nil
+	}
 	metadata := func() interface{} {
 		hasher := trie.NewStackTrie(nil)
-		hashes := make([]common.Hash, len(res.ReceiptsPacket))
-		for i, receipt := range res.ReceiptsPacket {
+		hashes := make([]common.Hash, len(receipts))
+		for i, receipt := range receipts {
 			hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
 		}
 		return hashes
@@ -433,8 +458,50 @@ func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: ReceiptsMsg,
-		Res:  &res.ReceiptsPacket,
-	}, metadata)
+	}, decode, metadata)
+}
+
+// rawResponsePacket66 is the eth/66 envelope of a response packet with the
+// payload left undecoded, so it can be matched up to a request first.
+type rawResponsePacket66 struct {
+	RequestId uint64
+	Payload   rlp.RawValue
+}
+
+// requestedItems returns how many items a response to req may hold at most.
+func requestedItems(req *Request) int {
+	switch data := req.data.(type) {
+	case *GetBlockHeadersPacket66:
+		if data.Amount > maxMessageSize {
+			return maxMessageSize
+		}
+		return int(data.Amount)
+	case *GetBlockBodiesPacket66:
+		return len(data.GetBlockBodiesPacket)
+	case *GetNodeDataPacket66:
+		return len(data.GetNodeDataPacket)
+	case *GetReceiptsPacket66:
+		return len(data.GetReceiptsPacket)
+	}
+	return 0
+}
+
+// decodeLimitedList decodes an RLP list into val, refusing it without decoding
+// if it holds more than limit items. Decoding a long list of tiny items blows
+// up in memory far beyond its wire size, so the count is checked first.
+func decodeLimitedList(raw rlp.RawValue, limit int, val interface{}) error {
+	content, _, err := rlp.SplitList(raw)
+	if err != nil {
+		return err
+	}
+	count, err := rlp.CountValues(content)
+	if err != nil {
+		return err
+	}
+	if count > limit {
+		return fmt.Errorf("%w: %d items, limit %d", errTooManyItems, count, limit)
+	}
+	return rlp.DecodeBytes(raw, val)
 }
 
 func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
@@ -498,8 +565,14 @@ func handleTransactions(backend Backend, msg Decoder, peer *Peer) error {
 		return nil
 	}
 	// Transactions can be processed, parse all of them and deliver to the pool
-	var txs TransactionsPacket
-	if err := msg.Decode(&txs); err != nil {
+	var (
+		raw rlp.RawValue
+		txs TransactionsPacket
+	)
+	if err := msg.Decode(&raw); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	if err := decodeLimitedList(raw, maxTransactionsPerPacket, &txs); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	for i, tx := range txs {
@@ -518,8 +591,15 @@ func handlePooledTransactions66(backend Backend, msg Decoder, peer *Peer) error 
 		return nil
 	}
 	// Transactions can be processed, parse all of them and deliver to the pool
-	var txs PooledTransactionsPacket66
-	if err := msg.Decode(&txs); err != nil {
+	var (
+		res rawResponsePacket66
+		txs PooledTransactionsPacket66
+	)
+	if err := msg.Decode(&res); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	txs.RequestId = res.RequestId
+	if err := decodeLimitedList(res.Payload, maxTransactionsPerPacket, &txs.PooledTransactionsPacket); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	for i, tx := range txs.PooledTransactionsPacket {
