@@ -17,13 +17,17 @@
 package eth
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
 )
@@ -333,10 +337,46 @@ func handleNewBlockhashes(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func handleNewBlock(backend Backend, msg Decoder, peer *Peer) error {
-	// Retrieve and decode the propagated block
-	ann := new(NewBlockPacket)
-	if err := msg.Decode(ann); err != nil {
+	// Retrieve the propagated block, leaving its body encoded until we know
+	// it's not stuffed with more transactions than its gas allows
+	raw := new(rawNewBlockPacket)
+	if err := msg.Decode(raw); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	header := raw.Block.Header
+	content, _, err := rlp.SplitList(raw.Block.Txs)
+	if err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	txs, err := rlp.CountValues(content)
+	if err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	// Every transaction burns at least TxGas, so no valid block can hold more
+	// than its gas used allows
+	if header.GasUsed > header.GasLimit || uint64(txs) > header.GasUsed/params.TxGas {
+		return fmt.Errorf("%w: block with %d transactions, gas used %d, gas limit %d", errDecode, txs, header.GasUsed, header.GasLimit)
+	}
+	// The gas limit only drifts slowly, so a block claiming far more room than
+	// our chain has is either bogus or too far ahead to import. Skip it without
+	// decoding the body, but don't punish the peer in case we're just behind.
+	if limit := backend.Chain().CurrentBlock().GasLimit(); header.GasLimit > 2*limit {
+		peer.Log().Debug("Ignoring propagated block with oversized gas limit", "number", header.Number, "hash", header.Hash(), "gaslimit", header.GasLimit, "local", limit)
+		return nil
+	}
+	var body struct {
+		Txs    []*types.Transaction
+		Uncles []*types.Header
+	}
+	if err := rlp.DecodeBytes(raw.Block.Txs, &body.Txs); err != nil {
+		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
+	}
+	if err := rlp.DecodeBytes(raw.Block.Uncles, &body.Uncles); err != nil {
+		return fmt.Errorf("%w: message %v: uncles: %v", errDecode, msg, err)
+	}
+	ann := &NewBlockPacket{
+		Block: types.NewBlockWithHeader(header).WithBody(body.Txs, body.Uncles),
+		TD:    raw.TD,
 	}
 	if err := ann.sanityCheck(); err != nil {
 		return err
@@ -360,13 +400,20 @@ func handleNewBlock(backend Backend, msg Decoder, peer *Peer) error {
 
 func handleBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of headers arrived to one of our previous requests
-	res := new(BlockHeadersPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	var headers BlockHeadersPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &headers); err != nil {
+			return nil, err
+		}
+		return &headers, nil
+	}
 	metadata := func() interface{} {
-		hashes := make([]common.Hash, len(res.BlockHeadersPacket))
-		for i, header := range res.BlockHeadersPacket {
+		hashes := make([]common.Hash, len(headers))
+		for i, header := range headers {
 			hashes[i] = header.Hash()
 		}
 		return hashes
@@ -374,67 +421,242 @@ func handleBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: BlockHeadersMsg,
-		Res:  &res.BlockHeadersPacket,
-	}, metadata)
+	}, decode, metadata)
 }
 
 func handleBlockBodies66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of block bodies arrived to one of our previous requests
-	res := new(BlockBodiesPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	// Bodies are only split into their transaction and uncle lists here, and
+	// get decoded by the requester once their hashes match the headers.
+	var bodies RawBlockBodiesPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &bodies); err != nil {
+			return nil, err
+		}
+		for i := range bodies {
+			if _, _, err := rlp.SplitList(bodies[i].Transactions); err != nil {
+				return nil, fmt.Errorf("body %d transactions: %v", i, err)
+			}
+			if _, _, err := rlp.SplitList(bodies[i].Uncles); err != nil {
+				return nil, fmt.Errorf("body %d uncles: %v", i, err)
+			}
+		}
+		return &bodies, nil
+	}
 	metadata := func() interface{} {
 		var (
-			txsHashes   = make([]common.Hash, len(res.BlockBodiesPacket))
-			uncleHashes = make([]common.Hash, len(res.BlockBodiesPacket))
+			txsHashes   = make([]common.Hash, len(bodies))
+			uncleHashes = make([]common.Hash, len(bodies))
 		)
 		hasher := trie.NewStackTrie(nil)
-		for i, body := range res.BlockBodiesPacket {
-			txsHashes[i] = types.DeriveSha(types.Transactions(body.Transactions), hasher)
-			uncleHashes[i] = types.CalcUncleHash(body.Uncles)
+		for i, body := range bodies {
+			// A list holding things that can't be transactions matches no
+			// header, so leave its hash empty rather than hashing the junk.
+			if txs, ok := newRawTypedList(body.Transactions, minTxContent); ok {
+				txsHashes[i] = types.DeriveSha(txs, hasher)
+			}
+			if bytes.Equal(body.Uncles, emptyListRLP) {
+				uncleHashes[i] = types.EmptyUncleHash
+			} else {
+				uncleHashes[i] = crypto.Keccak256Hash(body.Uncles)
+			}
 		}
 		return [][]common.Hash{txsHashes, uncleHashes}
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: BlockBodiesMsg,
-		Res:  &res.BlockBodiesPacket,
-	}, metadata)
+	}, decode, metadata)
+}
+
+// emptyListRLP is the encoding of an empty list.
+var emptyListRLP = []byte{0xc0}
+
+// Legacy items in a transaction or receipt list are RLP lists of at least nine
+// and four fields respectively, the latter including a 256 byte bloom. Anything
+// shorter can't be one, which saves hashing junk.
+const (
+	minTxContent      = 9
+	minReceiptContent = 1 + 1 + 3 + 256 + 1
+)
+
+// rawTypedList implements types.DerivableList over an encoded list of
+// transactions or receipts, so its root can be computed without decoding the
+// items. Only a 4 byte offset is kept per item.
+type rawTypedList struct {
+	data    []byte
+	offsets []uint32
+}
+
+// newRawTypedList indexes an encoded transaction or receipt list. It fails if
+// any item can't be one: legacy items are lists of at least minContent bytes,
+// typed ones a string holding a type byte and a list.
+func newRawTypedList(list rlp.RawValue, minContent int) (*rawTypedList, bool) {
+	content, _, err := rlp.SplitList(list)
+	if err != nil {
+		return nil, false
+	}
+	// Check every item before allocating anything for them
+	var count int
+	for rest := content; len(rest) > 0; count++ {
+		kind, payload, next, err := rlp.Split(rest)
+		if err != nil {
+			return nil, false
+		}
+		switch kind {
+		case rlp.List:
+			if len(payload) < minContent {
+				return nil, false
+			}
+		case rlp.String:
+			if len(payload) < 2 || payload[0] >= 0x80 || payload[1] < 0xc0 {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+		rest = next
+	}
+	l := &rawTypedList{data: content, offsets: make([]uint32, 0, count)}
+	for rest := content; len(rest) > 0; {
+		_, _, next, _ := rlp.Split(rest)
+		l.offsets = append(l.offsets, uint32(len(content)-len(rest)))
+		rest = next
+	}
+	return l, true
+}
+
+// Len returns the number of items in the list.
+func (l *rawTypedList) Len() int {
+	return len(l.offsets)
+}
+
+// EncodeIndex writes the i'th item the way it is hashed into a trie: legacy
+// items as is, typed ones without the string wrapper.
+func (l *rawTypedList) EncodeIndex(i int, buf *bytes.Buffer) {
+	end := uint32(len(l.data))
+	if i != len(l.offsets)-1 {
+		end = l.offsets[i+1]
+	}
+	item := l.data[l.offsets[i]:end]
+	if kind, content, _, _ := rlp.Split(item); kind == rlp.String {
+		buf.Write(content)
+	} else {
+		buf.Write(item)
+	}
 }
 
 func handleNodeData66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of node state data arrived to one of our previous requests
-	res := new(NodeDataPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	decode := func(req *Request) (interface{}, error) {
+		var data NodeDataPacket
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &data); err != nil {
+			return nil, err
+		}
+		return &data, nil
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: NodeDataMsg,
-		Res:  &res.NodeDataPacket,
-	}, nil) // No post-processing, we're not using this packet anymore
+	}, decode, nil) // No post-processing, we're not using this packet anymore
 }
 
 func handleReceipts66(backend Backend, msg Decoder, peer *Peer) error {
 	// A batch of receipts arrived to one of our previous requests
-	res := new(ReceiptsPacket66)
+	res := new(rawResponsePacket66)
 	if err := msg.Decode(res); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
+	// Receipts stay encoded too, and get decoded by the requester once their
+	// hashes match the headers.
+	var receipts RawReceiptsPacket
+	decode := func(req *Request) (interface{}, error) {
+		if err := decodeLimitedList(res.Payload, requestedItems(req), &receipts); err != nil {
+			return nil, err
+		}
+		for i := range receipts {
+			if _, _, err := rlp.SplitList(receipts[i]); err != nil {
+				return nil, fmt.Errorf("receipts %d: %v", i, err)
+			}
+		}
+		return &receipts, nil
+	}
 	metadata := func() interface{} {
 		hasher := trie.NewStackTrie(nil)
-		hashes := make([]common.Hash, len(res.ReceiptsPacket))
-		for i, receipt := range res.ReceiptsPacket {
-			hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
+		hashes := make([]common.Hash, len(receipts))
+		for i, receipt := range receipts {
+			// Junk matches no header, leave its hash empty
+			if list, ok := newRawTypedList(receipt, minReceiptContent); ok {
+				hashes[i] = types.DeriveSha(list, hasher)
+			}
 		}
 		return hashes
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
 		code: ReceiptsMsg,
-		Res:  &res.ReceiptsPacket,
-	}, metadata)
+	}, decode, metadata)
+}
+
+// rawNewBlockPacket is a NewBlockPacket with the block body left encoded.
+type rawNewBlockPacket struct {
+	Block struct {
+		Header *types.Header
+		Txs    rlp.RawValue
+		Uncles rlp.RawValue
+	}
+	TD *big.Int
+}
+
+// rawResponsePacket66 is the eth/66 envelope of a response packet with the
+// payload left undecoded, so it can be matched up to a request first.
+type rawResponsePacket66 struct {
+	RequestId uint64
+	Payload   rlp.RawValue
+}
+
+// requestedItems returns how many items a response to req may hold at most.
+func requestedItems(req *Request) int {
+	switch data := req.data.(type) {
+	case *GetBlockHeadersPacket66:
+		if data.Amount > maxMessageSize {
+			return maxMessageSize
+		}
+		return int(data.Amount)
+	case *GetBlockBodiesPacket66:
+		return len(data.GetBlockBodiesPacket)
+	case *GetNodeDataPacket66:
+		return len(data.GetNodeDataPacket)
+	case *GetReceiptsPacket66:
+		return len(data.GetReceiptsPacket)
+	}
+	return 0
+}
+
+// decodeLimitedList decodes an RLP list into val, refusing it without decoding
+// if it holds more than limit items. Decoding a long list of tiny items blows
+// up in memory far beyond its wire size, so the count is checked first.
+func decodeLimitedList(raw rlp.RawValue, limit int, val interface{}) error {
+	content, _, err := rlp.SplitList(raw)
+	if err != nil {
+		return err
+	}
+	count, err := rlp.CountValues(content)
+	if err != nil {
+		return err
+	}
+	if count > limit {
+		return fmt.Errorf("%w: %d items, limit %d", errTooManyItems, count, limit)
+	}
+	return rlp.DecodeBytes(raw, val)
 }
 
 func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
@@ -498,8 +720,14 @@ func handleTransactions(backend Backend, msg Decoder, peer *Peer) error {
 		return nil
 	}
 	// Transactions can be processed, parse all of them and deliver to the pool
-	var txs TransactionsPacket
-	if err := msg.Decode(&txs); err != nil {
+	var (
+		raw rlp.RawValue
+		txs TransactionsPacket
+	)
+	if err := msg.Decode(&raw); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	if err := decodeLimitedList(raw, maxTransactionsPerPacket, &txs); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	for i, tx := range txs {
@@ -518,8 +746,15 @@ func handlePooledTransactions66(backend Backend, msg Decoder, peer *Peer) error 
 		return nil
 	}
 	// Transactions can be processed, parse all of them and deliver to the pool
-	var txs PooledTransactionsPacket66
-	if err := msg.Decode(&txs); err != nil {
+	var (
+		res rawResponsePacket66
+		txs PooledTransactionsPacket66
+	)
+	if err := msg.Decode(&res); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
+	txs.RequestId = res.RequestId
+	if err := decodeLimitedList(res.Payload, maxTransactionsPerPacket, &txs.PooledTransactionsPacket); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	for i, tx := range txs.PooledTransactionsPacket {

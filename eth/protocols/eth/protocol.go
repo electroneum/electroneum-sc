@@ -48,6 +48,12 @@ var protocolLengths = map[uint]uint64{ETH66: 17}
 // maxMessageSize is the maximum cap on the size of a protocol message.
 const maxMessageSize = 10 * 1024 * 1024
 
+// maxTransactionsPerPacket is the maximum number of transactions accepted in a
+// single transactions broadcast or pooled transactions response. Broadcasts are
+// cut at maxTxPacketSize and pooled transaction requests at 256 hashes, so an
+// honest peer stays far below this.
+const maxTransactionsPerPacket = 4096
+
 const (
 	StatusMsg                     = 0x00
 	NewBlockHashesMsg             = 0x01
@@ -75,6 +81,7 @@ var (
 	errNetworkIDMismatch       = errors.New("network ID mismatch")
 	errGenesisMismatch         = errors.New("genesis mismatch")
 	errForkIDRejected          = errors.New("fork ID rejected")
+	errTooManyItems            = errors.New("too many items")
 )
 
 // Packet represents a p2p message in the `eth` protocol.
@@ -250,6 +257,45 @@ func (p *BlockBodiesPacket) Unpack() ([][]*types.Transaction, [][]*types.Header)
 		txset[i], uncleset[i] = body.Transactions, body.Uncles
 	}
 	return txset, uncleset
+}
+
+// RawBlockBody is a block body with its transactions and uncles left encoded,
+// so it can be checked against its header before paying for decoding it.
+type RawBlockBody struct {
+	Transactions rlp.RawValue // RLP list of transactions contained within a block
+	Uncles       rlp.RawValue // RLP list of uncles contained within a block
+}
+
+// Decode decodes the transactions and uncles of the body.
+func (b *RawBlockBody) Decode() ([]*types.Transaction, []*types.Header, error) {
+	var (
+		txs    []*types.Transaction
+		uncles []*types.Header
+	)
+	if err := rlp.DecodeBytes(b.Transactions, &txs); err != nil {
+		return nil, nil, fmt.Errorf("invalid transactions: %v", err)
+	}
+	if err := rlp.DecodeBytes(b.Uncles, &uncles); err != nil {
+		return nil, nil, fmt.Errorf("invalid uncles: %v", err)
+	}
+	return txs, uncles, nil
+}
+
+// RawBlockBodiesPacket is the response to a block bodies request, with the
+// bodies left encoded until they are matched against their headers.
+type RawBlockBodiesPacket []RawBlockBody
+
+// RawReceiptsPacket is the response to a receipts request, with the receipts of
+// each block left encoded until they are matched against their headers.
+type RawReceiptsPacket []rlp.RawValue
+
+// DecodeReceipts decodes the encoded receipts of one block.
+func DecodeReceipts(raw rlp.RawValue) ([]*types.Receipt, error) {
+	var receipts []*types.Receipt
+	if err := rlp.DecodeBytes(raw, &receipts); err != nil {
+		return nil, err
+	}
+	return receipts, nil
 }
 
 // GetNodeDataPacket represents a trie node data query.

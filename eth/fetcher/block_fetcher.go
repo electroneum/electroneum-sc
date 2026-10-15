@@ -29,7 +29,6 @@ import (
 	"github.com/electroneum/electroneum-sc/eth/protocols/eth"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/metrics"
-	"github.com/electroneum/electroneum-sc/trie"
 )
 
 const (
@@ -122,10 +121,11 @@ type headerFilterTask struct {
 // bodyFilterTask represents a batch of block bodies (transactions and uncles)
 // needing fetcher filtering.
 type bodyFilterTask struct {
-	peer         string                 // The source peer of block bodies
-	transactions [][]*types.Transaction // Collection of transactions per block bodies
-	uncles       [][]*types.Header      // Collection of uncles per block bodies
-	time         time.Time              // Arrival time of the blocks' contents
+	peer        string             // The source peer of block bodies
+	bodies      []eth.RawBlockBody // Collection of still encoded block bodies
+	txHashes    []common.Hash      // Transaction root of each block body
+	uncleHashes []common.Hash      // Uncle hash of each block body
+	time        time.Time          // Arrival time of the blocks' contents
 }
 
 // blockOrHeaderInject represents a schedules import operation.
@@ -303,8 +303,8 @@ func (f *BlockFetcher) FilterHeaders(peer string, headers []*types.Header, time 
 
 // FilterBodies extracts all the block bodies that were explicitly requested by
 // the fetcher, returning those that should be handled differently.
-func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, time time.Time) ([][]*types.Transaction, [][]*types.Header) {
-	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles))
+func (f *BlockFetcher) FilterBodies(peer string, bodies []eth.RawBlockBody, txHashes, uncleHashes []common.Hash, time time.Time) []eth.RawBlockBody {
+	log.Trace("Filtering bodies", "peer", peer, "bodies", len(bodies))
 
 	// Send the filter channel to the fetcher
 	filter := make(chan *bodyFilterTask)
@@ -312,20 +312,20 @@ func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transac
 	select {
 	case f.bodyFilter <- filter:
 	case <-f.quit:
-		return nil, nil
+		return nil
 	}
 	// Request the filtering of the body list
 	select {
-	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, time: time}:
+	case filter <- &bodyFilterTask{peer: peer, bodies: bodies, txHashes: txHashes, uncleHashes: uncleHashes, time: time}:
 	case <-f.quit:
-		return nil, nil
+		return nil
 	}
 	// Retrieve the bodies remaining after filtering
 	select {
 	case task := <-filter:
-		return task.transactions, task.uncles
+		return task.bodies
 	case <-f.quit:
-		return nil, nil
+		return nil
 	}
 }
 
@@ -542,8 +542,9 @@ func (f *BlockFetcher) loop() {
 					case res := <-resCh:
 						res.Done <- nil
 
-						txs, uncles := res.Res.(*eth.BlockBodiesPacket).Unpack()
-						f.FilterBodies(peer, txs, uncles, time.Now())
+						bodies := *res.Res.(*eth.RawBlockBodiesPacket)
+						hashes := res.Meta.([][]common.Hash) // {txs hashes, uncle hashes}
+						f.FilterBodies(peer, bodies, hashes[0], hashes[1], time.Now())
 
 					case <-timeout.C:
 						// The peer didn't respond in time. The request
@@ -657,37 +658,40 @@ func (f *BlockFetcher) loop() {
 			case <-f.quit:
 				return
 			}
-			bodyFilterInMeter.Mark(int64(len(task.transactions)))
+			bodyFilterInMeter.Mark(int64(len(task.bodies)))
 			blocks := []*types.Block{}
 			// abort early if there's nothing explicitly requested
 			if len(f.completing) > 0 {
-				for i := 0; i < len(task.transactions) && i < len(task.uncles); i++ {
-					// Match up a body to any possible completion request
+				for i := 0; i < len(task.bodies) && i < len(task.txHashes) && i < len(task.uncleHashes); i++ {
+					// Match up a body to any possible completion request. The
+					// body is only decoded once its hashes match a header.
 					var (
-						matched   = false
-						uncleHash common.Hash // calculated lazily and reused
-						txnHash   common.Hash // calculated lazily and reused
+						matched = false
+						decoded = false
+						txs     []*types.Transaction
+						uncles  []*types.Header
+						err     error
 					)
 					for hash, announce := range f.completing {
 						if f.queued[hash] != nil || announce.origin != task.peer {
 							continue
 						}
-						if uncleHash == (common.Hash{}) {
-							uncleHash = types.CalcUncleHash(task.uncles[i])
-						}
-						if uncleHash != announce.header.UncleHash {
+						if task.uncleHashes[i] != announce.header.UncleHash || task.txHashes[i] != announce.header.TxHash {
 							continue
 						}
-						if txnHash == (common.Hash{}) {
-							txnHash = types.DeriveSha(types.Transactions(task.transactions[i]), trie.NewStackTrie(nil))
+						if !decoded {
+							decoded = true
+							if txs, uncles, err = task.bodies[i].Decode(); err != nil {
+								log.Debug("Undecodable block body", "peer", task.peer, "err", err)
+							}
 						}
-						if txnHash != announce.header.TxHash {
-							continue
+						if err != nil {
+							break
 						}
 						// Mark the body matched, reassemble if still unknown
 						matched = true
 						if f.getBlock(hash) == nil {
-							block := types.NewBlockWithHeader(announce.header).WithBody(task.transactions[i], task.uncles[i])
+							block := types.NewBlockWithHeader(announce.header).WithBody(txs, uncles)
 							block.ReceivedAt = task.time
 							blocks = append(blocks, block)
 						} else {
@@ -695,14 +699,15 @@ func (f *BlockFetcher) loop() {
 						}
 					}
 					if matched {
-						task.transactions = append(task.transactions[:i], task.transactions[i+1:]...)
-						task.uncles = append(task.uncles[:i], task.uncles[i+1:]...)
+						task.bodies = append(task.bodies[:i], task.bodies[i+1:]...)
+						task.txHashes = append(task.txHashes[:i], task.txHashes[i+1:]...)
+						task.uncleHashes = append(task.uncleHashes[:i], task.uncleHashes[i+1:]...)
 						i--
 						continue
 					}
 				}
 			}
-			bodyFilterOutMeter.Mark(int64(len(task.transactions)))
+			bodyFilterOutMeter.Mark(int64(len(task.bodies)))
 			select {
 			case filter <- task:
 			case <-f.quit:

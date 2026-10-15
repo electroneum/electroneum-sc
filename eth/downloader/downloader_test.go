@@ -278,12 +278,16 @@ func (dlp *downloadTesterPeer) RequestBodies(hashes []common.Hash, sink chan *et
 		txsHashes[i] = types.DeriveSha(types.Transactions(body.Transactions), hasher)
 		uncleHashes[i] = types.CalcUncleHash(body.Uncles)
 	}
+	raw := make(eth.RawBlockBodiesPacket, len(blobs))
+	for i, blob := range blobs {
+		rlp.DecodeBytes(blob, &raw[i])
+	}
 	req := &eth.Request{
 		Peer: dlp.id,
 	}
 	res := &eth.Response{
 		Req:  req,
-		Res:  (*eth.BlockBodiesPacket)(&bodies),
+		Res:  &raw,
 		Meta: [][]common.Hash{txsHashes, uncleHashes},
 		Time: 1,
 		Done: make(chan error, 1), // Ignore the returned status
@@ -309,12 +313,13 @@ func (dlp *downloadTesterPeer) RequestReceipts(hashes []common.Hash, sink chan *
 	for i, receipt := range receipts {
 		hashes[i] = types.DeriveSha(types.Receipts(receipt), hasher)
 	}
+	raw := eth.RawReceiptsPacket(blobs)
 	req := &eth.Request{
 		Peer: dlp.id,
 	}
 	res := &eth.Response{
 		Req:  req,
-		Res:  (*eth.ReceiptsPacket)(&receipts),
+		Res:  &raw,
 		Meta: hashes,
 		Time: 1,
 		Done: make(chan error, 1), // Ignore the returned status

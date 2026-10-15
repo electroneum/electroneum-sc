@@ -172,7 +172,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	case msg.Code == AccountRangeMsg:
 		// A range of accounts arrived to one of our previous requests
 		res := new(AccountRangePacket)
-		if err := msg.Decode(res); err != nil {
+		if err := decodeLimited(msg, res, fieldLimit{2, maxProofNodes}); err != nil { // Proof
 			return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 		}
 		// Ensure the range is monotonically increasing
@@ -204,7 +204,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	case msg.Code == StorageRangesMsg:
 		// A range of storage slots arrived to one of our previous requests
 		res := new(StorageRangesPacket)
-		if err := msg.Decode(res); err != nil {
+		if err := decodeLimited(msg, res, fieldLimit{1, maxPacketItems}, fieldLimit{2, maxProofNodes}); err != nil { // Slots, Proof
 			return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 		}
 		// Ensure the ranges are monotonically increasing
@@ -237,7 +237,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	case msg.Code == ByteCodesMsg:
 		// A batch of byte codes arrived to one of our previous requests
 		res := new(ByteCodesPacket)
-		if err := msg.Decode(res); err != nil {
+		if err := decodeLimited(msg, res, fieldLimit{1, maxPacketItems}); err != nil { // Codes
 			return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 		}
 		requestTracker.Fulfil(peer.id, peer.version, ByteCodesMsg, res.ID)
@@ -247,7 +247,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	case msg.Code == GetTrieNodesMsg:
 		// Decode trie node retrieval request
 		var req GetTrieNodesPacket
-		if err := msg.Decode(&req); err != nil {
+		if err := decodeLimitedTrieNodesRequest(msg, &req); err != nil {
 			return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 		}
 		// Service the request, potentially returning nothing in case of errors
@@ -264,7 +264,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	case msg.Code == TrieNodesMsg:
 		// A batch of trie nodes arrived to one of our previous requests
 		res := new(TrieNodesPacket)
-		if err := msg.Decode(res); err != nil {
+		if err := decodeLimited(msg, res, fieldLimit{1, maxPacketItems}); err != nil { // Nodes
 			return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 		}
 		requestTracker.Fulfil(peer.id, peer.version, TrieNodesMsg, res.ID)
@@ -274,6 +274,111 @@ func HandleMessage(backend Backend, peer *Peer) error {
 	default:
 		return fmt.Errorf("%w: %v", errInvalidMsgCode, msg.Code)
 	}
+}
+
+// fieldLimit caps the number of values in a top-level list field of a packet.
+type fieldLimit struct {
+	index int // Position of the field in the packet
+	max   int // Maximum number of values in the list
+}
+
+// decodeLimited decodes a packet into val, refusing it without decoding if any
+// of the given top-level list fields holds more values than allowed. Long lists
+// of tiny items take far more memory decoded than on the wire, so the counts
+// are checked on the raw encoding first.
+func decodeLimited(msg p2p.Msg, val interface{}, limits ...fieldLimit) error {
+	var raw rlp.RawValue
+	if err := msg.Decode(&raw); err != nil {
+		return err
+	}
+	for _, limit := range limits {
+		list, err := packetField(raw, limit.index)
+		if err != nil {
+			return err
+		}
+		if _, err := countItems(list, limit.max); err != nil {
+			return err
+		}
+	}
+	return rlp.DecodeBytes(raw, val)
+}
+
+// decodeLimitedTrieNodesRequest decodes a GetTrieNodes request, refusing it
+// without decoding if it holds more than maxPacketItems path sets or paths.
+func decodeLimitedTrieNodesRequest(msg p2p.Msg, req *GetTrieNodesPacket) error {
+	var raw rlp.RawValue
+	if err := msg.Decode(&raw); err != nil {
+		return err
+	}
+	sets, err := packetField(raw, 2) // Paths
+	if err != nil {
+		return err
+	}
+	if _, err := countItems(sets, maxPacketItems); err != nil {
+		return err
+	}
+	content, _, err := rlp.SplitList(sets)
+	if err != nil {
+		return err
+	}
+	var paths int
+	for len(content) > 0 {
+		var set []byte
+		if set, content, err = splitRaw(content); err != nil {
+			return err
+		}
+		n, err := countItems(set, maxPacketItems)
+		if err != nil {
+			return err
+		}
+		if paths += n; paths > maxPacketItems {
+			return fmt.Errorf("%w: more than %d trie node paths", errTooManyItems, maxPacketItems)
+		}
+	}
+	return rlp.DecodeBytes(raw, req)
+}
+
+// packetField returns the raw encoding of the given top-level field of a packet.
+func packetField(raw rlp.RawValue, index int) ([]byte, error) {
+	content, _, err := rlp.SplitList(raw)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; ; i++ {
+		var field []byte
+		if field, content, err = splitRaw(content); err != nil {
+			return nil, err
+		}
+		if i == index {
+			return field, nil
+		}
+	}
+}
+
+// splitRaw splits the first value off b, returning its full encoding.
+func splitRaw(b []byte) (value, rest []byte, err error) {
+	_, _, rest, err = rlp.Split(b)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b[:len(b)-len(rest)], rest, nil
+}
+
+// countItems counts the values in an encoded list, failing if there are more
+// than max.
+func countItems(list []byte, max int) (int, error) {
+	content, _, err := rlp.SplitList(list)
+	if err != nil {
+		return 0, err
+	}
+	n, err := rlp.CountValues(content)
+	if err != nil {
+		return 0, err
+	}
+	if n > max {
+		return 0, fmt.Errorf("%w: %d items, limit %d", errTooManyItems, n, max)
+	}
+	return n, nil
 }
 
 // ServiceGetAccountRangeQuery assembles the response to an account range query.
