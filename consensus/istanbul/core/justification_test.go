@@ -171,6 +171,9 @@ func makeBlock(number int64) *types.Block {
 		GasLimit:   0,
 		GasUsed:    0,
 		Time:       0,
+		// Roots of an empty body, so the block passes ROUND-CHANGE body checks.
+		TxHash:    types.EmptyRootHash,
+		UncleHash: types.EmptyUncleHash,
 	}
 	block := &types.Block{}
 	return block.WithSeal(header)
