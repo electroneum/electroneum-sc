@@ -7,8 +7,11 @@ import (
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
 	"github.com/electroneum/electroneum-sc/trie"
@@ -32,13 +35,23 @@ func countingCore(calls *int) *core {
 
 // junkBlock is a block stuffed with empty legacy transactions, which decode to
 // many times their encoded size.
-func junkBlock(n int) *types.Block {
+func junkBlock(n int, gasLimit uint64) *types.Block {
 	txs := make([]*types.Transaction, n)
 	for i := range txs {
 		txs[i] = types.NewTx(&types.LegacyTx{})
 	}
-	header := &types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1)}
+	header := &types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1), GasLimit: gasLimit}
 	return types.NewBlock(header, txs, nil, nil, trie.NewStackTrie(nil))
+}
+
+// withBody re-encodes block with other transactions but the same header, as a
+// peer tampering with a ROUND-CHANGE's unsigned prepared block would.
+func withBody(t *testing.T, block *types.Block, txs []*types.Transaction) rlp.RawValue {
+	enc, err := rlp.EncodeToBytes([]interface{}{block.Header(), txs, []*types.Header{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return enc
 }
 
 func allocated(f func()) uint64 {
@@ -53,7 +66,8 @@ func allocated(f func()) uint64 {
 // A PRE-PREPARE or ROUND-CHANGE with a bad signature must be rejected without
 // decoding the block it carries.
 func TestPreVerifySignature_RejectsBeforeDecodingBlock(t *testing.T) {
-	block := junkBlock(100_000)
+	// The gas limit allows the transactions, so it's the signature that stops it.
+	block := junkBlock(100_000, 100_000*minTxGas)
 
 	pp := qbfttypes.NewPreprepare(big.NewInt(1), big.NewInt(0), block)
 	pp.SetSignature([]byte{0x00})
@@ -191,5 +205,156 @@ func TestPreVerifySignature_SkipsSmallMessages(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("expected no signature checks, got %d", calls)
+	}
+}
+
+// A block holding more transactions than its gas limit allows is rejected
+// before decoding, even under a valid signature.
+func TestPreVerifySignature_RejectsOverstuffedBlock(t *testing.T) {
+	block := junkBlock(100, 99*minTxGas)
+
+	pp := qbfttypes.NewPreprepare(big.NewInt(1), big.NewInt(0), block)
+	pp.SetSignature([]byte{0xAA})
+	rc := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), block, false)
+	rc.SetSignature([]byte{0xAA})
+
+	for name, tc := range map[string]struct {
+		code uint64
+		msg  interface{}
+	}{
+		"preprepare":  {qbfttypes.PreprepareCode, pp},
+		"roundchange": {qbfttypes.RoundChangeCode, rc},
+	} {
+		data, err := rlp.EncodeToBytes(tc.msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls int
+		c := countingCore(&calls)
+		if _, err := c.preVerifySignature(tc.code, data); !errors.Is(err, errInvalidMessage) {
+			t.Fatalf("%s: expected errInvalidMessage, got %v", name, err)
+		}
+		if calls != 0 {
+			t.Fatalf("%s: signature checked before the block bound", name)
+		}
+	}
+	// One fewer transaction fits.
+	ok := junkBlock(99, 99*minTxGas)
+	pp = qbfttypes.NewPreprepare(big.NewInt(1), big.NewInt(0), ok)
+	pp.SetSignature([]byte{0xAA})
+	data, _ := rlp.EncodeToBytes(pp)
+	var calls int
+	if _, err := countingCore(&calls).preVerifySignature(qbfttypes.PreprepareCode, data); err != nil {
+		t.Fatalf("block at the limit rejected: %v", err)
+	}
+}
+
+// The prepared block in a ROUND-CHANGE isn't signed, only its hash is. Anyone
+// holding a validator's ROUND-CHANGE could swap in a huge body under the same
+// header. The header's gas limit still bounds it, and a header that doesn't
+// match the signed digest is rejected outright.
+func TestPreVerifySignature_RoundChangeBodySwap(t *testing.T) {
+	block := junkBlock(1, 30_000_000)
+	rc := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), block, false)
+	rc.SetSignature([]byte{0xAA})
+
+	var raw struct {
+		Signed        rlp.RawValue
+		PreparedBlock rlp.RawValue
+		Justification rlp.RawValue
+	}
+	data, _ := rlp.EncodeToBytes(rc)
+	if err := rlp.DecodeBytes(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	tamper := func(body rlp.RawValue) []byte {
+		enc, err := rlp.EncodeToBytes([]interface{}{raw.Signed, body, raw.Justification})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return enc
+	}
+	var calls int
+	c := countingCore(&calls)
+
+	// The genuine message passes.
+	if _, err := c.preVerifySignature(qbfttypes.RoundChangeCode, data); err != nil {
+		t.Fatalf("genuine round change rejected: %v", err)
+	}
+	// Same header, junk body: bounded by the header's 30M gas limit.
+	junk := junkBlock(100_000, 0).Transactions()
+	if _, err := c.preVerifySignature(qbfttypes.RoundChangeCode, tamper(withBody(t, block, junk))); !errors.Is(err, errInvalidMessage) {
+		t.Fatalf("swapped body: expected errInvalidMessage, got %v", err)
+	}
+	// Different header with a huge gas limit to dodge the bound: hash mismatch.
+	inflated := junkBlock(100_000, 100_000*minTxGas)
+	if _, err := c.preVerifySignature(qbfttypes.RoundChangeCode, tamper(withBody(t, inflated, junk))); !errors.Is(err, errInvalidMessage) {
+		t.Fatalf("swapped header: expected errInvalidMessage, got %v", err)
+	}
+}
+
+// End to end with a real key: what an honest validator signs is exactly what
+// pre-verification checks, so honest messages keep working.
+func TestPreVerifySignature_RealSignature(t *testing.T) {
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	policy := istanbul.NewRoundRobinProposerPolicy()
+	policy.Use(istanbul.ValidatorSortByByte())
+	c := &core{logger: log.New(), valSet: validator.NewSet([]common.Address{addr}, policy)}
+	c.validateFn = c.checkValidatorSignature
+
+	sign := func(m qbfttypes.QBFTMessage) []byte {
+		payload, err := m.EncodePayloadForSigning()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, err := crypto.Sign(crypto.Keccak256(payload), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.SetSignature(sig)
+		enc, err := rlp.EncodeToBytes(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return enc
+	}
+	signer := types.LatestSignerForChainID(big.NewInt(1))
+	txs := make([]*types.Transaction, 3)
+	for i := range txs {
+		txs[i] = types.MustSignNewTx(key, signer, &types.DynamicFeeTx{ChainID: big.NewInt(1), Nonce: uint64(i), Gas: 21000, GasFeeCap: big.NewInt(1), Data: []byte{1, 2, 3}})
+	}
+	header := &types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1), GasLimit: 30_000_000, BaseFee: big.NewInt(1)}
+	block := types.NewBlock(header, txs, nil, nil, trie.NewStackTrie(nil))
+
+	for name, tc := range map[string]struct {
+		code uint64
+		msg  qbfttypes.QBFTMessage
+	}{
+		"preprepare":  {qbfttypes.PreprepareCode, qbfttypes.NewPreprepare(big.NewInt(1), big.NewInt(0), block)},
+		"roundchange": {qbfttypes.RoundChangeCode, qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), block, false)},
+		"empty rc":    {qbfttypes.RoundChangeCode, qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), nil, nil, false)},
+	} {
+		data := sign(tc.msg)
+		verified, err := c.preVerifySignature(tc.code, data)
+		if err != nil {
+			t.Fatalf("%s: pre-verify rejected an honest message: %v", name, err)
+		}
+		m, err := qbfttypes.Decode(tc.code, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		c.validateFn = func(data, sig []byte) (common.Address, error) {
+			calls++
+			return c.checkValidatorSignature(data, sig)
+		}
+		if err := c.verifySignaturesWith(m, verified); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		c.validateFn = c.checkValidatorSignature
+		if calls != 0 || m.Source() != addr {
+			t.Fatalf("%s: seeded check not reused (calls %d, source %x)", name, calls, m.Source())
+		}
 	}
 }

@@ -17,6 +17,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -24,8 +25,10 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
+	"github.com/electroneum/electroneum-sc/params"
 	"github.com/electroneum/electroneum-sc/rlp"
 )
 
@@ -361,34 +364,61 @@ func (c *core) verifySignaturesWith(m qbfttypes.QBFTMessage, verified map[common
 	return nil
 }
 
-// rawSignedPayload is the signed part of a PRE-PREPARE or ROUND-CHANGE with the
-// payload left encoded.
-type rawSignedPayload struct {
-	Payload   rlp.RawValue
-	Signature []byte
-}
-
-// rawPreprepare mirrors the wire layout of qbfttypes.Preprepare.
-type rawPreprepare struct {
-	Signed        rawSignedPayload
-	Justification struct {
-		RoundChanges rlp.RawValue
-		Prepares     rlp.RawValue
+// splitFields splits an encoded list that must hold exactly n items into the
+// items' encodings. The results point into b, nothing is copied.
+func splitFields(b []byte, n int) ([][]byte, error) {
+	content, rest, err := rlp.SplitList(b)
+	if err != nil {
+		return nil, err
 	}
+	if len(rest) != 0 {
+		return nil, rlp.ErrMoreThanOneValue
+	}
+	fields := make([][]byte, 0, n)
+	for len(content) > 0 && len(fields) < n {
+		_, _, tail, err := rlp.Split(content)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, content[:len(content)-len(tail)])
+		content = tail
+	}
+	if len(fields) != n || len(content) != 0 {
+		return nil, fmt.Errorf("expected %d fields", n)
+	}
+	return fields, nil
 }
 
-// rawRoundChange mirrors the wire layout of qbfttypes.RoundChange.
-type rawRoundChange struct {
-	Signed        rawSignedPayload
-	PreparedBlock rlp.RawValue
-	Justification rlp.RawValue
+// countRawList counts the items in an encoded list. Any other zero-size value
+// counts as empty, matching RoundChange.DecodeRLP, which skips anything whose
+// Kind reports size 0.
+func countRawList(list []byte) (int, error) {
+	kind, content, rest, err := rlp.Split(list)
+	if err != nil {
+		return 0, err
+	}
+	if len(rest) != 0 {
+		return 0, rlp.ErrMoreThanOneValue
+	}
+	switch {
+	case kind == rlp.List:
+		return rlp.CountValues(content)
+	case kind == rlp.Byte, len(content) == 0:
+		return 0, nil
+	}
+	return 0, rlp.ErrExpectedList
 }
 
-// preVerifySignature checks the outer signature of a PRE-PREPARE or ROUND-CHANGE
-// and the length of its justifications without decoding the block or the
-// justification entries. Other messages are small and pass straight through.
-// On success the verified pair is returned so verifySignaturesWith doesn't pay
-// for the same ecrecover twice.
+// preVerifySignature checks the outer signature of a PRE-PREPARE or ROUND-CHANGE,
+// the length of its justifications and the size of the block it carries,
+// without decoding the block or the justification entries. Other messages are
+// small and pass straight through. On success the verified pair is returned so
+// verifySignaturesWith doesn't pay for the same ecrecover twice.
+//
+// Wire layouts (see the EncodeRLP methods in qbfttypes):
+//
+//	PRE-PREPARE:  [[payload, sig], [roundChanges, prepares]], payload = [seq, round, block]
+//	ROUND-CHANGE: [[payload, sig], preparedBlock, prepares],  payload = [seq, round, [pr, digest, bad] or []]
 func (c *core) preVerifySignature(code uint64, data []byte) (map[common.Hash]common.Address, error) {
 	verified := make(map[common.Hash]common.Address)
 	if code != qbfttypes.PreprepareCode && code != qbfttypes.RoundChangeCode {
@@ -398,48 +428,119 @@ func (c *core) preVerifySignature(code uint64, data []byte) (map[common.Hash]com
 		c.logger.Warn("IBFT: dropping message received before validator set is initialised")
 		return nil, errInvalidMessage
 	}
-	var (
-		signed         rawSignedPayload
-		justifications []rlp.RawValue
-	)
+	decodeErr := istanbulcommon.ErrFailedDecodePreprepare
+	if code == qbfttypes.RoundChangeCode {
+		decodeErr = istanbulcommon.ErrFailedDecodeRoundChange
+	}
+	n := 2
+	if code == qbfttypes.RoundChangeCode {
+		n = 3
+	}
+	msg, err := splitFields(data, n)
+	if err != nil {
+		return nil, decodeErr
+	}
+	signed, err := splitFields(msg[0], 2)
+	if err != nil {
+		return nil, decodeErr
+	}
+	payload := signed[0]
+	signature, _, err := rlp.SplitString(signed[1])
+	if err != nil {
+		return nil, decodeErr
+	}
+	var justifications [][]byte
 	if code == qbfttypes.PreprepareCode {
-		var raw rawPreprepare
-		if err := rlp.DecodeBytes(data, &raw); err != nil {
-			return nil, istanbulcommon.ErrFailedDecodePreprepare
+		if justifications, err = splitFields(msg[1], 2); err != nil {
+			return nil, decodeErr
 		}
-		signed = raw.Signed
-		justifications = []rlp.RawValue{raw.Justification.RoundChanges, raw.Justification.Prepares}
 	} else {
-		var raw rawRoundChange
-		if err := rlp.DecodeBytes(data, &raw); err != nil {
-			return nil, istanbulcommon.ErrFailedDecodeRoundChange
-		}
-		signed = raw.Signed
-		justifications = []rlp.RawValue{raw.Justification}
+		justifications = msg[2:]
 	}
 	// Same bound as verifySignaturesWith, applied before the entries are decoded.
 	for _, list := range justifications {
-		content, _, err := rlp.SplitList(list)
-		if err != nil {
-			return nil, errInvalidMessage
-		}
-		if n, err := rlp.CountValues(content); err != nil || n > c.valSet.Size() {
+		if n, err := countRawList(list); err != nil || n > c.valSet.Size() {
 			c.logger.Warn("IBFT: rejecting message with oversized justification", "code", code, "count", n, "max", c.valSet.Size())
 			return nil, errInvalidMessage
 		}
 	}
+	var preparedBlock []byte
+	if code == qbfttypes.RoundChangeCode {
+		preparedBlock = msg[1]
+	}
+	if err := checkRawBlock(code, payload, preparedBlock); err != nil {
+		c.logger.Warn("IBFT: rejecting message with invalid block", "code", code, "err", err)
+		return nil, errInvalidMessage
+	}
 	// Signing payload is [code, payload], see EncodePayloadForSigning.
-	payload, err := rlp.EncodeToBytes([]interface{}{code, signed.Payload})
+	signingPayload, err := rlp.EncodeToBytes([]interface{}{code, rlp.RawValue(payload)})
 	if err != nil {
 		return nil, err
 	}
-	source, err := c.validateFn(payload, signed.Signature)
+	source, err := c.validateFn(signingPayload, signature)
 	if err != nil {
 		c.logger.Warn("IBFT: invalid message signature", "code", code, "err", err)
 		return nil, errInvalidSigner
 	}
-	verified[crypto.Keccak256Hash(payload, signed.Signature)] = source
+	verified[crypto.Keccak256Hash(signingPayload, signature)] = source
 	return verified, nil
+}
+
+// minTxGas is the least gas a transaction can leave used in a block: the
+// intrinsic gas less the biggest refund any fork allows (half, pre-London).
+const minTxGas = params.TxGas / params.RefundQuotient
+
+// checkRawBlock bounds the block carried by a PRE-PREPARE (inside the signed
+// payload) or ROUND-CHANGE (next to it, bound only by its hash) before the
+// block is decoded. Lots of tiny transactions are what make a block expensive
+// to decode, and a real block can only hold GasLimit/minTxGas of them. The
+// header is covered by the signature, directly or through the prepared digest,
+// so its gas limit can't be inflated to get around this.
+func checkRawBlock(code uint64, payload, preparedBlock []byte) error {
+	fields, err := splitFields(payload, 3)
+	if err != nil {
+		return err
+	}
+	var (
+		block  = fields[2]
+		digest *common.Hash
+	)
+	if code == qbfttypes.RoundChangeCode {
+		if n, err := countRawList(preparedBlock); err != nil || n == 0 {
+			return err // nothing prepared
+		}
+		prepared, err := splitFields(fields[2], 3)
+		if err != nil {
+			return errors.New("prepared block without a prepared digest")
+		}
+		digest = new(common.Hash)
+		if err := rlp.DecodeBytes(prepared[1], digest); err != nil {
+			return err
+		}
+		block = preparedBlock
+	}
+	parts, err := splitFields(block, 3) // [header, txs, uncles]
+	if err != nil {
+		return err
+	}
+	var header types.Header
+	if err := rlp.DecodeBytes(parts[0], &header); err != nil {
+		return err
+	}
+	if digest != nil && header.Hash() != *digest {
+		return errors.New("prepared block does not match prepared digest")
+	}
+	txs, err := countRawList(parts[1])
+	if err != nil {
+		return err
+	}
+	if uint64(txs) > header.GasLimit/minTxGas {
+		return fmt.Errorf("%d txs exceed what gas limit %d allows", txs, header.GasLimit)
+	}
+	if uncles, err := countRawList(parts[2]); err != nil || uncles != 0 {
+		return errors.New("block has uncles")
+	}
+	return nil
 }
 
 func (c *core) currentLogger(state bool, msg qbfttypes.QBFTMessage) log.Logger {
