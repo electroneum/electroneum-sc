@@ -12,6 +12,7 @@ import (
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/rlp"
+	"github.com/electroneum/electroneum-sc/trie"
 )
 
 // ROUND-CHANGE
@@ -279,6 +280,15 @@ func (m *RoundChange) DecodeRLP(stream *rlp.Stream) error {
 		if m.PreparedBlock.Hash() != m.PreparedDigest {
 			log.Error("[Consensus]: Error m.PreparedDigest.Hash() != digest")
 			return istanbulcommon.ErrFailedDecodePreprepare
+		}
+		// The prepared block isn't signed, only its hash is, and the hash only
+		// covers the header. Make sure the body is the one the header commits
+		// to, or anyone relaying this could swap it and get the next proposer
+		// to re-propose a block every other validator rejects.
+		if types.DeriveSha(m.PreparedBlock.Transactions(), trie.NewStackTrie(nil)) != m.PreparedBlock.TxHash() ||
+			types.CalcUncleHash(m.PreparedBlock.Uncles()) != m.PreparedBlock.UncleHash() {
+			log.Error("[Consensus]: Error prepared block body does not match its header")
+			return istanbulcommon.ErrFailedDecodeRoundChange
 		}
 	}
 
