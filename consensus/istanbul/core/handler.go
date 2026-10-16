@@ -22,6 +22,7 @@ import (
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
+	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
@@ -183,6 +184,14 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 		return fmt.Errorf("invalid message event code %v", code)
 	}
 
+	// PRE-PREPARE and ROUND-CHANGE carry a whole block, which can take tens of
+	// times its wire size in memory once decoded. Check the sender signed it
+	// from the raw bytes first, so an outsider can't make us decode anything big.
+	verified, err := c.preVerifySignature(code, data)
+	if err != nil {
+		return err
+	}
+
 	// Decode data into a QBFTMessage
 	m, err := qbfttypes.Decode(code, data)
 	if err != nil {
@@ -191,7 +200,7 @@ func (c *core) handleEncodedMsg(code uint64, data []byte) error {
 	}
 
 	// Verify signatures and set source address
-	if err = c.verifySignatures(m); err != nil {
+	if err = c.verifySignaturesWith(m, verified); err != nil {
 		return err
 	}
 
@@ -254,6 +263,12 @@ func (c *core) handleTimeoutMsg() {
 // piggybacked in m, if any. It also sets the source address on the messages
 // and justification payloads.
 func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
+	return c.verifySignaturesWith(m, make(map[common.Hash]common.Address))
+}
+
+// verifySignaturesWith is verifySignatures seeded with (payload, signature)
+// pairs that are already known to be good, keyed as in the verify closure.
+func (c *core) verifySignaturesWith(m qbfttypes.QBFTMessage, verified map[common.Hash]common.Address) error {
 	logger := c.currentLogger(true, m)
 
 	// c.valSet is first populated by startNewRound. The handleEvents goroutine is started
@@ -271,7 +286,6 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 	// containing many identical signed payloads only pays for one ecrecover. This preserves
 	// fail-fast semantics (the first bad signature still errors) while removing the CPU
 	// amplification from duplicate entries.
-	verified := make(map[common.Hash]common.Address)
 	verify := func(m qbfttypes.QBFTMessage) error {
 		payload, err := m.EncodePayloadForSigning()
 		if err != nil {
@@ -345,6 +359,87 @@ func (c *core) verifySignatures(m qbfttypes.QBFTMessage) error {
 	}
 
 	return nil
+}
+
+// rawSignedPayload is the signed part of a PRE-PREPARE or ROUND-CHANGE with the
+// payload left encoded.
+type rawSignedPayload struct {
+	Payload   rlp.RawValue
+	Signature []byte
+}
+
+// rawPreprepare mirrors the wire layout of qbfttypes.Preprepare.
+type rawPreprepare struct {
+	Signed        rawSignedPayload
+	Justification struct {
+		RoundChanges rlp.RawValue
+		Prepares     rlp.RawValue
+	}
+}
+
+// rawRoundChange mirrors the wire layout of qbfttypes.RoundChange.
+type rawRoundChange struct {
+	Signed        rawSignedPayload
+	PreparedBlock rlp.RawValue
+	Justification rlp.RawValue
+}
+
+// preVerifySignature checks the outer signature of a PRE-PREPARE or ROUND-CHANGE
+// and the length of its justifications without decoding the block or the
+// justification entries. Other messages are small and pass straight through.
+// On success the verified pair is returned so verifySignaturesWith doesn't pay
+// for the same ecrecover twice.
+func (c *core) preVerifySignature(code uint64, data []byte) (map[common.Hash]common.Address, error) {
+	verified := make(map[common.Hash]common.Address)
+	if code != qbfttypes.PreprepareCode && code != qbfttypes.RoundChangeCode {
+		return verified, nil
+	}
+	if c.valSet == nil {
+		c.logger.Warn("IBFT: dropping message received before validator set is initialised")
+		return nil, errInvalidMessage
+	}
+	var (
+		signed         rawSignedPayload
+		justifications []rlp.RawValue
+	)
+	if code == qbfttypes.PreprepareCode {
+		var raw rawPreprepare
+		if err := rlp.DecodeBytes(data, &raw); err != nil {
+			return nil, istanbulcommon.ErrFailedDecodePreprepare
+		}
+		signed = raw.Signed
+		justifications = []rlp.RawValue{raw.Justification.RoundChanges, raw.Justification.Prepares}
+	} else {
+		var raw rawRoundChange
+		if err := rlp.DecodeBytes(data, &raw); err != nil {
+			return nil, istanbulcommon.ErrFailedDecodeRoundChange
+		}
+		signed = raw.Signed
+		justifications = []rlp.RawValue{raw.Justification}
+	}
+	// Same bound as verifySignaturesWith, applied before the entries are decoded.
+	for _, list := range justifications {
+		content, _, err := rlp.SplitList(list)
+		if err != nil {
+			return nil, errInvalidMessage
+		}
+		if n, err := rlp.CountValues(content); err != nil || n > c.valSet.Size() {
+			c.logger.Warn("IBFT: rejecting message with oversized justification", "code", code, "count", n, "max", c.valSet.Size())
+			return nil, errInvalidMessage
+		}
+	}
+	// Signing payload is [code, payload], see EncodePayloadForSigning.
+	payload, err := rlp.EncodeToBytes([]interface{}{code, signed.Payload})
+	if err != nil {
+		return nil, err
+	}
+	source, err := c.validateFn(payload, signed.Signature)
+	if err != nil {
+		c.logger.Warn("IBFT: invalid message signature", "code", code, "err", err)
+		return nil, errInvalidSigner
+	}
+	verified[crypto.Keccak256Hash(payload, signed.Signature)] = source
+	return verified, nil
 }
 
 func (c *core) currentLogger(state bool, msg qbfttypes.QBFTMessage) log.Logger {
