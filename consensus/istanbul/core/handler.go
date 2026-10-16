@@ -180,7 +180,7 @@ func (c *core) sendEvent(ev interface{}) {
 }
 
 func (c *core) handleEncodedMsg(code uint64, data []byte) error {
-	logger := c.logger.New("code", code, "data", data)
+	logger := c.logger.New("code", code, "size", len(data))
 
 	if _, ok := qbfttypes.MessageCodes()[code]; !ok {
 		logger.Error("IBFT: invalid message event code")
