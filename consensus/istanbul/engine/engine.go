@@ -180,7 +180,37 @@ func (e *Engine) verifyHeader(chain consensus.ChainHeaderReader, header *types.H
 		return istanbulcommon.ErrInvalidDifficulty
 	}
 
+	// After FutureFork: the embedded validator list must be exactly what Prepare
+	// writes, the parent snapshot's validators in sorted order. Before the fork
+	// nothing checked it, so a proposer could put anything there and still get
+	// the block signed. Checking it here means it's caught at proposal time,
+	// before anyone votes, and the field can be trusted by anything reading it
+	// later. Genesis is skipped: it has no parent snapshot, its list is where
+	// the initial validator set comes from. A nil chain (unit tests without a
+	// chain reader) keeps the legacy path, mirroring the proposer-seal gate in
+	// verifySigner.
+	if header.Number.Sign() > 0 && chain != nil && chain.Config().IsFutureFork(header.Number) {
+		if err := verifyEmbeddedValidators(extra.Validators, validators); err != nil {
+			return err
+		}
+	}
+
 	return e.verifyCascadingFields(chain, header, validators, parents)
+}
+
+// verifyEmbeddedValidators checks a header's embedded validator list against the
+// validator set it should have been built from.
+func verifyEmbeddedValidators(embedded []common.Address, validators istanbul.ValidatorSet) error {
+	expected := validator.SortedAddresses(validators.List())
+	if len(embedded) != len(expected) {
+		return istanbulcommon.ErrInconsistentValidatorSet
+	}
+	for i, addr := range expected {
+		if embedded[i] != addr {
+			return istanbulcommon.ErrInconsistentValidatorSet
+		}
+	}
+	return nil
 }
 
 func (e *Engine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, validators istanbul.ValidatorSet) (chan<- struct{}, <-chan error) {
