@@ -549,17 +549,15 @@ func (e *Engine) Signers(header *types.Header) ([]common.Address, error) {
 	committedSeal := extra.CommittedSeal
 	proposalSeal := PrepareCommittedSeal(header, extra.Round)
 
-	// Defense-in-depth cap against committed-seal amplification. The network
-	// verification path is bounded by verifyCommittedSeals against the trusted
-	// parent validator set before it reaches here; this bound protects the other
-	// callers (the debug_* JSON-RPC signer APIs), which run over already-imported
-	// headers whose embedded validator set is trustworthy. A header can never
-	// carry more committed seals than its own validator set, so anything beyond
-	// that is malformed and must not cost one ecrecover per entry.
-	if len(committedSeal) > len(extra.Validators) {
-		return nil, istanbulcommon.ErrInvalidCommittedSeals
-	}
-
+	// No length bound here on purpose. The header's own extra.Validators list is
+	// proposer-written and never checked against the snapshot, so it can't be
+	// used as a limit: a proposer could ship an empty list that passes proposal
+	// verification (no seals yet) and only fails once the honest quorum's seals
+	// are attached, leaving every validator locked on a block none can import.
+	// The amplification bound lives in verifyCommittedSeals, against the trusted
+	// parent validator set, before this is called. The only other callers are
+	// the istanbul_getSignersFrom* RPCs, which read headers that already passed
+	// that check on import.
 	var addrs []common.Address
 	// 1. Get committed seals from current header
 	for _, seal := range committedSeal {

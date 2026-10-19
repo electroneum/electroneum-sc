@@ -123,12 +123,6 @@ func TestCommittedSealAmplificationRejected(t *testing.T) {
 	if err != istanbulcommon.ErrInvalidCommittedSeals {
 		t.Fatalf("expected ErrInvalidCommittedSeals, got %v", err)
 	}
-
-	// Signers() must independently refuse the oversized array rather than
-	// recovering every entry, protecting the debug_* signer JSON-RPC callers.
-	if _, sErr := engine.Signers(fatHdr); sErr != istanbulcommon.ErrInvalidCommittedSeals {
-		t.Fatalf("Signers() should reject oversized array with ErrInvalidCommittedSeals, got %v", sErr)
-	}
 }
 
 // TestCommittedSealAtValidatorCountPasses guards against a false positive: a
@@ -153,5 +147,58 @@ func TestCommittedSealAtValidatorCountPasses(t *testing.T) {
 	engine, fullHdr, parent, valSet := buildSealedHeader(t, addrs, seals)
 	if err := engine.VerifyHeader(nil, fullHdr, []*types.Header{parent}, valSet); err != nil {
 		t.Fatalf("header with exactly N=%d seals (all validators) was rejected: %v", N, err)
+	}
+}
+
+// TestCommittedSealsIgnoreEmbeddedValidatorList checks that a header's own
+// extra.Validators list plays no part in committed-seal verification. That list
+// is written by the proposer and not checked against the snapshot, so a proposer
+// can ship it empty. Proposal verification passes such a block (it has no seals
+// yet), so honest validators PREPARE and COMMIT it; the finalized block with
+// their quorum seals attached must then verify too, or the network is left
+// locked on a block nobody can import.
+func TestCommittedSealsIgnoreEmbeddedValidatorList(t *testing.T) {
+	const N = 4
+	keys, addrs := genValidators(t, N)
+
+	engine, hdr, parent, valSet := buildSealedHeader(t, addrs, nil)
+	if err := ApplyHeaderQBFTExtra(hdr, WriteValidators(nil)); err != nil {
+		t.Fatalf("clear embedded validators: %v", err)
+	}
+
+	// Proposal stage: no seals yet, so only the empty-seals error comes back.
+	if err := engine.VerifyHeader(nil, hdr, []*types.Header{parent}, valSet); err != istanbulcommon.ErrEmptyCommittedSeals {
+		t.Fatalf("proposal with empty embedded validators: have %v, want %v", err, istanbulcommon.ErrEmptyCommittedSeals)
+	}
+
+	// Commit stage: a 2F+1 quorum (3 of 4) of real validators seal it.
+	payload := PrepareCommittedSeal(hdr, 1)
+	quorum := 3
+	seals := make([][]byte, quorum)
+	for i := 0; i < quorum; i++ {
+		sig, err := crypto.Sign(payload, keys[i])
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		seals[i] = sig
+	}
+	if err := engine.CommitHeader(hdr, seals, big.NewInt(1)); err != nil {
+		t.Fatalf("commit header: %v", err)
+	}
+
+	if err := engine.VerifyHeader(nil, hdr, []*types.Header{parent}, valSet); err != nil {
+		t.Fatalf("finalized block with quorum seals and empty embedded validators was rejected: %v", err)
+	}
+	signers, err := engine.Signers(hdr)
+	if err != nil {
+		t.Fatalf("Signers: %v", err)
+	}
+	if len(signers) != quorum {
+		t.Fatalf("signer count: have %d, want %d", len(signers), quorum)
+	}
+	for i, addr := range signers {
+		if addr != addrs[i] {
+			t.Fatalf("signer %d: have %x, want %x", i, addr, addrs[i])
+		}
 	}
 }
