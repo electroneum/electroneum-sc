@@ -180,7 +180,37 @@ func (e *Engine) verifyHeader(chain consensus.ChainHeaderReader, header *types.H
 		return istanbulcommon.ErrInvalidDifficulty
 	}
 
+	// After FutureFork: the embedded validator list must be exactly what Prepare
+	// writes, the parent snapshot's validators in sorted order. Before the fork
+	// nothing checked it, so a proposer could put anything there and still get
+	// the block signed. Checking it here means it's caught at proposal time,
+	// before anyone votes, and the field can be trusted by anything reading it
+	// later. Genesis is skipped: it has no parent snapshot, its list is where
+	// the initial validator set comes from. A nil chain (unit tests without a
+	// chain reader) keeps the legacy path, mirroring the proposer-seal gate in
+	// verifySigner.
+	if header.Number.Sign() > 0 && chain != nil && chain.Config().IsFutureFork(header.Number) {
+		if err := verifyEmbeddedValidators(extra.Validators, validators); err != nil {
+			return err
+		}
+	}
+
 	return e.verifyCascadingFields(chain, header, validators, parents)
+}
+
+// verifyEmbeddedValidators checks a header's embedded validator list against the
+// validator set it should have been built from.
+func verifyEmbeddedValidators(embedded []common.Address, validators istanbul.ValidatorSet) error {
+	expected := validator.SortedAddresses(validators.List())
+	if len(embedded) != len(expected) {
+		return istanbulcommon.ErrInconsistentValidatorSet
+	}
+	for i, addr := range expected {
+		if embedded[i] != addr {
+			return istanbulcommon.ErrInconsistentValidatorSet
+		}
+	}
+	return nil
 }
 
 func (e *Engine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, validators istanbul.ValidatorSet) (chan<- struct{}, <-chan error) {
@@ -549,17 +579,15 @@ func (e *Engine) Signers(header *types.Header) ([]common.Address, error) {
 	committedSeal := extra.CommittedSeal
 	proposalSeal := PrepareCommittedSeal(header, extra.Round)
 
-	// Defense-in-depth cap against committed-seal amplification. The network
-	// verification path is bounded by verifyCommittedSeals against the trusted
-	// parent validator set before it reaches here; this bound protects the other
-	// callers (the debug_* JSON-RPC signer APIs), which run over already-imported
-	// headers whose embedded validator set is trustworthy. A header can never
-	// carry more committed seals than its own validator set, so anything beyond
-	// that is malformed and must not cost one ecrecover per entry.
-	if len(committedSeal) > len(extra.Validators) {
-		return nil, istanbulcommon.ErrInvalidCommittedSeals
-	}
-
+	// No length bound here on purpose. The header's own extra.Validators list is
+	// proposer-written and never checked against the snapshot, so it can't be
+	// used as a limit: a proposer could ship an empty list that passes proposal
+	// verification (no seals yet) and only fails once the honest quorum's seals
+	// are attached, leaving every validator locked on a block none can import.
+	// The amplification bound lives in verifyCommittedSeals, against the trusted
+	// parent validator set, before this is called. The only other callers are
+	// the istanbul_getSignersFrom* RPCs, which read headers that already passed
+	// that check on import.
 	var addrs []common.Address
 	// 1. Get committed seals from current header
 	for _, seal := range committedSeal {

@@ -32,8 +32,10 @@ var (
 	// ErrInvalidUncleHash is returned if a block contains an non-empty uncle list.
 	ErrInvalidUncleHash = errors.New("non empty uncle hash")
 
-	// ErrInconsistentValidatorSet is returned if the validator set is inconsistent
-	// ErrInconsistentValidatorSet = errors.New("non empty uncle hash")
+	// ErrInconsistentValidatorSet is returned if the validator list embedded in a
+	// header doesn't match the validator set it was built from.
+	ErrInconsistentValidatorSet = errors.New("inconsistent validator set")
+
 	// ErrInvalidTimestamp is returned if the timestamp of a block is lower than the previous block's timestamp + the minimum block period.
 	ErrInvalidTimestamp = errors.New("invalid timestamp")
 
