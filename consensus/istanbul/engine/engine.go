@@ -439,6 +439,12 @@ func (e *Engine) VerifySeal(chain consensus.ChainHeaderReader, header *types.Hea
 	return e.verifySigner(chain, header, nil, validators)
 }
 
+// VerifyCommittedSeals checks a header's committed seals against the validator
+// set of its parent, on their own, without the rest of header verification.
+func (e *Engine) VerifyCommittedSeals(chain consensus.ChainHeaderReader, header *types.Header, validators istanbul.ValidatorSet) error {
+	return e.verifyCommittedSeals(chain, header, nil, validators)
+}
+
 func (e *Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header, validators istanbul.ValidatorSet) error {
 	header.Nonce = istanbulcommon.EmptyBlockNonce
 	header.MixDigest = types.IstanbulDigest

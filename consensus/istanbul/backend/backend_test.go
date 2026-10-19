@@ -28,6 +28,7 @@ import (
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	istanbulcommon "github.com/electroneum/electroneum-sc/consensus/istanbul/common"
+	qbftengine "github.com/electroneum/electroneum-sc/consensus/istanbul/engine"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
@@ -116,63 +117,85 @@ func TestCheckValidatorSignature(t *testing.T) {
 }
 
 func TestCommit(t *testing.T) {
-	backend := newBackend()
-	defer backend.Stop()
-
-	commitCh := make(chan *types.Block)
 	// Case: it's a proposer, so the backend.commit will receive channel result from backend.Commit function
 	testCases := []struct {
-		expectedErr       error
-		expectedSignature [][]byte
-		expectedBlock     func() *types.Block
+		name        string
+		expectedErr error
+		seals       func(block *types.Block, key *ecdsa.PrivateKey) [][]byte
+		markedBad   bool
+		notProposer bool
 	}{
 		{
-			// normal case
-			nil,
-			[][]byte{append([]byte{1}, bytes.Repeat([]byte{0x00}, types.IstanbulExtraSeal-1)...)},
-			func() *types.Block {
-				chain, engine := newBlockChain(1)
-				block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-				return updateQBFTBlock(block, engine.Address())
+			name: "valid seal",
+			seals: func(block *types.Block, key *ecdsa.PrivateKey) [][]byte {
+				seal, _ := crypto.Sign(qbftengine.PrepareCommittedSeal(block.Header(), 0), key)
+				return [][]byte{seal}
 			},
 		},
 		{
-			// invalid signature
-			istanbulcommon.ErrInvalidCommittedSeals,
-			nil,
-			func() *types.Block {
-				chain, engine := newBlockChain(1)
-				block := makeBlockWithoutSeal(chain, engine, chain.Genesis(), true)
-				return updateQBFTBlock(block, engine.Address())
+			name:        "no seals",
+			expectedErr: istanbulcommon.ErrInvalidCommittedSeals,
+			seals:       func(*types.Block, *ecdsa.PrivateKey) [][]byte { return nil },
+		},
+		{
+			// A seal that passes CommitHeader's length check but doesn't
+			// verify: the block can never be imported, so Commit refuses it
+			// and records it as bad for the next round change.
+			name:        "unverifiable seal",
+			expectedErr: istanbulcommon.ErrInvalidSignature,
+			seals: func(*types.Block, *ecdsa.PrivateKey) [][]byte {
+				return [][]byte{append([]byte{1}, bytes.Repeat([]byte{0x00}, types.IstanbulExtraSeal-1)...)}
 			},
+			markedBad: true,
+		},
+		{
+			// Same, on a validator that didn't propose the block. That's the
+			// path that hands the block to the fetcher, which would drop it at
+			// its pre-import header check without ever recording it as bad.
+			name:        "unverifiable seal, not proposer",
+			expectedErr: istanbulcommon.ErrInvalidSignature,
+			seals: func(*types.Block, *ecdsa.PrivateKey) [][]byte {
+				return [][]byte{append([]byte{1}, bytes.Repeat([]byte{0x00}, types.IstanbulExtraSeal-1)...)}
+			},
+			markedBad:   true,
+			notProposer: true,
 		},
 	}
 
 	for _, test := range testCases {
-		expBlock := test.expectedBlock()
-		go func() {
-			result := <-backend.commitCh
-			commitCh <- result
-		}()
+		t.Run(test.name, func(t *testing.T) {
+			chain, backend := newBlockChain(1)
+			defer backend.Stop()
 
-		backend.proposedBlockHash = expBlock.Hash()
-		if err := backend.Commit(expBlock, test.expectedSignature, big.NewInt(0)); err != nil {
-			if err != test.expectedErr {
-				t.Errorf("error mismatch: have %v, want %v", err, test.expectedErr)
+			block := updateQBFTBlock(makeBlockWithoutSeal(chain, backend, chain.Genesis(), true), backend.Address())
+
+			commitCh := make(chan *types.Block, 1)
+			go func() {
+				commitCh <- <-backend.commitCh
+			}()
+
+			if !test.notProposer {
+				backend.proposedBlockHash = block.Hash()
 			}
-		}
+			if err := backend.Commit(block, test.seals(block, backend.privateKey), big.NewInt(0)); err != test.expectedErr {
+				t.Fatalf("error mismatch: have %v, want %v", err, test.expectedErr)
+			}
+			if got := backend.HasBadProposal(block.Hash()); got != test.markedBad {
+				t.Fatalf("HasBadProposal: have %v, want %v", got, test.markedBad)
+			}
 
-		if test.expectedErr == nil {
-			// to avoid race condition is occurred by goroutine
-			select {
-			case result := <-commitCh:
-				if result.Hash() != expBlock.Hash() {
-					t.Errorf("hash mismatch: have %v, want %v", result.Hash(), expBlock.Hash())
+			if test.expectedErr == nil {
+				// to avoid race condition is occurred by goroutine
+				select {
+				case result := <-commitCh:
+					if result.Hash() != block.Hash() {
+						t.Errorf("hash mismatch: have %v, want %v", result.Hash(), block.Hash())
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatal("timeout")
 				}
-			case <-time.After(10 * time.Second):
-				t.Fatal("timeout")
 			}
-		}
+		})
 	}
 }
 

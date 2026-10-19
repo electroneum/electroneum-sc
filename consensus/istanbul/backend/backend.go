@@ -31,6 +31,7 @@ import (
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/ethdb"
@@ -219,6 +220,10 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 	// update block's header
 	block = block.WithSeal(h)
 
+	if err := sb.verifyCommitted(block); err != nil {
+		return err
+	}
+
 	sb.logger.Trace("IBFT: block proposal committed", "author", sb.Address(), "hash", proposal.Hash(), "number", proposal.Number().Uint64())
 
 	// - if the proposed and committed blocks are the same, send the proposed hash
@@ -237,6 +242,37 @@ func (sb *Backend) Commit(proposal istanbul.Proposal, seals [][]byte, round *big
 		sb.broadcaster.Enqueue(fetcherID, block)
 	}
 
+	return nil
+}
+
+// verifyCommitted checks the committed seals on a block that has just reached
+// COMMIT quorum, before it goes anywhere. Everything else in the block was
+// verified at proposal time, and attaching the seals and round is the only
+// change since, so they're all that can make it fail import now.
+//
+// If they don't verify, the block can never be imported with this quorum. Both
+// places it would otherwise go skip the bad-block record InsertChain keeps: the
+// fetcher drops it at its pre-import header check, and the proposer's miner
+// writes it without verifying it at all. Recording it here lets HasBadProposal
+// see it, so the next round change drops it instead of re-proposing it, and the
+// returned error moves core on to that round.
+//
+// Only a seal failure is recorded. If the parent snapshot can't be loaded the
+// check is skipped and the block carries on as before.
+func (sb *Backend) verifyCommitted(block *types.Block) error {
+	if sb.chain == nil {
+		return nil
+	}
+	header := block.Header()
+	snap, err := sb.snapshot(sb.chain, header.Number.Uint64()-1, header.ParentHash, nil)
+	if err != nil {
+		return nil
+	}
+	if err := sb.EngineForBlockNumber(header.Number).VerifyCommittedSeals(sb.chain, header, snap.ValSet); err != nil {
+		sb.logger.Error("IBFT: committed block failed seal verification, marking it bad", "number", header.Number, "hash", block.Hash(), "err", err)
+		rawdb.WriteBadBlock(sb.db, block)
+		return err
+	}
 	return nil
 }
 
