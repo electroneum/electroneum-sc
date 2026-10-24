@@ -398,7 +398,19 @@ func validatePriorityGasFields(evm *vm.EVM, msg Message) (bool, error) {
 	// Look up the sender in the priority transactor map already cached in
 	// statedb (populated by Process/ApplyTransaction before we get here),
 	// rather than making another EVM static call to the contract.
-	transactor, found := evm.StateDB.GetPriorityTransactorByKey(ps)
+	var (
+		transactor common.PriorityTransactor
+		found      bool
+	)
+	if evm.StateDB.HasPriorityTransactors() {
+		transactor, found = evm.StateDB.GetPriorityTransactorByKey(ps)
+	} else {
+		// Messages applied outside Process/the miner (tracers, eth_call, state
+		// regeneration) have no cached map, so read the list from the contract at
+		// the current state. Use a tracer-less EVM so the lookup isn't traced.
+		lookup := vm.NewEVM(evm.Context, vm.TxContext{}, evm.StateDB, evm.ChainConfig(), vm.Config{})
+		transactor, found = GetPriorityTransactors(lookup)[ps]
+	}
 	if !found {
 		return false, fmt.Errorf("%w: Bad priority pubkey %v", errBadPriorityKey, ps)
 	}

@@ -102,8 +102,9 @@ type StateDB struct {
 
 	// Cache the priority transactors as we add to the state ready to deliver to the
 	// blockchain struct when we write the block to the real DB
-	priorityTransactorsMu sync.Mutex
-	priorityTransactors   common.PriorityTransactorMap
+	priorityTransactorsMu  sync.Mutex
+	priorityTransactors    common.PriorityTransactorMap
+	priorityTransactorsSet bool // whether SetPriorityTransactors has been called
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -711,6 +712,7 @@ func (s *StateDB) Copy() *StateDB {
 	for key, transactor := range s.priorityTransactors {
 		state.priorityTransactors[key] = transactor
 	}
+	state.priorityTransactorsSet = s.priorityTransactorsSet
 	// Do we need to copy the access list? In practice: No. At the start of a
 	// transaction, the access list is empty. In practice, we only ever copy state
 	// _between_ transactions/blocks, never in the middle of a transaction.
@@ -1065,6 +1067,14 @@ func (s *StateDB) SetPriorityTransactors(transactors common.PriorityTransactorMa
 	for key, transactor := range transactors {
 		s.priorityTransactors[key] = transactor
 	}
+	s.priorityTransactorsSet = true
+}
+
+// HasPriorityTransactors reports whether the priority transactor cache has been
+// populated via SetPriorityTransactors. Block processing and mining always
+// populate it; standalone message execution (tracing, eth_call) does not.
+func (s *StateDB) HasPriorityTransactors() bool {
+	return s.priorityTransactorsSet
 }
 
 func (s *StateDB) GetPriorityTransactorByKey(pubkey common.PublicKey) (common.PriorityTransactor, bool) {
