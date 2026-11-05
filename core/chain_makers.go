@@ -258,6 +258,10 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		if config.DAOForkSupport && config.DAOForkBlock != nil && config.DAOForkBlock.Cmp(b.header.Number) == 0 {
 			misc.ApplyDAOHardFork(statedb)
 		}
+		// Populate the priority transactor cache, as Process does
+		blockContext := NewEVMBlockContext(b.header, nil, &b.header.Coinbase)
+		statedb.SetPriorityTransactors(GetPriorityTransactors(vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, vm.Config{})))
+
 		// Execute any user modifications to the block
 		if gen != nil {
 			gen(i, b)
