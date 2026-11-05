@@ -23,3 +23,16 @@ type DoneEvent struct {
 }
 type StartEvent struct{}
 type FailedEvent struct{ Err error }
+
+// ProgressEvent is posted once a synchronisation attempt has made verifiable
+// progress, i.e. the remote peer has actually served a valid chain head rather
+// than merely advertising a high total difficulty during the handshake.
+//
+// It exists so that consumers which pause work while syncing (notably the
+// miner, and with it the IBFT/QBFT consensus engine) can wait for evidence that
+// a peer really serves the chain before stopping. An unauthenticated peer can
+// trigger StartEvent for free by claiming a huge TD and then never delivering
+// any headers; keying the pause off ProgressEvent instead prevents such a peer
+// from stalling consensus for the request timeout on a node that has not yet
+// completed a sync.
+type ProgressEvent struct{}

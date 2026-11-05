@@ -93,7 +93,7 @@ func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *even
 func (miner *Miner) update() {
 	defer miner.wg.Done()
 
-	events := miner.mux.Subscribe(downloader.StartEvent{}, downloader.DoneEvent{}, downloader.FailedEvent{})
+	events := miner.mux.Subscribe(downloader.StartEvent{}, downloader.ProgressEvent{}, downloader.DoneEvent{}, downloader.FailedEvent{})
 	defer func() {
 		if !events.Closed() {
 			events.Unsubscribe()
@@ -113,6 +113,14 @@ func (miner *Miner) update() {
 			}
 			switch ev.Data.(type) {
 			case downloader.StartEvent:
+				// A sync attempt has begun, but the peer has not yet proven it
+				// actually serves the chain: StartEvent fires as soon as a peer
+				// advertises a higher total difficulty, before a single header
+				// is fetched. Stopping the miner here would let an
+				// unauthenticated peer stall consensus for the whole request
+				// timeout simply by claiming a high TD and then going silent.
+				// Wait for ProgressEvent (a verified chain head) before pausing.
+			case downloader.ProgressEvent:
 				wasMining := miner.Mining()
 				miner.worker.stop()
 				canStart = false
