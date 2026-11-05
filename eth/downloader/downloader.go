@@ -510,6 +510,14 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td, ttd *
 	}
 	height := latest.Number.Uint64()
 
+	// The peer has served us a valid chain head, so this sync has made
+	// verifiable progress rather than being a bare high-TD claim. Signal it so
+	// that consumers pausing on sync (the miner / consensus engine) only stop
+	// once a peer has actually proven it serves the chain. In legacy mode this
+	// is reached only after fetchHead succeeds; a peer that advertises a high TD
+	// and then never answers GetBlockHeaders never gets here.
+	d.mux.Post(ProgressEvent{})
+
 	var origin uint64
 	if !beaconMode {
 		// In legacy mode, reach out to the network and find the ancestor

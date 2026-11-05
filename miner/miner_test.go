@@ -102,8 +102,10 @@ func TestMiner(t *testing.T) {
 	defer cleanup(false)
 	miner.Start(common.HexToAddress("0x12345"))
 	waitForMiningState(t, miner, true)
-	// Start the downloader
+	// Start the downloader. A bare StartEvent must not pause mining; only a
+	// verified ProgressEvent (a peer that actually served a chain head) should.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 	// Stop the downloader and wait for the update loop to run
 	mux.Post(downloader.DoneEvent{})
@@ -115,9 +117,44 @@ func TestMiner(t *testing.T) {
 	// stop mining operations by causing a downloader sync
 	// until it was discovered they were invalid, whereon mining would resume.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, true)
 
 	mux.Post(downloader.FailedEvent{})
+	waitForMiningState(t, miner, true)
+}
+
+// TestMinerBareStartEventDoesNotStop verifies that an unauthenticated peer
+// cannot hold the miner (and with it the IBFT/QBFT consensus engine) out of
+// action merely by making the node "start syncing" from a peer that advertises
+// a high total difficulty and then never delivers any headers. The miner must
+// only pause once a sync reports verifiable ProgressEvent.
+func TestMinerBareStartEventDoesNotStop(t *testing.T) {
+	miner, mux, cleanup := createMiner(t)
+	defer cleanup(false)
+	miner.Start(common.HexToAddress("0x12345"))
+	waitForMiningState(t, miner, true)
+
+	// Simulate the attack: each cycle the node "starts syncing" from a
+	// non-delivering high-TD peer (StartEvent) and the sync ends only on the
+	// request timeout (FailedEvent), with no ProgressEvent in between. The miner
+	// must not pause while the sync is in flight (this is where the old code
+	// stopped consensus for the whole ~60s timeout), and must still be mining
+	// after the timeout fires.
+	for i := 0; i < 3; i++ {
+		mux.Post(downloader.StartEvent{})
+		assertMiningStays(t, miner, true)
+		mux.Post(downloader.FailedEvent{})
+		assertMiningStays(t, miner, true)
+	}
+
+	// A sync that actually makes progress must still pause mining as before...
+	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
+	waitForMiningState(t, miner, false)
+
+	// ...and resume once it completes.
+	mux.Post(downloader.DoneEvent{})
 	waitForMiningState(t, miner, true)
 }
 
@@ -130,8 +167,9 @@ func TestMinerDownloaderFirstFails(t *testing.T) {
 	defer cleanup(false)
 	miner.Start(common.HexToAddress("0x12345"))
 	waitForMiningState(t, miner, true)
-	// Start the downloader
+	// Start the downloader and let it make progress.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 
 	// Stop the downloader and wait for the update loop to run
@@ -139,8 +177,9 @@ func TestMinerDownloaderFirstFails(t *testing.T) {
 	waitForMiningState(t, miner, true)
 
 	// Since the downloader hasn't yet emitted a successful DoneEvent,
-	// we expect the miner to stop on next StartEvent.
+	// we expect the miner to stop on the next sync that makes progress.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 
 	// Downloader finally succeeds.
@@ -151,6 +190,7 @@ func TestMinerDownloaderFirstFails(t *testing.T) {
 	// Since it has achieved a DoneEvent once, we expect miner
 	// state to be unchanged.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, true)
 
 	mux.Post(downloader.FailedEvent{})
@@ -162,8 +202,9 @@ func TestMinerStartStopAfterDownloaderEvents(t *testing.T) {
 	defer cleanup(false)
 	miner.Start(common.HexToAddress("0x12345"))
 	waitForMiningState(t, miner, true)
-	// Start the downloader
+	// Start the downloader and let it make progress.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 
 	// Downloader finally succeeds.
@@ -188,6 +229,7 @@ func TestStartWhileDownload(t *testing.T) {
 	waitForMiningState(t, miner, true)
 	// Stop the downloader and wait for the update loop to run
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 	// Starting the miner after the downloader should not work
 	miner.Start(common.HexToAddress("0x12345"))
@@ -223,8 +265,9 @@ func TestMinerSetEtherbase(t *testing.T) {
 	// Start with a 'bad' mining address
 	miner.Start(common.HexToAddress("0xdead"))
 	waitForMiningState(t, miner, true)
-	// Start the downloader
+	// Start the downloader and let it make progress.
 	mux.Post(downloader.StartEvent{})
+	mux.Post(downloader.ProgressEvent{})
 	waitForMiningState(t, miner, false)
 	// Now user tries to configure proper mining address
 	miner.Start(common.HexToAddress("0x1337"))
@@ -252,6 +295,21 @@ func waitForMiningState(t *testing.T, m *Miner, mining bool) {
 		}
 	}
 	t.Fatalf("Mining() == %t, want %t", state, mining)
+}
+
+// assertMiningStays fails the test if the miner leaves the given state at any
+// point within a short window. It is used to assert that an event does NOT
+// change the mining state, which waitForMiningState cannot verify since it
+// returns as soon as the desired state is observed.
+func assertMiningStays(t *testing.T, m *Miner, mining bool) {
+	t.Helper()
+
+	for i := 0; i < 30; i++ {
+		time.Sleep(10 * time.Millisecond)
+		if state := m.Mining(); state != mining {
+			t.Fatalf("Mining() == %t, want it to stay %t", state, mining)
+		}
+	}
 }
 
 func createMiner(t *testing.T) (*Miner, *event.TypeMux, func(skipMiner bool)) {
