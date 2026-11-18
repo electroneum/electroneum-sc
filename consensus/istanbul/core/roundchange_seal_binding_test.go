@@ -123,16 +123,55 @@ func TestHandleRoundChange_RejectsPreparedBlockWithBrokenSeals(t *testing.T) {
 	}
 }
 
-// The seal check only applies to a prepared block that could be stored, so a
-// ROUND-CHANGE without one never reaches it.
-func TestHandleRoundChange_SealCheckOnlyForPreparedBlocks(t *testing.T) {
-	c := newRoundChangeTestCore(4, 1, 1)
-	calls := 0
-	c.backend = &sealCheckBackend{verifySeals: func(istanbul.Proposal) error { calls++; return nil }}
-	if err := c.handleRoundChange(makeRoundChange(1, 1, c.valSet.List()[1].Address())); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 0 {
-		t.Fatalf("seal check ran %d times for a ROUND-CHANGE without a prepared block", calls)
+// The seal check only runs on a prepared block its PREPAREs back, the only kind
+// that gets stored and re-proposed. The sender picks the block, so checking
+// anything else would let a validator make us build voting snapshots at any
+// height it likes. The ROUND-CHANGE itself is still counted either way.
+func TestHandleRoundChange_SealCheckOnlyForBackedPreparedBlocks(t *testing.T) {
+	block := makeProposalBlock(t, 1)
+	other := makeProposalBlock(t, 2)
+	for name, tc := range map[string]struct {
+		block   *types.Block
+		digest  common.Hash
+		short   bool // one PREPARE short of a quorum
+		checked bool
+	}{
+		"no prepared block":          {},
+		"prepares for another block": {block: block, digest: other.Hash()},
+		"short of a quorum":          {block: block, digest: block.Hash(), short: true},
+		"backed by a quorum":         {block: block, digest: block.Hash(), checked: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newRoundChangeTestCore(4, 1, 1)
+			calls := 0
+			c.backend = &sealCheckBackend{verifySeals: func(istanbul.Proposal) error { calls++; return nil }}
+			var addrs []common.Address
+			for _, v := range c.valSet.List() {
+				addrs = append(addrs, v.Address())
+			}
+			rc := makeRoundChange(1, 1, addrs[1])
+			if tc.block != nil {
+				rc = qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), tc.block, false)
+				rc.SetSource(addrs[1])
+				rc.SetSignature([]byte{0x01})
+				n := c.QuorumSize()
+				if tc.short {
+					n--
+				}
+				rc.Justification = makeAttackPrepares(addrs, n, 1, 0, tc.digest)
+			}
+			if err := c.handleRoundChange(rc); err != nil {
+				t.Fatal(err)
+			}
+			if want := map[bool]int{false: 0, true: 1}[tc.checked]; calls != want {
+				t.Errorf("seal check ran %d times, want %d", calls, want)
+			}
+			if n := c.roundChangeSet.getRCMessagesForGivenRound(big.NewInt(1)); n != 1 {
+				t.Errorf("ROUND-CHANGE not counted: %d messages", n)
+			}
+			if _, stored := c.highestPrepared(big.NewInt(1)); (stored != nil) != tc.checked {
+				t.Errorf("prepared block stored: %v, but seal check ran: %v", stored != nil, tc.checked)
+			}
+		})
 	}
 }

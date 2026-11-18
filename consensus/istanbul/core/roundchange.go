@@ -142,9 +142,17 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 			// in first and have that round's proposal rejected by everyone,
 			// then do it again every round. An honest prepared block passed
 			// Verify, so it always passes this.
-			if err := c.backend.VerifyProposalSeals(roundChange.PreparedBlock); err != nil {
-				logger.Warn("[Consensus]: ROUND-CHANGE prepared block has invalid seals", "err", err)
-				return errInvalidPreparedBlock
+			//
+			// Only blocks their PREPAREs back get checked, using the same
+			// binding Add needs before it stores one. Nothing else is ever
+			// stored or re-proposed, and since the sender picks the block,
+			// checking any block would let a validator make us build voting
+			// snapshots at whatever height it likes.
+			if hasMatchingRoundChangeAndPrepares(roundChange, roundChange.Justification, c.QuorumSize(), false, c.roundChangeSet.validatorSet) == nil {
+				if err := c.backend.VerifyProposalSeals(roundChange.PreparedBlock); err != nil {
+					logger.Warn("[Consensus]: ROUND-CHANGE prepared block has invalid seals", "err", err)
+					return errInvalidPreparedBlock
+				}
 			}
 			prepareMessages = roundChange.Justification
 			pr = roundChange.PreparedRound
