@@ -74,6 +74,11 @@ type Backend interface {
 	// HasBadProposal returns whether the block with the hash is a bad block
 	HasBadProposal(hash common.Hash) bool
 
+	// VerifyProposalSeals checks the parts of a proposal its hash doesn't
+	// cover (the proposer and committed seals) the way Verify would, and
+	// nothing else. Unlike Verify it doesn't reject bad proposals.
+	VerifyProposalSeals(proposal Proposal) error
+
 	Close() error
 
 	// StartQBFTConsensus stops existing legacy ibft consensus and starts the new qbft consensus

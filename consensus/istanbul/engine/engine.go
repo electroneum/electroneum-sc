@@ -475,6 +475,25 @@ func (e *Engine) VerifyCommittedSeals(chain consensus.ChainHeaderReader, header 
 	return e.verifyCommittedSeals(chain, header, nil, validators)
 }
 
+// VerifyProposalSeals checks the parts of a proposal's header that its hash
+// leaves out, the same way VerifyBlockProposal does: the proposer seal, and
+// the committed seals, which a proposal may only carry if they're valid (in
+// practice it carries none). The hash leaves out the round too, but nothing
+// reads it before CommitHeader overwrites it.
+//
+// A ROUND-CHANGE's prepared block is tied to the signed digest by its hash
+// alone, so these are the parts of it anyone passing the message on can
+// change, and the next proposer re-proposes that block as it is.
+func (e *Engine) VerifyProposalSeals(chain consensus.ChainHeaderReader, header *types.Header, validators istanbul.ValidatorSet) error {
+	if err := e.verifySigner(chain, header, nil, validators); err != nil {
+		return err
+	}
+	if err := e.verifyCommittedSeals(chain, header, nil, validators); err != nil && err != istanbulcommon.ErrEmptyCommittedSeals {
+		return err
+	}
+	return nil
+}
+
 func (e *Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header, validators istanbul.ValidatorSet) error {
 	header.Nonce = istanbulcommon.EmptyBlockNonce
 	header.MixDigest = types.IstanbulDigest
