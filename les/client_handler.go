@@ -229,6 +229,13 @@ func (h *clientHandler) handleMsg(p *serverPeer) error {
 		if err := msg.Decode(&resp); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
 		}
+		// Bound the headers before anything hashes them: hashing an Istanbul
+		// header decodes its extra-data.
+		for i, header := range resp.Headers {
+			if err := header.SanityCheck(); err != nil {
+				return errResp(ErrDecode, "msg %v: header %d: %v", msg, i, err)
+			}
+		}
 		headers := resp.Headers
 		p.fcServer.ReceivedReply(resp.ReqID, resp.BV)
 		p.answeredRequest(resp.ReqID)

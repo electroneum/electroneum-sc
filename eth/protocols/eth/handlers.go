@@ -344,6 +344,11 @@ func handleNewBlock(backend Backend, msg Decoder, peer *Peer) error {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	header := raw.Block.Header
+	// Bound the header before anything hashes it, the debug log below
+	// included: hashing an Istanbul header decodes its extra-data.
+	if err := header.SanityCheck(); err != nil {
+		return err
+	}
 	content, _, err := rlp.SplitList(raw.Block.Txs)
 	if err != nil {
 		return fmt.Errorf("%w: message %v: transactions: %v", errDecode, msg, err)
@@ -408,6 +413,14 @@ func handleBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 	decode := func(req *Request) (interface{}, error) {
 		if err := decodeLimitedList(res.Payload, requestedItems(req), &headers); err != nil {
 			return nil, err
+		}
+		// The metadata below hashes every header, and hashing an Istanbul
+		// header decodes its extra-data. No valid header fails these bounds
+		// (header chain insertion enforces them too), so drop the peer.
+		for i, header := range headers {
+			if err := header.SanityCheck(); err != nil {
+				return nil, fmt.Errorf("header %d: %w", i, err)
+			}
 		}
 		return &headers, nil
 	}
