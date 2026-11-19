@@ -69,9 +69,10 @@ func (b *commitCaptureBackend) GetProposer(uint64) common.Address     { return c
 func (b *commitCaptureBackend) ParentValidators(istanbul.Proposal) istanbul.ValidatorSet {
 	return nil
 }
-func (b *commitCaptureBackend) HasBadProposal(common.Hash) bool { return false }
-func (b *commitCaptureBackend) Close() error                    { return nil }
-func (b *commitCaptureBackend) StartQBFTConsensus() error       { return nil }
+func (b *commitCaptureBackend) HasBadProposal(common.Hash) bool             { return false }
+func (b *commitCaptureBackend) VerifyProposalSeals(istanbul.Proposal) error { return nil }
+func (b *commitCaptureBackend) Close() error                                { return nil }
+func (b *commitCaptureBackend) StartQBFTConsensus() error                   { return nil }
 
 // newKeyedValidatorSet returns a validator set of n validators along with their
 // private keys, indexed so that keys[addr] gives the signing key for a validator.

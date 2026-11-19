@@ -134,6 +134,26 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 		var pr *big.Int = nil
 		var pb *types.Block = nil
 		if roundChange.PreparedRound != nil && roundChange.PreparedBlock != nil && roundChange.Justification != nil && len(roundChange.Justification) > 0 {
+			// The prepared block is tied to the signed digest by its hash
+			// alone, which leaves out the proposer and committed seals, and
+			// the first one stored for a prepared round is what the next
+			// proposer re-proposes. Without this check a validator, or anyone
+			// passing a ROUND-CHANGE on, could get a copy with broken seals
+			// in first and have that round's proposal rejected by everyone,
+			// then do it again every round. An honest prepared block passed
+			// Verify, so it always passes this.
+			//
+			// Only blocks their PREPAREs back get checked, using the same
+			// binding Add needs before it stores one. Nothing else is ever
+			// stored or re-proposed, and since the sender picks the block,
+			// checking any block would let a validator make us build voting
+			// snapshots at whatever height it likes.
+			if hasMatchingRoundChangeAndPrepares(roundChange, roundChange.Justification, c.QuorumSize(), false, c.roundChangeSet.validatorSet) == nil {
+				if err := c.backend.VerifyProposalSeals(roundChange.PreparedBlock); err != nil {
+					logger.Warn("[Consensus]: ROUND-CHANGE prepared block has invalid seals", "err", err)
+					return errInvalidPreparedBlock
+				}
+			}
 			prepareMessages = roundChange.Justification
 			pr = roundChange.PreparedRound
 			pb = roundChange.PreparedBlock

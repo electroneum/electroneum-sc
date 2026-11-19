@@ -384,6 +384,23 @@ func (sb *Backend) HasBadProposal(hash common.Hash) bool {
 	return sb.hasBadBlock(sb.db, hash)
 }
 
+// VerifyProposalSeals implements istanbul.Backend.VerifyProposalSeals
+func (sb *Backend) VerifyProposalSeals(proposal istanbul.Proposal) error {
+	block, ok := proposal.(*types.Block)
+	if !ok {
+		return istanbulcommon.ErrInvalidProposal
+	}
+	header := block.Header()
+	if header.Number == nil || header.Number.Sign() <= 0 {
+		return istanbulcommon.ErrUnknownBlock
+	}
+	snap, err := sb.snapshot(sb.chain, header.Number.Uint64()-1, header.ParentHash, nil)
+	if err != nil {
+		return err
+	}
+	return sb.EngineForBlockNumber(header.Number).VerifyProposalSeals(sb.chain, header, snap.ValSet)
+}
+
 func (sb *Backend) Close() error {
 	return nil
 }

@@ -310,9 +310,10 @@ func (b *viewBindingBackend) GetProposer(uint64) common.Address     { return com
 func (b *viewBindingBackend) ParentValidators(istanbul.Proposal) istanbul.ValidatorSet {
 	return nil
 }
-func (b *viewBindingBackend) HasBadProposal(common.Hash) bool { return false }
-func (b *viewBindingBackend) Close() error                    { return nil }
-func (b *viewBindingBackend) StartQBFTConsensus() error       { return nil }
+func (b *viewBindingBackend) HasBadProposal(common.Hash) bool             { return false }
+func (b *viewBindingBackend) VerifyProposalSeals(istanbul.Proposal) error { return nil }
+func (b *viewBindingBackend) Close() error                                { return nil }
+func (b *viewBindingBackend) StartQBFTConsensus() error                   { return nil }
 
 func signQBFTMessage(t *testing.T, msg qbfttypes.QBFTMessage, key *ecdsa.PrivateKey) {
 	t.Helper()
