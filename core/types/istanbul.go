@@ -91,7 +91,7 @@ func ExtractIstanbulExtra(h *Header) (*IstanbulExtra, error) {
 func FilteredHeader(h *Header) *Header {
 	// Check if the header extradata can be decoded in IstanbulExtra, if yes, then call IstanbulFilteredHeader()
 	// if not then call QBFTFilteredHeader()
-	_, err := ExtractIstanbulExtra(h)
+	_, err := extractIstanbulExtraForHash(h)
 	if err != nil {
 		return QBFTFilteredHeader(h)
 	}
@@ -103,7 +103,7 @@ func FilteredHeader(h *Header) *Header {
 // decoded/encoded by rlp.
 func IstanbulFilteredHeader(h *Header, keepSeal bool) *Header {
 	newHeader := CopyHeader(h)
-	istanbulExtra, err := ExtractIstanbulExtra(newHeader)
+	istanbulExtra, err := extractIstanbulExtraForHash(newHeader)
 	if err != nil {
 		return nil
 	}
@@ -253,7 +253,7 @@ func QBFTFilteredHeader(h *Header) *Header {
 // and commit seal set to its null value
 func QBFTFilteredHeaderWithRound(h *Header, round uint32) *Header {
 	newHeader := CopyHeader(h)
-	qbftExtra, err := ExtractQBFTExtra(newHeader)
+	qbftExtra, err := extractQBFTExtraForHash(newHeader)
 	if err != nil {
 		return nil
 	}
@@ -270,4 +270,101 @@ func QBFTFilteredHeaderWithRound(h *Header, round uint32) *Header {
 	newHeader.Extra = payload
 
 	return newHeader
+}
+
+// The filtered headers above are what Header.Hash hashes, and they throw the
+// committed seals away. Decoding the seals into a [][]byte first costs a 24
+// byte slice header for every one-byte empty seal, so a 10MB extra-data took
+// over 1.6GB to hash, and a peer could make us hash one before anything had
+// checked its size. The decoders below are the ones Extract*Extra use with the
+// seals swapped for skippedSeals: they accept and reject exactly the same
+// input and return the same values, but never hold the seals in memory.
+
+// skippedSeals decodes a list of byte strings like [][]byte does, making the
+// same Stream calls in the same order (see decodeListSlice and decodeByteSlice
+// in package rlp), but keeps none of them.
+type skippedSeals struct{}
+
+func (*skippedSeals) DecodeRLP(s *rlp.Stream) error {
+	if _, err := s.List(); err != nil {
+		return err
+	}
+	for {
+		if _, err := s.Bytes(); err == rlp.EOL {
+			break
+		} else if err != nil {
+			return err
+		}
+	}
+	return s.ListEnd()
+}
+
+// extractIstanbulExtraForHash is ExtractIstanbulExtra without the committed
+// seals, which are left nil.
+func extractIstanbulExtraForHash(h *Header) (*IstanbulExtra, error) {
+	if len(h.Extra) < IstanbulExtraVanity {
+		return nil, ErrInvalidIstanbulHeaderExtra
+	}
+	var extra struct {
+		Validators    []common.Address
+		Seal          []byte
+		CommittedSeal skippedSeals
+	}
+	if err := rlp.DecodeBytes(h.Extra[IstanbulExtraVanity:], &extra); err != nil {
+		return nil, err
+	}
+	return &IstanbulExtra{Validators: extra.Validators, Seal: extra.Seal}, nil
+}
+
+// qbftExtraForHash mirrors QBFTExtra.DecodeRLP, minus the committed seals.
+type qbftExtraForHash struct {
+	QBFTExtra
+}
+
+func (qst *qbftExtraForHash) DecodeRLP(s *rlp.Stream) error {
+	raw, err := s.Raw()
+	if err != nil {
+		return err
+	}
+	var v2 struct {
+		VanityData    []byte
+		Validators    []common.Address
+		Vote          *ValidatorVote `rlp:"nil"`
+		Round         uint32
+		CommittedSeal skippedSeals
+		ProposerSeal  []byte
+	}
+	if err := rlp.DecodeBytes(raw, &v2); err == nil {
+		qst.VanityData = v2.VanityData
+		qst.Validators = v2.Validators
+		qst.Vote = v2.Vote
+		qst.Round = v2.Round
+		qst.ProposerSeal = v2.ProposerSeal
+		return nil
+	}
+	var v1 struct {
+		VanityData    []byte
+		Validators    []common.Address
+		Vote          *ValidatorVote `rlp:"nil"`
+		Round         uint32
+		CommittedSeal skippedSeals
+	}
+	if err := rlp.DecodeBytes(raw, &v1); err != nil {
+		return err
+	}
+	qst.VanityData = v1.VanityData
+	qst.Validators = v1.Validators
+	qst.Vote = v1.Vote
+	qst.Round = v1.Round
+	return nil
+}
+
+// extractQBFTExtraForHash is ExtractQBFTExtra without the committed seals,
+// which are left nil.
+func extractQBFTExtraForHash(h *Header) (*QBFTExtra, error) {
+	extra := new(qbftExtraForHash)
+	if err := rlp.DecodeBytes(h.Extra[:], extra); err != nil {
+		return nil, err
+	}
+	return &extra.QBFTExtra, nil
 }
