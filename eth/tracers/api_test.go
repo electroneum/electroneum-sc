@@ -20,19 +20,23 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/ethash"
+	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
@@ -64,6 +68,9 @@ func newTestBackend(t *testing.T, n int, gspec *core.Genesis, generator func(i i
 		chainConfig: params.TestChainConfig,
 		engine:      ethash.NewFaker(),
 		chaindb:     rawdb.NewMemoryDatabase(),
+	}
+	if gspec.Config != nil {
+		backend.chainConfig = gspec.Config
 	}
 	// Generate blocks for testing
 	gspec.Config = backend.chainConfig
@@ -585,4 +592,98 @@ func newStates(keys []common.Hash, vals []common.Hash) *map[common.Hash]common.H
 		m[keys[i]] = vals[i]
 	}
 	return &m
+}
+
+// TestTracePriorityTransactions checks that tracing works for blocks containing
+// priority transactions. Tracers apply messages without Process, so the priority
+// transactor cache in the statedb is never populated and the allowlist has to be
+// read from the contract instead.
+func TestTracePriorityTransactions(t *testing.T) {
+	t.Parallel()
+
+	accounts := newAccounts(2)
+	priorityKey, _ := crypto.GenerateKey()
+
+	// Contract whose getTransactors() returns a list with just priorityKey, as a
+	// gas price waiver: it copies the ABI-encoded list after its code to memory
+	// and returns it, whatever the call data.
+	contractABI, err := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
+	if err != nil {
+		t.Fatalf("failed to parse ABI: %v", err)
+	}
+	list, err := contractABI.Methods["getTransactors"].Outputs.Pack([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta{{
+		IsGasPriceWaiver: true,
+		PublicKey:        hex.EncodeToString(crypto.FromECDSAPub(&priorityKey.PublicKey)),
+		Name:             "Test",
+	}})
+	if err != nil {
+		t.Fatalf("failed to pack transactor list: %v", err)
+	}
+	size := []byte{byte(len(list) >> 8), byte(len(list))}
+	code := append([]byte{0x61, size[0], size[1], 0x60, 0x0e, 0x60, 0x00, 0x39, 0x61, size[0], size[1], 0x60, 0x00, 0xf3}, list...)
+
+	contractAddr := common.HexToAddress("0x9999999999999999999999999999999999999999")
+	config := *params.TestChainConfig
+	config.PriorityTransactorsContractAddress = contractAddr
+
+	genesis := &core.Genesis{
+		Config: &config,
+		Alloc: core.GenesisAlloc{
+			accounts[0].addr: {Balance: big.NewInt(params.Ether)},
+			accounts[1].addr: {Balance: big.NewInt(params.Ether)},
+			contractAddr:     {Code: code, Balance: common.Big0},
+		},
+	}
+	var txs []common.Hash
+	signer := types.LatestSigner(&config)
+	backend := newTestBackend(t, 1, genesis, func(i int, b *core.BlockGen) {
+		// Two zero-fee priority transactions followed by a regular one
+		for nonce := uint64(0); nonce < 2; nonce++ {
+			tx, err := types.SignNewPriorityTx(accounts[0].key, priorityKey, signer, &types.PriorityTx{
+				ChainID:   config.ChainID,
+				Nonce:     nonce,
+				GasTipCap: common.Big0,
+				GasFeeCap: common.Big0,
+				Gas:       params.TxGas,
+				To:        &accounts[1].addr,
+				Value:     big.NewInt(1000),
+			})
+			if err != nil {
+				t.Fatalf("failed to sign priority tx: %v", err)
+			}
+			b.AddTx(tx)
+			txs = append(txs, tx.Hash())
+		}
+		tx, _ := types.SignNewTx(accounts[1].key, signer, &types.DynamicFeeTx{
+			ChainID:   config.ChainID,
+			Nonce:     0,
+			GasTipCap: common.Big0,
+			GasFeeCap: b.BaseFee(),
+			Gas:       params.TxGas,
+			To:        &accounts[0].addr,
+			Value:     big.NewInt(1000),
+		})
+		b.AddTx(tx)
+		txs = append(txs, tx.Hash())
+	})
+	api := NewAPI(backend)
+
+	// Every transaction after the first needs the priority transactions before it replayed
+	for i, hash := range txs {
+		if _, err := api.TraceTransaction(context.Background(), hash, nil); err != nil {
+			t.Errorf("tx %d: failed to trace transaction: %v", i, err)
+		}
+	}
+	results, err := api.TraceBlockByNumber(context.Background(), 1, nil)
+	if err != nil {
+		t.Fatalf("failed to trace block: %v", err)
+	}
+	if len(results) != len(txs) {
+		t.Fatalf("trace result count mismatch: have %d, want %d", len(results), len(txs))
+	}
+	for i, res := range results {
+		if res.Error != "" {
+			t.Errorf("tx %d: trace failed: %v", i, res.Error)
+		}
+	}
 }

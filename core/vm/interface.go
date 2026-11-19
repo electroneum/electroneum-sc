@@ -76,6 +76,7 @@ type StateDB interface {
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 
 	SetPriorityTransactors(transactors common.PriorityTransactorMap)
+	HasPriorityTransactors() bool
 	GetPriorityTransactorByKey(pubkey common.PublicKey) (common.PriorityTransactor, bool)
 }
 
