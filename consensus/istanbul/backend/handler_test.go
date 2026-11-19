@@ -177,3 +177,82 @@ func buildArbitraryP2PNewBlockMessage(t *testing.T, invalidMsg bool) (*types.Blo
 	arbitraryP2PMessage := p2p.Msg{Code: 0x07, Size: uint32(size), Payload: bytes.NewReader(payload)}
 	return arbitraryBlock, arbitraryP2PMessage
 }
+
+// paddedQBFTExtra is a QBFT extra-data with n empty committed seals. The seals
+// aren't part of the header hash, so every n gives the same hash.
+func paddedQBFTExtra(t *testing.T, n int) []byte {
+	vanity, err := rlp.EncodeToBytes(make([]byte, types.IstanbulExtraVanity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seals := bytes.Repeat([]byte{0x80}, n)
+	content := append(append(vanity, 0xc0, 0xc0, 0x80), listHeader(len(seals))...)
+	content = append(content, seals...)
+	return append(listHeader(len(content)), content...)
+}
+
+func listHeader(n int) []byte {
+	switch {
+	case n < 56:
+		return []byte{0xc0 + byte(n)}
+	case n < 1<<8:
+		return []byte{0xf8, byte(n)}
+	case n < 1<<16:
+		return []byte{0xf9, byte(n >> 8), byte(n)}
+	default:
+		return []byte{0xfa, byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+}
+
+// Reported via Bugcrowd: hashing an Istanbul header decodes its extra-data,
+// and the proposer hashed every NewBlock header it got while holding coreMu.
+// A copy of its own proposal with millions of empty committed seals padded in
+// still hashes the same. An oversized header is now left to the eth handler,
+// which drops the peer, without being hashed here.
+func TestHandleNewBlockMessage_oversizedHeaderNotHashed(t *testing.T) {
+	_, backend := newBlockChain(1)
+	defer backend.Stop()
+	arbitraryAddress := common.StringToAddress("arbitrary")
+
+	proposal := types.NewBlock(&types.Header{
+		Number:    big.NewInt(1),
+		GasLimit:  0,
+		MixDigest: types.IstanbulDigest,
+		Extra:     paddedQBFTExtra(t, 0),
+	}, nil, nil, nil, new(trie.Trie))
+	postAndWait(backend, proposal, t)
+
+	padded := types.CopyHeader(proposal.Header())
+	padded.Extra = paddedQBFTExtra(t, 1_000_000)
+	if padded.Hash() != proposal.Hash() {
+		t.Fatal("padding the committed seals changed the header hash")
+	}
+	payload, err := rlp.EncodeToBytes([]interface{}{
+		[]interface{}{padded, []*types.Transaction{}, []*types.Header{}},
+		big.NewInt(1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := p2p.Msg{Code: 0x07, Size: uint32(len(payload)), Payload: bytes.NewReader(payload)}
+
+	handled, err := backend.HandleMsg(arbitraryAddress, msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Fatal("oversized header was swallowed as our own proposal instead of reaching the eth handler")
+	}
+	if rest, err := io.ReadAll(msg.Payload); err != nil || !bytes.Equal(rest, payload) {
+		t.Fatal("expected p2p message payload is restored")
+	}
+	// The same header without the padding is still recognised.
+	enc, err := rlp.EncodeToBytes([]interface{}{proposal, big.NewInt(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	small := p2p.Msg{Code: 0x07, Size: uint32(len(enc)), Payload: bytes.NewReader(enc)}
+	if handled, err := tryUntilMessageIsHandled(backend, arbitraryAddress, small); err != nil || !handled {
+		t.Fatalf("own proposal not recognised: handled %v, err %v", handled, err)
+	}
+}

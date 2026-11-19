@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
 	"runtime"
@@ -356,5 +357,94 @@ func TestPreVerifySignature_RealSignature(t *testing.T) {
 		if calls != 0 || m.Source() != addr {
 			t.Fatalf("%s: seeded check not reused (calls %d, source %x)", name, calls, m.Source())
 		}
+	}
+}
+
+// paddedSealsExtra is a QBFT extra-data with no validators, no vote, round 0
+// and n empty committed seals. Its filtered hash doesn't depend on n.
+func paddedSealsExtra(n int) []byte {
+	vanity, _ := rlp.EncodeToBytes(make([]byte, types.IstanbulExtraVanity))
+	return rlpListBytes(append(append(vanity, 0xc0, 0xc0, 0x80), rlpListBytes(bytes.Repeat([]byte{0x80}, n))...))
+}
+
+func rlpListBytes(content []byte) []byte {
+	n := len(content)
+	switch {
+	case n < 56:
+		return append([]byte{0xc0 + byte(n)}, content...)
+	case n < 1<<8:
+		return append([]byte{0xf8, byte(n)}, content...)
+	case n < 1<<16:
+		return append([]byte{0xf9, byte(n >> 8), byte(n)}, content...)
+	default:
+		return append([]byte{0xfa, byte(n >> 16), byte(n >> 8), byte(n)}, content...)
+	}
+}
+
+// Reported via Bugcrowd: hashing an Istanbul header decodes its extra-data,
+// and the prepared block's header in a ROUND-CHANGE was hashed before the
+// message signature was checked. The prepared block isn't signed and its hash
+// leaves out the committed seals, so anyone could pad a validator's prepared
+// block with millions of empty seals and it would still match the digest. The
+// header is now bounded before it's hashed.
+func TestPreVerifySignature_RoundChangePaddedSeals(t *testing.T) {
+	header := &types.Header{
+		Number:     big.NewInt(1),
+		Difficulty: big.NewInt(1),
+		GasLimit:   30_000_000,
+		MixDigest:  types.IstanbulDigest,
+		Extra:      paddedSealsExtra(0),
+	}
+	block := types.NewBlock(header, nil, nil, nil, trie.NewStackTrie(nil))
+	rc := qbfttypes.NewRoundChange(big.NewInt(1), big.NewInt(1), big.NewInt(0), block, false)
+	rc.SetSignature([]byte{0xAA})
+
+	var raw struct {
+		Signed        rlp.RawValue
+		PreparedBlock rlp.RawValue
+		Justification rlp.RawValue
+	}
+	data, _ := rlp.EncodeToBytes(rc)
+	if err := rlp.DecodeBytes(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	c := countingCore(&calls)
+	if _, err := c.preVerifySignature(qbfttypes.RoundChangeCode, data); err != nil {
+		t.Fatalf("genuine round change rejected: %v", err)
+	}
+	for _, n := range []int{100, 5_000_000} {
+		padded := types.CopyHeader(block.Header())
+		padded.Extra = paddedSealsExtra(n)
+		if padded.Hash() != block.Hash() {
+			t.Fatal("padding the committed seals changed the header hash")
+		}
+		body, err := rlp.EncodeToBytes([]interface{}{padded, []*types.Transaction{}, []*types.Header{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tampered, err := rlp.EncodeToBytes([]interface{}{raw.Signed, rlp.RawValue(body), raw.Justification})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var verr error
+		used := allocated(func() { _, verr = c.preVerifySignature(qbfttypes.RoundChangeCode, tampered) })
+		if n == 100 {
+			// A little padding stays within the header bounds and still
+			// matches the digest; only the size is what's being limited.
+			if verr != nil {
+				t.Fatalf("lightly padded round change rejected: %v", verr)
+			}
+			continue
+		}
+		if !errors.Is(verr, errInvalidMessage) {
+			t.Fatalf("padded round change: expected errInvalidMessage, got %v", verr)
+		}
+		if used > 4*uint64(len(tampered)) {
+			t.Fatalf("padded round change: pre-verify allocated %d bytes for a %d byte message", used, len(tampered))
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 signature checks (the genuine and lightly padded messages), got %d", calls)
 	}
 }

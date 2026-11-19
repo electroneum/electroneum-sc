@@ -527,6 +527,12 @@ func checkRawBlock(code uint64, payload, preparedBlock []byte) error {
 	if err := rlp.DecodeBytes(parts[0], &header); err != nil {
 		return err
 	}
+	// Bound the header before hashing it, which decodes its extra-data. A
+	// prepared block isn't signed and its hash leaves out the committed seals,
+	// so anyone relaying a ROUND-CHANGE could otherwise pad them out.
+	if err := header.SanityCheck(); err != nil {
+		return err
+	}
 	if digest != nil && header.Hash() != *digest {
 		return errors.New("prepared block does not match prepared digest")
 	}

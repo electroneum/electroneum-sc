@@ -133,8 +133,14 @@ func (sb *Backend) HandleMsg(addr common.Address, msg p2p.Msg) (bool, error) {
 				return false, nil
 			}
 			header := request.Block.Header
-			if header.MixDigest == types.IstanbulDigest && sb.core.IsCurrentProposal(header.Hash()) {
-				sb.logger.Debug("IBFT: block already proposed", "hash", header.Hash(), "sender", addr)
+			// Hashing an Istanbul header decodes its extra-data, and we hold
+			// coreMu here. Leave an oversized one to the eth handler, which
+			// drops the peer for it.
+			if header.MixDigest != types.IstanbulDigest || header.SanityCheck() != nil {
+				return false, nil
+			}
+			if hash := header.Hash(); sb.core.IsCurrentProposal(hash) {
+				sb.logger.Debug("IBFT: block already proposed", "hash", hash, "sender", addr)
 				return true, nil
 			}
 		}
