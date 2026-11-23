@@ -255,11 +255,20 @@ func (c *core) handleTimeoutMsg() {
 	nextRound := new(big.Int).Add(round, common.Big1)
 
 	logger.Warn("[Consensus]: Round reached timeout", "pr", c.current.preparedRound)
-	c.startNewRound(nextRound)
+	c.changeRound(nextRound)
 	logger.Trace("IBFT: TIMER CHANGED ROUND", "pr", c.current.preparedRound)
+}
 
-	// Send Round Change
-	c.broadcastRoundChange(nextRound)
+// changeRound moves to round and sends our ROUND-CHANGE for it. If it turns out
+// we'd fallen behind, starting the round catches us up to a new sequence
+// instead. Nothing has timed out there, so we don't ask for a round change.
+func (c *core) changeRound(round *big.Int) {
+	sequence := new(big.Int).Set(c.current.Sequence())
+	c.startNewRound(round)
+	if c.current.Sequence().Cmp(sequence) != 0 {
+		return
+	}
+	c.broadcastRoundChange(round)
 }
 
 // Verifies the signature of the message m and of any justification payloads

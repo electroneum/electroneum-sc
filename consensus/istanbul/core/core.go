@@ -230,15 +230,19 @@ func (c *core) startNewRound(round *big.Int) {
 		roundMeter.Mark(new(big.Int).Sub(round, c.current.Round()).Int64())
 	}
 
-	// Update RoundChangeSet by deleting older round messages
-	if round.Uint64() == 0 {
+	// Everything collected for a sequence goes when we move to the next one.
+	// That's usually at round 0, but a timeout or round jump that finds we've
+	// fallen behind catches us up while asking for a later round. Kept, the old
+	// sequence's ROUND-CHANGEs would count toward the new one's rounds, and its
+	// prepared blocks would be picked to re-propose at the wrong height.
+	if !roundChange {
 		c.QBFTPreparedPrepares = nil
 		c.roundChangeSet = newRoundChangeSet(c.valSet)
 	} else {
 		// Clear earlier round messages
 		c.roundChangeSet.ClearLowerThan(round)
 	}
-	c.roundChangeSet.NewRound(round)
+	c.roundChangeSet.NewRound(newView.Round)
 	c.publishRoundStateLocked()
 
 	oldLogger.Trace("IBFT: start new round", "next.round", newView.Round, "next.seq", newView.Sequence, "next.proposer", c.valSet.GetProposer(), "next.valSet", c.valSet.List(), "next.size", c.valSet.Size(), "next.IsProposer", c.isProposer())

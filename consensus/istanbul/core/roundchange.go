@@ -188,8 +188,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 			"F", c.valSet.F(), "target", target)
 		c.cleanLogger.Info("[Consensus]: <- Received >=F+1 ROUND-CHANGE messages for round",
 			"round", target, "threshold", c.valSet.F()+1)
-		c.startNewRound(target)
-		c.broadcastRoundChange(target)
+		c.changeRound(target)
 	} else if currentRoundMessages >= c.QuorumSize() && c.isProposer() && c.current.preprepareSent.Cmp(currentRound) < 0 {
 		logger.Trace("[Consensus]: Received quorum of ROUND-CHANGE messages")
 		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())
