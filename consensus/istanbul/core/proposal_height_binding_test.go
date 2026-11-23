@@ -13,6 +13,7 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul"
 	qbfttypes "github.com/electroneum/electroneum-sc/consensus/istanbul/types"
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
+	"github.com/electroneum/electroneum-sc/core/types"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/log"
 )
@@ -128,6 +129,92 @@ func TestHandleEncodedMsg_RejectsProposalForAnotherHeight(t *testing.T) {
 			// Turned away before Verify, which is what let it through.
 			if backend.verifies != 0 {
 				t.Errorf("block at height %d reached Verify", tc.number)
+			}
+		})
+	}
+}
+
+// A prepared block at another height can't be re-proposed, so a ROUND-CHANGE
+// carrying one is dropped, PREPAREs or not. Stored, it would have the proposer
+// pick it at the round-change quorum and then not send anything, every round.
+func TestHandleRoundChange_DropsPreparedBlockForAnotherHeight(t *testing.T) {
+	const seq = 5
+	for name, tc := range map[string]struct {
+		number   int64
+		prepares bool
+	}{
+		"same height as the last block": {seq - 1, true},
+		"an older height":               {seq - 3, true},
+		"a later height":                {seq + 1, true},
+		"another height, no PREPAREs":   {seq - 1, false},
+		"this sequence":                 {seq, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			number := tc.number
+			kept := number == seq
+			c := newRoundChangeTestCore(4, seq, 1)
+			sealChecks := 0
+			backend := &sealCheckBackend{verifySeals: func(istanbul.Proposal) error { sealChecks++; return nil }}
+			c.backend = backend
+			// We are the proposer, with a block of our own ready to go.
+			c.address = c.valSet.GetProposer().Address()
+			backend.addr = c.address
+			c.currentMutex = new(sync.Mutex)
+			header := makeProposalBlock(t, seq).Header()
+			header.Time = 1 // not the prepared block
+			own := types.NewBlockWithHeader(header)
+			c.current.pendingRequest = &Request{Proposal: own}
+
+			addrs := []common.Address{c.address}
+			for _, v := range c.valSet.List() {
+				if v.Address() != c.address {
+					addrs = append(addrs, v.Address())
+				}
+			}
+			// A prepared block with a full PREPARE quorum behind it, the way
+			// validators running without this check could have prepared it.
+			prepared := makeProposalBlock(t, number)
+			rc := qbfttypes.NewRoundChange(big.NewInt(seq), big.NewInt(1), big.NewInt(0), prepared, false)
+			rc.SetSource(addrs[3])
+			rc.SetSignature([]byte{0x01})
+			if tc.prepares {
+				rc.Justification = makeAttackPrepares(addrs, c.QuorumSize(), seq, 0, prepared.Hash())
+			}
+
+			err := c.handleRoundChange(rc)
+			if kept && err != nil {
+				t.Fatalf("prepared block for this sequence: %v", err)
+			}
+			if !kept {
+				if !errors.Is(err, errInvalidPreparedBlock) {
+					t.Fatalf("have %v, want %v", err, errInvalidPreparedBlock)
+				}
+				if n := c.roundChangeSet.getRCMessagesForGivenRound(big.NewInt(1)); n != 0 {
+					t.Errorf("dropped ROUND-CHANGE was counted: %d messages", n)
+				}
+				if _, stored := c.highestPrepared(big.NewInt(1)); stored != nil {
+					t.Errorf("stored a prepared block at height %d", number)
+				}
+				if sealChecks != 0 {
+					t.Errorf("seal-checked a prepared block at height %d", number)
+				}
+			}
+
+			// Everyone else changes round with nothing prepared.
+			for _, src := range addrs[:c.QuorumSize()] {
+				if err := c.handleRoundChange(makeRoundChange(seq, 1, src)); err != nil {
+					t.Fatalf("honest ROUND-CHANGE from %x: %v", src, err)
+				}
+			}
+			if len(backend.preprepares) != 1 {
+				t.Fatalf("expected one proposal for round 1, got %d", len(backend.preprepares))
+			}
+			want := own.Hash()
+			if kept {
+				want = prepared.Hash()
+			}
+			if got := backend.preprepares[0].Proposal; got.Hash() != want || got.Number().Int64() != seq {
+				t.Fatalf("proposed block %d %x, want %x", got.Number(), got.Hash(), want)
 			}
 		})
 	}

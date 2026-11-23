@@ -130,6 +130,17 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
+		// We only ever vote for the block for this sequence, so that's the only
+		// block anyone can honestly have prepared. A block at any other height
+		// can't be re-proposed (sendPreprepareMsg won't send it), so storing
+		// one stalls every round until a restart. No honest validator sends
+		// one, so the whole ROUND-CHANGE goes, the same as one with broken
+		// seals below, and it doesn't count toward anything.
+		if roundChange.PreparedBlock != nil && roundChange.PreparedBlock.Number().Cmp(view.Sequence) != 0 {
+			logger.Warn("[Consensus]: ROUND-CHANGE prepared block is not for this sequence", "number", roundChange.PreparedBlock.Number())
+			return errInvalidPreparedBlock
+		}
+
 		var prepareMessages []*qbfttypes.Prepare = nil
 		var pr *big.Int = nil
 		var pb *types.Block = nil
