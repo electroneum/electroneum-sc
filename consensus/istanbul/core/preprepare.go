@@ -120,6 +120,17 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 		return errNotFromProposer
 	}
 
+	// The block has to be the one for this sequence. Verify only checks a block
+	// against its own parent, so without this the proposer could have us vote
+	// for a second block at a height that's already final. That block imports
+	// at the same total difficulty as the real one and can replace it. An older
+	// height can't be re-proposed either, so getting one prepared locks every
+	// validator on it until they restart.
+	if preprepare.Proposal.Number().Cmp(preprepare.Sequence) != 0 {
+		logger.Warn("[Consensus]: PRE-PREPARE proposal is not for this sequence", "sequence", preprepare.Sequence)
+		return errInvalidProposalNumber
+	}
+
 	// Validates that the block's coinbase matches the authenticated PRE-PREPARE source.
 	// This prevents a malicious proposer from setting header.Coinbase to another validator's
 	// address and forging validator votes under that identity.

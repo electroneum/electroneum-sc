@@ -130,6 +130,17 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 
 	// Add ROUND-CHANGE message to message set
 	if view.Round.Cmp(currentRound) >= 0 {
+		// We only ever vote for the block for this sequence, so that's the only
+		// block anyone can honestly have prepared. A block at any other height
+		// can't be re-proposed (sendPreprepareMsg won't send it), so storing
+		// one stalls every round until a restart. No honest validator sends
+		// one, so the whole ROUND-CHANGE goes, the same as one with broken
+		// seals below, and it doesn't count toward anything.
+		if roundChange.PreparedBlock != nil && roundChange.PreparedBlock.Number().Cmp(view.Sequence) != 0 {
+			logger.Warn("[Consensus]: ROUND-CHANGE prepared block is not for this sequence", "number", roundChange.PreparedBlock.Number())
+			return errInvalidPreparedBlock
+		}
+
 		var prepareMessages []*qbfttypes.Prepare = nil
 		var pr *big.Int = nil
 		var pb *types.Block = nil
@@ -177,8 +188,7 @@ func (c *core) handleRoundChange(roundChange *qbfttypes.RoundChange) error {
 			"F", c.valSet.F(), "target", target)
 		c.cleanLogger.Info("[Consensus]: <- Received >=F+1 ROUND-CHANGE messages for round",
 			"round", target, "threshold", c.valSet.F()+1)
-		c.startNewRound(target)
-		c.broadcastRoundChange(target)
+		c.changeRound(target)
 	} else if currentRoundMessages >= c.QuorumSize() && c.isProposer() && c.current.preprepareSent.Cmp(currentRound) < 0 {
 		logger.Trace("[Consensus]: Received quorum of ROUND-CHANGE messages")
 		c.cleanLogger.Info("[Consensus]: <- Received quorum of ROUND-CHANGE messages", "count", currentRoundMessages, "quorum", c.QuorumSize())

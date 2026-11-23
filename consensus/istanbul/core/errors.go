@@ -39,4 +39,6 @@ var (
 	errInvalidPreparedBlock = errors.New("invalid prepared block in round change messages")
 	// errInvalidBlockCoinbase is returned when the block's coinbase does not match the PRE-PREPARE message source
 	errInvalidBlockCoinbase = errors.New("block coinbase does not match PRE-PREPARE source")
+	// errInvalidProposalNumber is returned when a PRE-PREPARE's block isn't for the sequence the message is for
+	errInvalidProposalNumber = errors.New("proposal number does not match PRE-PREPARE sequence")
 )
