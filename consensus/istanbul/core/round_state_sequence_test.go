@@ -15,7 +15,8 @@ import (
 // window catches the core up to the next sequence while asking for a later
 // round. That used to keep the old sequence's ROUND-CHANGEs (prepared blocks
 // included) and send a ROUND-CHANGE for a round of the new sequence that never
-// timed out.
+// timed out. A round timer that fired as the core moved on could also cut the
+// next sequence's first round short.
 
 // catchUpBackend has a chain head the core may not have caught up with yet, and
 // records the codes of what it broadcasts.
@@ -116,5 +117,28 @@ func TestCatchUpLeavesOldSequenceBehind(t *testing.T) {
 				t.Errorf("jumped to round %v of sequence %d on old ROUND-CHANGEs", have.Round, seq+1)
 			}
 		})
+	}
+}
+
+// A timeout from the last sequence is ignored, and one for the round we're in
+// still changes round.
+func TestHandleTimeout_OnlyForCurrentSequence(t *testing.T) {
+	const seq = 6
+	c, backend, _ := newCatchUpCore(t, seq, 0, seq-1)
+
+	c.handleTimeout(timeoutEvent{sequence: seq - 1, round: 0})
+	if have := c.currentView(); have.Sequence.Int64() != seq || have.Round.Int64() != 0 {
+		t.Fatalf("timeout from sequence %d moved us to %v", seq-1, have)
+	}
+	if len(backend.broadcasts) != 0 {
+		t.Fatalf("timeout from sequence %d broadcast %v", seq-1, backend.broadcasts)
+	}
+
+	c.handleTimeout(timeoutEvent{sequence: seq, round: 0})
+	if have := c.currentView(); have.Sequence.Int64() != seq || have.Round.Int64() != 1 {
+		t.Fatalf("timeout for the current round left us at %v", have)
+	}
+	if len(backend.broadcasts) != 1 || backend.broadcasts[0] != qbfttypes.RoundChangeCode {
+		t.Fatalf("timeout for the current round broadcast %v, want one ROUND-CHANGE", backend.broadcasts)
 	}
 }

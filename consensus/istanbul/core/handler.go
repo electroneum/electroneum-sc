@@ -154,9 +154,7 @@ func (c *core) handleEvents() {
 			}
 			switch ev := event.Data.(type) {
 			case timeoutEvent:
-				if c.current != nil && c.current.Round().Uint64() == ev.round {
-					c.handleTimeoutMsg()
-				}
+				c.handleTimeout(ev)
 			}
 		case event, ok := <-c.finalCommittedSub.Chan():
 			// our block proposal got committed
@@ -246,6 +244,16 @@ func (c *core) deliverMessage(m qbfttypes.QBFTMessage) error {
 	}
 
 	return err
+}
+
+// handleTimeout acts on a round timer firing, if it's for the round we're in.
+// A timer that fires just as we move on can still be delivered afterwards, so
+// it has to match the sequence as well as the round. Otherwise the first round
+// of the next sequence gets cut short.
+func (c *core) handleTimeout(ev timeoutEvent) {
+	if c.current != nil && c.current.Sequence().Uint64() == ev.sequence && c.current.Round().Uint64() == ev.round {
+		c.handleTimeoutMsg()
+	}
 }
 
 func (c *core) handleTimeoutMsg() {

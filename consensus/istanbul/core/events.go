@@ -31,5 +31,6 @@ type backlogEvent struct {
 }
 
 type timeoutEvent struct {
-	round uint64
+	sequence uint64
+	round    uint64
 }
