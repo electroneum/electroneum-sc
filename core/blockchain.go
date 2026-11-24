@@ -1528,7 +1528,15 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 	case err != nil && !errors.Is(err, ErrKnownBlock):
 		bc.futureBlocks.Remove(block.Hash())
 		stats.ignored += len(it.chain)
-		bc.reportBlock(block, nil, err)
+		// Logged, but not written to the bad block table. The block never ran:
+		// it failed on its header, or on a body that doesn't match its header.
+		// In QBFT the hash leaves out the committed seals and only covers the
+		// body through the header's roots, so a good block with broken seals or
+		// someone else's body fails here under the good block's hash. QBFT reads
+		// the table to decide a proposal can't be imported (HasBadProposal), so
+		// writing these would let any peer that hands us blocks during sync mark
+		// a good proposal bad, or push the real bad ones out of the table.
+		bc.logBadBlock(block, nil, err)
 		return it.index, err
 	}
 	// No validation errors for the first block (or chain prefix skipped)
@@ -2309,10 +2317,14 @@ func (bc *BlockChain) maintainTxIndex(ancients uint64) {
 	}
 }
 
-// reportBlock logs a bad block error.
+// reportBlock records a block in the bad block table and logs it.
 func (bc *BlockChain) reportBlock(block *types.Block, receipts types.Receipts, err error) {
 	rawdb.WriteBadBlock(bc.db, block)
+	bc.logBadBlock(block, receipts, err)
+}
 
+// logBadBlock logs a bad block error without recording the block.
+func (bc *BlockChain) logBadBlock(block *types.Block, receipts types.Receipts, err error) {
 	var receiptString string
 	for i, receipt := range receipts {
 		receiptString += fmt.Sprintf("\t %d: cumulative: %v gas: %v contract: %v status: %v tx: %v logs: %v bloom: %x state: %x\n",

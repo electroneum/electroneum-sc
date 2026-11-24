@@ -101,6 +101,22 @@ func (c *core) sendPreprepareMsg(request *Request) {
 	}
 }
 
+// isReproposal reports whether a PRE-PREPARE puts up a block that was already
+// prepared: a round after the first, with PREPAREs that are all for this block.
+// isJustified still has to check those PREPAREs are a real quorum.
+func isReproposal(preprepare *qbfttypes.Preprepare) bool {
+	if preprepare.Round.Sign() == 0 || len(preprepare.JustificationPrepares) == 0 {
+		return false
+	}
+	digest := preprepare.Proposal.Hash()
+	for _, p := range preprepare.JustificationPrepares {
+		if p == nil || p.Digest != digest {
+			return false
+		}
+	}
+	return true
+}
+
 // handlePreprepareMsg is called when receiving a PRE-PREPARE message from the proposer
 
 // It
@@ -145,9 +161,13 @@ func (c *core) handlePreprepareMsg(preprepare *qbfttypes.Preprepare) error {
 	// justifications are not covered by the PRE-PREPARE signature and isJustified() is
 	// only called at round > 0. Without both conditions an attacker could stuff fake
 	// PREPAREs into a round-0 message to bypass the strict check.
+	//
+	// The PREPAREs also have to be for this block. Once a quorum of ROUND-CHANGEs
+	// says the prepared block is bad, isJustified lets the proposer put up a new
+	// block on the PREPAREs for the bad one. Nobody prepared that new block, so
+	// it's the proposer's own and gets the strict check like any other.
 	if block, ok := preprepare.Proposal.(*types.Block); ok {
-		isReproposal := preprepare.Round.Uint64() > 0 && len(preprepare.JustificationPrepares) > 0
-		if isReproposal {
+		if isReproposal(preprepare) {
 			if _, v := c.valSet.GetByAddress(block.Header().Coinbase); v == nil {
 				logger.Warn("[Consensus]: Block coinbase is not a known validator",
 					"coinbase", block.Header().Coinbase)
