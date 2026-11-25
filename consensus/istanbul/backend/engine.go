@@ -309,7 +309,7 @@ func (sb *Backend) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 		Namespace: "istanbul",
 		Version:   "1.0",
 		Service:   &API{chain: chain, backend: sb},
-		Public:    true,
+		Public:    false,
 	}}
 }
 
