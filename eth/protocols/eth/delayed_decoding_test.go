@@ -236,6 +236,42 @@ func TestTransactionsItemLimit(t *testing.T) {
 	}
 }
 
+// Transaction announcements are capped in item count before being decoded.
+// Honest peers cut them at maxTxPacketSize, well under the cap.
+func TestNewPooledTransactionHashesItemLimit(t *testing.T) {
+	hash := append([]byte{0xa0}, make([]byte, common.HashLength)...)
+	for name, tc := range map[string]struct {
+		count int
+		fail  bool
+	}{
+		"over the cap":           {count: maxTransactionsPerPacket + 1, fail: true},
+		"at the cap":             {count: maxTransactionsPerPacket},
+		"an honest announcement": {count: maxTxPacketSize / common.HashLength},
+	} {
+		t.Run(name, func(t *testing.T) {
+			peer, _ := newDispatchTestPeer(t)
+			backend := &txAcceptingBackend{testBackend: newTestBackend(0)}
+			defer backend.close()
+
+			body := rlpList(bytes.Repeat(hash, tc.count))
+			msg := p2p.Msg{Code: NewPooledTransactionHashesMsg, Size: uint32(len(body)), Payload: bytes.NewReader(body)}
+			err := handleNewPooledTransactionHashes(backend, msg, peer)
+			if tc.fail {
+				if !errors.Is(err, errDecode) || !strings.Contains(err.Error(), errTooManyItems.Error()) {
+					t.Fatalf("have %v, want %v", err, errTooManyItems)
+				}
+				if backend.handled {
+					t.Fatal("oversized announcement reached the backend")
+				}
+				return
+			}
+			if err != nil || !backend.handled {
+				t.Fatalf("announcement not handled: %v", err)
+			}
+		})
+	}
+}
+
 // Block bodies are hashed straight from their encoding, which must agree with
 // hashing the decoded transactions and uncles exactly.
 func TestRawBlockBodyHashes(t *testing.T) {

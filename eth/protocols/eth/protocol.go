@@ -49,9 +49,9 @@ var protocolLengths = map[uint]uint64{ETH66: 17}
 const maxMessageSize = 10 * 1024 * 1024
 
 // maxTransactionsPerPacket is the maximum number of transactions accepted in a
-// single transactions broadcast or pooled transactions response. Broadcasts are
-// cut at maxTxPacketSize and pooled transaction requests at 256 hashes, so an
-// honest peer stays far below this.
+// single transactions broadcast, pooled transactions response or transaction
+// announcement. Broadcasts and announcements are cut at maxTxPacketSize and
+// pooled transaction requests at 256 hashes, so an honest peer stays below this.
 const maxTransactionsPerPacket = 4096
 
 const (
