@@ -678,8 +678,12 @@ func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) 
 	if !backend.AcceptTxs() {
 		return nil
 	}
+	var raw rlp.RawValue
+	if err := msg.Decode(&raw); err != nil {
+		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
+	}
 	ann := new(NewPooledTransactionHashesPacket)
-	if err := msg.Decode(ann); err != nil {
+	if err := decodeLimitedList(raw, maxTransactionsPerPacket, ann); err != nil {
 		return fmt.Errorf("%w: message %v: %v", errDecode, msg, err)
 	}
 	// Schedule all the unknown hashes for retrieval
