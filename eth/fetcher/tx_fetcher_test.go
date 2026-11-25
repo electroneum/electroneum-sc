@@ -859,6 +859,36 @@ func TestTransactionFetcherDoSProtection(t *testing.T) {
 	})
 }
 
+// Tests that an announcement going over the cap keeps only what fits, not
+// what's over: from empty, an announcement of twice the cap keeps the cap,
+// and one with a partly used allowance keeps the rest of it.
+func TestTransactionFetcherDoSProtectionKeepsCap(t *testing.T) {
+	var hashes []common.Hash
+	for i := 0; i < 3*maxTxAnnounces; i++ {
+		hashes = append(hashes, common.Hash{0x01, byte(i >> 16), byte(i >> 8), byte(i)})
+	}
+	testTransactionFetcherParallel(t, txFetcherTest{
+		init: func() *TxFetcher {
+			return NewTxFetcher(
+				func(common.Hash) bool { return false },
+				nil,
+				func(string, []common.Hash) error { return nil },
+			)
+		},
+		steps: []interface{}{
+			doTxNotify{peer: "A", hashes: hashes[:2*maxTxAnnounces]},
+			isWaiting(map[string][]common.Hash{"A": hashes[:maxTxAnnounces]}),
+
+			doTxNotify{peer: "B", hashes: hashes[:100]},
+			doTxNotify{peer: "B", hashes: hashes[100 : 100+2*maxTxAnnounces]},
+			isWaiting(map[string][]common.Hash{
+				"A": hashes[:maxTxAnnounces],
+				"B": hashes[:maxTxAnnounces],
+			}),
+		},
+	})
+}
+
 // Tests that underpriced transactions don't get rescheduled after being rejected.
 func TestTransactionFetcherUnderpricedDedup(t *testing.T) {
 	testTransactionFetcherParallel(t, txFetcherTest{
