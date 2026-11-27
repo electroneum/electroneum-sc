@@ -779,3 +779,96 @@ func testGetSealingWork(t *testing.T, chainConfig *params.ChainConfig, engine co
 		}
 	}
 }
+
+// refreshCounter counts priority transactor refreshes: calls the contract
+// makes to itself, which is how core reads the list.
+type refreshCounter struct {
+	contract common.Address
+	calls    int
+}
+
+func (c *refreshCounter) CaptureTxStart(uint64) {}
+func (c *refreshCounter) CaptureTxEnd(uint64)   {}
+func (c *refreshCounter) CaptureStart(*vm.EVM, common.Address, common.Address, bool, []byte, uint64, *big.Int) {
+}
+func (c *refreshCounter) CaptureEnd([]byte, uint64, time.Duration, error) {}
+func (c *refreshCounter) CaptureEnter(op vm.OpCode, from, to common.Address, _ []byte, _ uint64, _ *big.Int) {
+	if op == vm.STATICCALL && from == c.contract && to == c.contract {
+		c.calls++
+	}
+}
+func (c *refreshCounter) CaptureExit([]byte, uint64, error) {}
+func (c *refreshCounter) CaptureState(uint64, vm.OpCode, uint64, uint64, *vm.ScopeContext, []byte, int, error) {
+}
+func (c *refreshCounter) CaptureFault(uint64, vm.OpCode, uint64, uint64, *vm.ScopeContext, int, error) {
+}
+
+// The miner reads the priority transactors once at the start of a block and
+// once after each transaction to their contract, the same as block processing.
+// core.ApplyTransaction does the per-transaction read, so the worker mustn't
+// read the list a second time.
+func TestCommitTransactionsRefreshesPriorityOncePerTx(t *testing.T) {
+	contract := common.HexToAddress("0x9999999999999999999999999999999999999999")
+	chainConfig := new(params.ChainConfig)
+	*chainConfig = *params.AllEthashProtocolChanges
+	chainConfig.LondonBlock = big.NewInt(0)
+	chainConfig.PriorityTransactorsContractAddress = contract
+
+	engine := ethash.NewFaker()
+	defer engine.Close()
+	db := rawdb.NewMemoryDatabase()
+	senderKey, _ := crypto.GenerateKey()
+	sender := crypto.PubkeyToAddress(senderKey.PublicKey)
+	gspec := core.Genesis{
+		Config: chainConfig,
+		Alloc: core.GenesisAlloc{
+			sender:   {Balance: big.NewInt(1e18)},
+			contract: {Code: common.FromHex("602060005260406000f3"), Balance: big.NewInt(0)}, // empty getTransactors() list
+		},
+	}
+	genesis := gspec.MustCommit(db)
+	counter := &refreshCounter{contract: contract}
+	chain, _ := core.NewBlockChain(db, &core.CacheConfig{TrieDirtyDisabled: true}, chainConfig, engine, vm.Config{Debug: true, Tracer: counter}, nil, nil)
+	defer chain.Stop()
+
+	w := &worker{chain: chain, chainConfig: chainConfig}
+	signer := types.LatestSigner(chainConfig)
+	statedb, _ := chain.StateAt(genesis.Root())
+	header := &types.Header{
+		Number:     big.NewInt(1),
+		GasLimit:   8_000_000,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
+		ParentHash: genesis.Hash(),
+		Difficulty: big.NewInt(1),
+		Time:       uint64(time.Now().Unix()),
+	}
+	env := &environment{
+		signer:  signer,
+		state:   statedb,
+		header:  header,
+		gasPool: new(core.GasPool).AddGas(header.GasLimit),
+	}
+	const n = 3
+	var txs types.Transactions
+	for i := uint64(0); i < n; i++ {
+		tx, _ := types.SignNewTx(senderKey, signer, &types.DynamicFeeTx{
+			ChainID:   chainConfig.ChainID,
+			Nonce:     i,
+			GasTipCap: big.NewInt(params.InitialBaseFee),
+			GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+			Gas:       100_000,
+			To:        &contract,
+		})
+		txs = append(txs, tx)
+	}
+	byPrice := types.NewTransactionsByPriceAndNonce(signer, map[common.Address]types.Transactions{sender: txs}, header.BaseFee)
+	if err := w.commitTransactions(env, byPrice, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.txs) != n {
+		t.Fatalf("committed %d txs, want %d", len(env.txs), n)
+	}
+	if counter.calls != 1+n {
+		t.Fatalf("read the priority transactors %d times, want %d (once per block and once per tx to the contract)", counter.calls, 1+n)
+	}
+}

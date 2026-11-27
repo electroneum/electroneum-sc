@@ -947,11 +947,9 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 			env.tcount++
 			txs.Shift()
 
-			// Refresh priority transactors cache if this tx targeted the contract,
-			// mirroring the validator's mid-block refresh in state_processor.go.
-			if tx.To() != nil && *tx.To() == w.chainConfig.GetPriorityTransactorsContractAddress(env.header.Number) {
-				env.state.SetPriorityTransactors(w.chain.GetPriorityTransactorsForState(env.header, env.state))
-			}
+			// core.ApplyTransaction has already refreshed the priority
+			// transactors if this tx targeted their contract, the same way
+			// block processing does.
 
 		case errors.Is(err, core.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account
