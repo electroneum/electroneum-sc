@@ -1,10 +1,18 @@
 package core
 
 import (
+	"fmt"
+	"math/big"
+	"sync"
 	"testing"
 
 	"github.com/electroneum/electroneum-sc/common"
 	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
+	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/state"
+	"github.com/electroneum/electroneum-sc/core/vm"
+	"github.com/electroneum/electroneum-sc/crypto"
+	"github.com/electroneum/electroneum-sc/params"
 )
 
 // Test that safeConvertTransactorsMeta returns ok=true and the correct slice
@@ -140,5 +148,64 @@ func TestPublicKeyIsValid_ValidKey(t *testing.T) {
 
 	if !pk.IsValid() {
 		t.Error("expected IsValid=true for known-good secp256k1 public key")
+	}
+}
+
+// returnCode is contract code that returns data for any call.
+func returnCode(data []byte) []byte {
+	size := []byte{byte(len(data) >> 8), byte(len(data))}
+	code := []byte{0x61, size[0], size[1], 0x61, 0x00, 0x0f, 0x60, 0x00, 0x39} // CODECOPY(0, 15, size)
+	code = append(code, 0x61, size[0], size[1], 0x60, 0x00, 0xf3)              // RETURN(0, size)
+	return append(code, data...)
+}
+
+// The ABI and call data are prepared once and shared by every refresh, which
+// runs concurrently in block processing, the miner and the txpool. Each
+// refresh must still read the list from the contract.
+func TestGetPriorityTransactorsAt_Repeated(t *testing.T) {
+	key, _ := crypto.GenerateKey()
+	pub := crypto.FromECDSAPub(&key.PublicKey)
+	contractABI, _ := getTransactorsCall()
+	output, err := contractABI.Methods["getTransactors"].Outputs.Pack([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta{
+		{IsGasPriceWaiver: true, PublicKey: common.Bytes2Hex(pub), Name: "Oracle"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := common.HexToAddress("0x9999999999999999999999999999999999999999")
+	newEVM := func() *vm.EVM {
+		statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		statedb.SetCode(addr, returnCode(output))
+		ctx := vm.BlockContext{CanTransfer: CanTransfer, Transfer: Transfer, BlockNumber: big.NewInt(1), Time: big.NewInt(1), Difficulty: big.NewInt(1), GasLimit: 30_000_000}
+		return vm.NewEVM(ctx, vm.TxContext{}, statedb, params.TestChainConfig, vm.Config{})
+	}
+	check := func(list common.PriorityTransactorMap) error {
+		got, ok := list[common.BytesToPublicKey(pub)]
+		if len(list) != 1 || !ok || !got.IsGasPriceWaiver || got.EntityName != "Oracle" {
+			return fmt.Errorf("have %v, want the one transactor", list)
+		}
+		return nil
+	}
+	evm := newEVM()
+	for i := 0; i < 3; i++ {
+		if err := check(GetPriorityTransactorsAt(evm, addr)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- check(GetPriorityTransactorsAt(newEVM(), addr))
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
