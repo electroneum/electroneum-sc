@@ -17,18 +17,25 @@
 package miner
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/electroneum/electroneum-sc/accounts"
+	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
+	"github.com/electroneum/electroneum-sc/common/hexutil"
 	"github.com/electroneum/electroneum-sc/consensus"
 	"github.com/electroneum/electroneum-sc/consensus/clique"
 	"github.com/electroneum/electroneum-sc/consensus/ethash"
+	"github.com/electroneum/electroneum-sc/consensus/misc"
+	"github.com/electroneum/electroneum-sc/contracts/prioritytransactors"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
 	"github.com/electroneum/electroneum-sc/core/state"
@@ -870,5 +877,226 @@ func TestCommitTransactionsRefreshesPriorityOncePerTx(t *testing.T) {
 	}
 	if counter.calls != 1+n {
 		t.Fatalf("read the priority transactors %d times, want %d (once per block and once per tx to the contract)", counter.calls, 1+n)
+	}
+}
+
+// priorityListContract is a priority transactors contract whose getTransactors
+// returns lists[0] while slot 0 is zero and lists[1] otherwise. Sent a 32-byte
+// word, it stores the word in slot 0. Sent 33 bytes, it stores it and reverts.
+func priorityListContract(lists [2][]byte) []byte {
+	const (
+		get    = 0x16
+		second = 0x2c
+		set    = 0x3c
+		revert = 0x44
+		data   = 0x50 // lists[0] then lists[1]
+	)
+	ret := func(off, n int) []byte { // RETURN code[off:off+n]
+		return []byte{
+			byte(vm.PUSH2), byte(n >> 8), byte(n), byte(vm.PUSH2), byte(off >> 8), byte(off), byte(vm.PUSH1), 0, byte(vm.CODECOPY),
+			byte(vm.PUSH2), byte(n >> 8), byte(n), byte(vm.PUSH1), 0, byte(vm.RETURN),
+		}
+	}
+	code := []byte{
+		byte(vm.CALLDATASIZE), byte(vm.PUSH1), 4, byte(vm.EQ), byte(vm.PUSH1), get, byte(vm.JUMPI),
+		byte(vm.CALLDATASIZE), byte(vm.PUSH1), 32, byte(vm.EQ), byte(vm.PUSH1), set, byte(vm.JUMPI),
+		byte(vm.CALLDATASIZE), byte(vm.PUSH1), 33, byte(vm.EQ), byte(vm.PUSH1), revert, byte(vm.JUMPI),
+		byte(vm.STOP),
+		byte(vm.JUMPDEST), byte(vm.PUSH1), 0, byte(vm.SLOAD), byte(vm.PUSH1), second, byte(vm.JUMPI),
+	}
+	code = append(code, ret(data, len(lists[0]))...)
+	code = append(code, byte(vm.JUMPDEST))
+	code = append(code, ret(data+len(lists[0]), len(lists[1]))...)
+	code = append(code,
+		byte(vm.JUMPDEST), byte(vm.PUSH1), 0, byte(vm.CALLDATALOAD), byte(vm.PUSH1), 0, byte(vm.SSTORE), byte(vm.STOP),
+		byte(vm.JUMPDEST), byte(vm.PUSH1), 0, byte(vm.CALLDATALOAD), byte(vm.PUSH1), 0, byte(vm.SSTORE),
+		byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.REVERT),
+	)
+	if len(code) != data {
+		panic("priorityListContract: layout changed, fix the offsets")
+	}
+	for _, at := range []int{get, second, set, revert} {
+		if code[at] != byte(vm.JUMPDEST) {
+			panic("priorityListContract: layout changed, fix the offsets")
+		}
+	}
+	return append(append(code, lists[0]...), lists[1]...)
+}
+
+// forwarderContract passes its calldata on to target.
+func forwarderContract(target common.Address) []byte {
+	code := []byte{
+		byte(vm.CALLDATASIZE), byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.CALLDATACOPY),
+		byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.CALLDATASIZE), byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH20),
+	}
+	code = append(code, target.Bytes()...)
+	return append(code, byte(vm.GAS), byte(vm.CALL), byte(vm.POP), byte(vm.STOP))
+}
+
+// The miner has to see the priority transactors exactly as block processing
+// does at every point in a block, or it seals blocks the validators reject.
+// Block processing reads the list at the start of the block and again after
+// every transaction sent to the contract, even one that reverts. A change made
+// through another contract only shows up at the next read.
+func TestCommitTransactionsFollowsPriorityListChanges(t *testing.T) {
+	var (
+		contract  = common.HexToAddress("0x9999999999999999999999999999999999999999")
+		forwarder = common.HexToAddress("0x8888888888888888888888888888888888888888")
+		coinbase  = common.HexToAddress("0x7777777777777777777777777777777777777777")
+		recipient = common.HexToAddress("0x6666666666666666666666666666666666666666")
+	)
+	chainConfig := new(params.ChainConfig)
+	*chainConfig = *params.AllEthashProtocolChanges
+	chainConfig.LondonBlock = big.NewInt(0)
+	chainConfig.PriorityTransactorsContractAddress = contract
+
+	priorityKey, _ := crypto.GenerateKey()
+	contractABI, err := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs := contractABI.Methods["getTransactors"].Outputs
+	unlisted, err := outputs.Pack([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := outputs.Pack([]prioritytransactors.ETNPriorityTransactorsInterfaceTransactorMeta{{
+		PublicKey: hexutil.Encode(crypto.FromECDSAPub(&priorityKey.PublicKey)),
+		Name:      "test",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	word := func(v byte) []byte { return common.LeftPadBytes([]byte{v}, 32) }
+	reverting := append(word(0), 0)
+	// A step with no to is a priority tx signed with priorityKey.
+	steps := []struct {
+		to   *common.Address
+		data []byte
+		want bool // the miner includes it
+	}{
+		{want: true}, // listed at genesis
+		{to: &contract, data: word(0), want: true}, // unlist
+		{want: false}, // unlisted
+		{to: &forwarder, data: word(1), want: true}, // list again, through another contract
+		{want: false}, // still unlisted, nothing has read the list since
+		{to: &contract, data: reverting, want: true}, // reverts, but the list is read again
+		{want: true}, // listed
+		{to: &forwarder, data: word(0), want: true}, // unlist, through another contract
+		{want: true}, // still listed, nothing has read the list since
+		{to: &contract, data: reverting, want: true}, // reverts, but the list is read again
+		{want: false}, // unlisted
+	}
+
+	alloc := core.GenesisAlloc{
+		contract: {
+			Code:    priorityListContract([2][]byte{unlisted, listed}),
+			Storage: map[common.Hash]common.Hash{{}: common.BigToHash(common.Big1)},
+			Balance: big.NewInt(0),
+		},
+		forwarder: {Code: forwarderContract(contract), Balance: big.NewInt(0)},
+	}
+	keys := make([]*ecdsa.PrivateKey, len(steps))
+	for i := range steps {
+		keys[i], _ = crypto.GenerateKey()
+		alloc[crypto.PubkeyToAddress(keys[i].PublicKey)] = core.GenesisAccount{Balance: big.NewInt(params.Ether)}
+	}
+	gspec := &core.Genesis{Config: chainConfig, Alloc: alloc, GasLimit: 10_000_000}
+	newChain := func() *core.BlockChain {
+		db := rawdb.NewMemoryDatabase()
+		gspec.MustCommit(db)
+		chain, err := core.NewBlockChain(db, nil, chainConfig, ethash.NewFaker(), vm.Config{}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(chain.Stop)
+		return chain
+	}
+	chain := newChain()
+	genesis := chain.Genesis()
+
+	signer := types.LatestSigner(chainConfig)
+	txs := make([]*types.Transaction, len(steps))
+	stepOf := make(map[common.Hash]int)
+	pending := make(map[common.Address]types.Transactions)
+	for i, step := range steps {
+		// Falling tips keep the steps in order.
+		tip := big.NewInt(int64(len(steps)-i) * params.GWei)
+		feeCap := big.NewInt(100 * params.GWei)
+		if step.to == nil {
+			txs[i], err = types.SignNewPriorityTx(keys[i], priorityKey, signer, &types.PriorityTx{
+				ChainID: chainConfig.ChainID, GasTipCap: tip, GasFeeCap: feeCap, Gas: 50_000, To: &recipient, Value: common.Big1,
+			})
+		} else {
+			txs[i], err = types.SignNewTx(keys[i], signer, &types.DynamicFeeTx{
+				ChainID: chainConfig.ChainID, GasTipCap: tip, GasFeeCap: feeCap, Gas: 100_000, To: step.to, Data: step.data,
+			})
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		stepOf[txs[i].Hash()] = i
+		pending[crypto.PubkeyToAddress(keys[i].PublicKey)] = types.Transactions{txs[i]}
+	}
+
+	header := &types.Header{
+		ParentHash: genesis.Hash(),
+		Number:     big.NewInt(1),
+		GasLimit:   genesis.GasLimit(),
+		Time:       genesis.Time() + 10,
+		Coinbase:   coinbase,
+		BaseFee:    misc.CalcBaseFee(chainConfig, genesis.Header()),
+	}
+	engine := ethash.NewFaker()
+	if err := engine.Prepare(chain, header); err != nil {
+		t.Fatal(err)
+	}
+	statedb, _ := chain.StateAt(genesis.Root())
+	env := &environment{signer: signer, state: statedb, header: header, coinbase: coinbase}
+	w := &worker{chain: chain, chainConfig: chainConfig}
+	if err := w.commitTransactions(env, types.NewTransactionsByPriceAndNonce(signer, pending, header.BaseFee), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var have, want []int
+	for _, tx := range env.txs {
+		have = append(have, stepOf[tx.Hash()])
+	}
+	for i, step := range steps {
+		if step.want {
+			want = append(want, i)
+		}
+	}
+	if fmt.Sprint(have) != fmt.Sprint(want) {
+		t.Fatalf("miner included steps %v, want %v", have, want)
+	}
+
+	// The validators accept the block.
+	block, err := engine.FinalizeAndAssemble(chain, header, env.state, env.txs, nil, env.receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newChain().InsertChain(types.Blocks{block}); err != nil {
+		t.Fatalf("validators reject the miner's block: %v", err)
+	}
+	// And they refuse each priority tx the miner left out, at the point it
+	// was left out.
+	for i, step := range steps {
+		if step.want || step.to != nil {
+			continue
+		}
+		var body types.Transactions
+		for _, tx := range env.txs {
+			if stepOf[tx.Hash()] < i {
+				body = append(body, tx)
+			}
+		}
+		body = append(body, txs[i])
+		statedb, _ := chain.StateAt(genesis.Root())
+		_, _, _, err := chain.Processor().Process(types.NewBlockWithHeader(header).WithBody(body, nil), statedb, vm.Config{})
+		if err == nil || !strings.Contains(err.Error(), "not permitted for priority sending") {
+			t.Errorf("step %d: block processing gave %v, want the priority tx refused", i, err)
+		}
 	}
 }
