@@ -32,7 +32,9 @@ import (
 	"github.com/electroneum/electroneum-sc/consensus/istanbul/validator"
 	"github.com/electroneum/electroneum-sc/core"
 	"github.com/electroneum/electroneum-sc/core/rawdb"
+	"github.com/electroneum/electroneum-sc/core/state"
 	"github.com/electroneum/electroneum-sc/core/types"
+	"github.com/electroneum/electroneum-sc/core/vm"
 	"github.com/electroneum/electroneum-sc/crypto"
 	"github.com/electroneum/electroneum-sc/ethdb"
 	"github.com/electroneum/electroneum-sc/event"
@@ -302,7 +304,46 @@ func (sb *Backend) Verify(proposal istanbul.Proposal) (time.Duration, error) {
 		return 0, err
 	}
 
-	return sb.EngineForBlockNumber(header.Number).VerifyBlockProposal(sb.chain, block, snap.ValSet)
+	if duration, err := sb.EngineForBlockNumber(header.Number).VerifyBlockProposal(sb.chain, block, snap.ValSet); err != nil {
+		return duration, err
+	}
+	return 0, sb.executeProposal(block)
+}
+
+// proposalExecutor is the part of the full chain needed to run a proposal.
+type proposalExecutor interface {
+	StateAt(root common.Hash) (*state.StateDB, error)
+	Processor() core.Processor
+	Validator() core.Validator
+	GetVMConfig() *vm.Config
+}
+
+// executeProposal runs a proposal on its parent's state and checks the result
+// against its header, the same way importing it does. The header checks don't
+// cover what execution produces (the state root, receipts, bloom and gas used),
+// so without this a proposer could get a quorum to certify a block that no node
+// can import, and that a light client would take as final.
+//
+// Only blocks that would fail import anyway are refused, so this isn't a
+// block validity change.
+func (sb *Backend) executeProposal(block *types.Block) error {
+	chain, ok := sb.chain.(proposalExecutor)
+	if !ok {
+		return nil
+	}
+	parent := sb.chain.GetHeader(block.ParentHash(), block.NumberU64()-1)
+	if parent == nil {
+		return consensus.ErrUnknownAncestor
+	}
+	statedb, err := chain.StateAt(parent.Root)
+	if err != nil {
+		return err
+	}
+	receipts, _, usedGas, err := chain.Processor().Process(block, statedb, *chain.GetVMConfig())
+	if err != nil {
+		return err
+	}
+	return chain.Validator().ValidateState(block, statedb, receipts, usedGas)
 }
 
 // Sign implements istanbul.Backend.Sign
