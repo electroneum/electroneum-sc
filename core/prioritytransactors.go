@@ -2,6 +2,7 @@ package core
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/electroneum/electroneum-sc/accounts/abi"
 	"github.com/electroneum/electroneum-sc/common"
@@ -10,6 +11,23 @@ import (
 	"github.com/electroneum/electroneum-sc/log"
 	"github.com/electroneum/electroneum-sc/params"
 )
+
+// getTransactorsCall is the parsed contract ABI and the packed getTransactors
+// call. Both are constant, and parsing the ABI JSON took longer than running
+// the call, so it's done once rather than on every refresh.
+var getTransactorsCall = sync.OnceValues(func() (abi.ABI, []byte) {
+	contractABI, err := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
+	if err != nil {
+		log.Error("PriorityTransactors: failed to parse ABI", "err", err)
+		return abi.ABI{}, nil
+	}
+	input, err := contractABI.Pack("getTransactors")
+	if err != nil {
+		log.Error("PriorityTransactors: failed to pack call data", "err", err)
+		return abi.ABI{}, nil
+	}
+	return contractABI, input
+})
 
 // GetPriorityTransactors Gets the priority transactor list for the current state using the priority contract address for the block number passed
 func GetPriorityTransactors(evm *vm.EVM) common.PriorityTransactorMap {
@@ -44,22 +62,15 @@ func GetPriorityTransactorsAt(evm *vm.EVM, address common.Address) common.Priori
 		return result
 	}
 
-	contractABI, err := abi.JSON(strings.NewReader(prioritytransactors.ETNPriorityTransactorsInterfaceMetaData.ABI))
-	if err != nil {
+	contractABI, input := getTransactorsCall()
+	if input == nil {
 		// ABI parse failure is a software/config issue; safest is disable feature rather than crash the chain
-		log.Error("PriorityTransactors: failed to parse ABI; disabling priority list for this block",
-			"err", err, "address", address, "block", blockNumber)
+		log.Error("PriorityTransactors: no getTransactors call data; disabling priority list for this block",
+			"address", address, "block", blockNumber)
 		return result
 	}
 
-	input, err := contractABI.Pack(method)
-	if err != nil {
-		log.Error("PriorityTransactors: failed to pack call data; disabling priority list for this block",
-			"err", err, "address", address, "block", blockNumber)
-		return result
-	}
-
-	output, _, err := evm.StaticCall(contract, address, input, params.MaxGasLimit)
+	output, _, err := evm.StaticCall(contract, address, common.CopyBytes(input), params.MaxGasLimit)
 	if err != nil {
 		// IMPORTANT: on failure, return empty list (deny privileges) instead of panicking (halting chain)
 		log.Error("PriorityTransactors: contract call failed; disabling priority list for this block",
